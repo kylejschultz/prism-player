@@ -119,8 +119,12 @@ h1 {
 .secondary-button,
 .list-row,
 .album-tile,
+.album-row,
 .artist-row,
 .icon-button,
+.queue-row,
+.track-play,
+.track-queue,
 .transport button {
   cursor: pointer;
   transition: background 160ms ease, transform 160ms ease, color 160ms ease;
@@ -343,6 +347,138 @@ h1 {
 
 .lyrics-lines .muted {
   color: rgba(244, 241, 236, 0.48);
+}
+
+.detail-panel {
+  min-height: 360px;
+}
+
+.detail-panel.bad {
+  border-color: rgba(255, 173, 159, 0.34);
+}
+
+.detail-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 230px;
+  color: rgba(244, 241, 236, 0.56);
+  text-align: center;
+}
+
+.detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(244, 241, 236, 0.76);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.detail-title {
+  margin-bottom: 14px;
+}
+
+.detail-title h3 {
+  margin-top: 4px;
+  font-size: 24px;
+  line-height: 1.12;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.album-stack,
+.track-list,
+.queue-list {
+  display: grid;
+  gap: 8px;
+}
+
+.album-row,
+.queue-row {
+  align-items: center;
+  min-height: 44px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.album-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.album-row:hover,
+.queue-row:hover,
+.track-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.album-row span,
+.queue-row strong,
+.track-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-row small,
+.queue-row small,
+.track-number,
+.track-duration {
+  color: rgba(244, 241, 236, 0.48);
+  font-size: 12px;
+}
+
+.track-row {
+  display: grid;
+  grid-template-columns: 30px 28px minmax(0, 1fr) 42px 30px;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.track-row.active,
+.queue-row.active {
+  background: rgba(240, 210, 123, 0.16);
+  color: #f8df91;
+}
+
+.track-play,
+.track-queue {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.queue-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.queue-row div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .settings-layout {

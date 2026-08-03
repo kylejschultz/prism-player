@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   AlertCircle,
+  ChevronLeft,
   CheckCircle2,
   Disc3,
   Library,
+  ListMusic,
   Loader2,
   Music2,
+  Pause,
   Play,
+  Plus,
   Radio,
   Search,
   Settings,
@@ -31,6 +35,7 @@ type Album = {
   id: string;
   name: string;
   artist: string;
+  artistId?: string;
   songCount?: number;
   year?: number;
 };
@@ -45,6 +50,28 @@ type LibraryData = {
   albums: Album[];
   artists: Artist[];
 };
+
+type Song = {
+  id: string;
+  title: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  track?: number;
+};
+
+type AlbumDetail = Album & {
+  song?: Song[];
+};
+
+type ArtistDetail = Artist & {
+  album?: Album[];
+};
+
+type DetailSelection =
+  | { type: "album"; data: AlbumDetail }
+  | { type: "artist"; data: ArtistDetail }
+  | null;
 
 const STORAGE_KEY = "prism-player.navidrome";
 const CLIENT_ID = "PrismPlayer";
@@ -177,6 +204,23 @@ async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
   };
 }
 
+async function fetchAlbumDetail(config: NavidromeConfig, albumId: string): Promise<AlbumDetail> {
+  const response = await navidromeRequest<{ album: AlbumDetail }>(config, "getAlbum", { id: albumId });
+  return response.album;
+}
+
+async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Promise<ArtistDetail> {
+  const response = await navidromeRequest<{ artist: ArtistDetail }>(config, "getArtist", { id: artistId });
+  return response.artist;
+}
+
+function formatDuration(seconds?: number) {
+  if (!seconds) return "-:--";
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
 export function App() {
   const [activeView, setActiveView] = useState<View>("library");
   const [libraryTab, setLibraryTab] = useState<LibraryTab>("overview");
@@ -186,8 +230,15 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryData, setLibraryData] = useState<LibraryData>({ albums: [], artists: [] });
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
+  const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
+  const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [detailMessage, setDetailMessage] = useState("");
+  const [queue, setQueue] = useState<Song[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const hasConfig = Boolean(config);
+  const currentTrack = queue[currentIndex] ?? null;
   const libraryItems = useMemo(
     () => [
       { label: "Recently Added", value: `${libraryData.albums.length || "-"} albums` },
@@ -245,11 +296,94 @@ export function App() {
     }
   }
 
+  async function openAlbum(album: Album) {
+    if (!config) return;
+
+    setDetailStatus("loading");
+    setDetailMessage(`Loading ${album.name}...`);
+    setLibraryTab("albums");
+
+    try {
+      const albumDetail = await fetchAlbumDetail(config, album.id);
+      setDetailSelection({ type: "album", data: albumDetail });
+      setDetailStatus("idle");
+      setDetailMessage("");
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function openArtist(artist: Artist) {
+    if (!config) return;
+
+    setDetailStatus("loading");
+    setDetailMessage(`Loading ${artist.name}...`);
+    setLibraryTab("artists");
+
+    try {
+      const artistDetail = await fetchArtistDetail(config, artist.id);
+      setDetailSelection({ type: "artist", data: artistDetail });
+      setDetailStatus("idle");
+      setDetailMessage("");
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  function clearDetail() {
+    setDetailSelection(null);
+    setDetailStatus("idle");
+    setDetailMessage("");
+  }
+
+  function replaceQueue(songs: Song[], startIndex = 0) {
+    if (!songs.length) return;
+    setQueue(songs);
+    setCurrentIndex(startIndex);
+    setIsPlaying(true);
+  }
+
+  function appendToQueue(song: Song) {
+    setQueue((currentQueue) => [...currentQueue, song]);
+  }
+
+  function playSong(song: Song) {
+    const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
+
+    if (existingIndex >= 0) {
+      setCurrentIndex(existingIndex);
+      setIsPlaying(true);
+      return;
+    }
+
+    setQueue((currentQueue) => [...currentQueue, song]);
+    setCurrentIndex(queue.length);
+    setIsPlaying(true);
+  }
+
+  function playNext() {
+    if (!queue.length) return;
+    setCurrentIndex((index) => Math.min(index + 1, queue.length - 1));
+    setIsPlaying(true);
+  }
+
+  function playPrevious() {
+    if (!queue.length) return;
+    setCurrentIndex((index) => Math.max(index - 1, 0));
+    setIsPlaying(true);
+  }
+
   function resetConnection() {
     localStorage.removeItem(STORAGE_KEY);
     setConfig(null);
     setForm(emptyConfig);
     setLibraryData({ albums: [], artists: [] });
+    setDetailSelection(null);
+    setQueue([]);
+    setCurrentIndex(0);
+    setIsPlaying(false);
     setStatus("idle");
     setStatusMessage("Add a Navidrome server to start syncing.");
     setSetupOpen(true);
@@ -352,28 +486,47 @@ export function App() {
             statusMessage={statusMessage}
             onOpenSettings={() => setActiveView("settings")}
             onRefresh={() => void refreshLibrary()}
+            detailSelection={detailSelection}
+            detailStatus={detailStatus}
+            detailMessage={detailMessage}
+            queue={queue}
+            currentTrack={currentTrack}
+            onOpenAlbum={(album) => void openAlbum(album)}
+            onOpenArtist={(artist) => void openArtist(artist)}
+            onClearDetail={clearDetail}
+            onReplaceQueue={replaceQueue}
+            onPlaySong={playSong}
+            onQueueSong={appendToQueue}
           />
         )}
       </section>
 
       <footer className="player-bar" aria-label="Playback controls">
         <div>
-          <p className="track-title">Prism Player</p>
-          <p className="track-meta">{hasConfig ? "Ready for playback wiring" : "Connect Navidrome"}</p>
+          <p className="track-title">{currentTrack?.title ?? "Prism Player"}</p>
+          <p className="track-meta">
+            {currentTrack ? `${currentTrack.artist ?? "Unknown artist"} - ${currentTrack.album ?? "Unknown album"}` : hasConfig ? "Queue ready" : "Connect Navidrome"}
+          </p>
         </div>
         <div className="transport">
-          <button type="button" aria-label="Previous">
+          <button type="button" aria-label="Previous" onClick={playPrevious} disabled={!queue.length || currentIndex === 0}>
             <SkipBack size={18} />
           </button>
-          <button className="play-button" type="button" aria-label="Play">
-            <Play size={20} fill="currentColor" />
+          <button
+            className="play-button"
+            type="button"
+            aria-label={isPlaying ? "Pause" : "Play"}
+            onClick={() => queue.length && setIsPlaying((playing) => !playing)}
+            disabled={!queue.length}
+          >
+            {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
           </button>
-          <button type="button" aria-label="Next">
+          <button type="button" aria-label="Next" onClick={playNext} disabled={!queue.length || currentIndex >= queue.length - 1}>
             <SkipForward size={18} />
           </button>
         </div>
         <div className="progress">
-          <span />
+          <span style={{ width: queue.length ? `${((currentIndex + 1) / queue.length) * 100}%` : "0%" }} />
         </div>
       </footer>
 
@@ -548,6 +701,17 @@ function LibraryView({
   statusMessage,
   onOpenSettings,
   onRefresh,
+  detailSelection,
+  detailStatus,
+  detailMessage,
+  queue,
+  currentTrack,
+  onOpenAlbum,
+  onOpenArtist,
+  onClearDetail,
+  onReplaceQueue,
+  onPlaySong,
+  onQueueSong,
 }: {
   activeView: View;
   libraryTab: LibraryTab;
@@ -559,6 +723,17 @@ function LibraryView({
   statusMessage: string;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  detailSelection: DetailSelection;
+  detailStatus: "idle" | "loading" | "error";
+  detailMessage: string;
+  queue: Song[];
+  currentTrack: Song | null;
+  onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onClearDetail: () => void;
+  onReplaceQueue: (songs: Song[], startIndex?: number) => void;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
 }) {
   if (activeView === "radio" || activeView === "search") {
     return (
@@ -610,27 +785,22 @@ function LibraryView({
               ))}
             </div>
           ) : null}
-          {libraryTab === "albums" ? <AlbumGrid albums={albums} /> : null}
-          {libraryTab === "artists" ? <ArtistList artists={artists} /> : null}
+          {libraryTab === "albums" ? <AlbumGrid albums={albums} onOpenAlbum={onOpenAlbum} /> : null}
+          {libraryTab === "artists" ? <ArtistList artists={artists} onOpenArtist={onOpenArtist} /> : null}
         </section>
 
-        <section className="panel lyrics-panel">
-          <div className="panel-heading">
-            <h3>Now queued</h3>
-            <span>{albums.length ? `${albums.length} recent albums` : "Waiting"}</span>
-          </div>
-          <div className="lyrics-lines" aria-label="Library preview">
-            {albums.slice(0, 4).map((album) => (
-              <p key={album.id}>{album.name}</p>
-            ))}
-            {!albums.length ? (
-              <>
-                <p>Waiting for a server...</p>
-                <p className="muted">Recent albums will appear here once the API probe passes.</p>
-              </>
-            ) : null}
-          </div>
-        </section>
+        <DetailPanel
+          detailSelection={detailSelection}
+          detailStatus={detailStatus}
+          detailMessage={detailMessage}
+          queue={queue}
+          currentTrack={currentTrack}
+          onClearDetail={onClearDetail}
+          onOpenAlbum={onOpenAlbum}
+          onReplaceQueue={onReplaceQueue}
+          onPlaySong={onPlaySong}
+          onQueueSong={onQueueSong}
+        />
       </div>
     </>
   );
@@ -653,7 +823,7 @@ function SegmentedTabs({ active, onChange }: { active: LibraryTab; onChange: (ta
   );
 }
 
-function AlbumGrid({ albums }: { albums: Album[] }) {
+function AlbumGrid({ albums, onOpenAlbum }: { albums: Album[]; onOpenAlbum: (album: Album) => void }) {
   if (!albums.length) {
     return <EmptyPanel icon={<Disc3 size={20} />} text="Albums load after a successful Navidrome sync." />;
   }
@@ -661,7 +831,7 @@ function AlbumGrid({ albums }: { albums: Album[] }) {
   return (
     <div className="album-grid">
       {albums.slice(0, 12).map((album) => (
-        <button className="album-tile" type="button" key={album.id}>
+        <button className="album-tile" type="button" key={album.id} onClick={() => onOpenAlbum(album)}>
           <div className="mini-cover" aria-hidden="true">
             <Disc3 size={22} />
           </div>
@@ -673,7 +843,7 @@ function AlbumGrid({ albums }: { albums: Album[] }) {
   );
 }
 
-function ArtistList({ artists }: { artists: Artist[] }) {
+function ArtistList({ artists, onOpenArtist }: { artists: Artist[]; onOpenArtist: (artist: Artist) => void }) {
   if (!artists.length) {
     return <EmptyPanel icon={<UserRound size={20} />} text="Artists load after a successful Navidrome sync." />;
   }
@@ -681,10 +851,192 @@ function ArtistList({ artists }: { artists: Artist[] }) {
   return (
     <div className="artist-list">
       {artists.slice(0, 18).map((artist) => (
-        <button className="artist-row" type="button" key={artist.id}>
+        <button className="artist-row" type="button" key={artist.id} onClick={() => onOpenArtist(artist)}>
           <UserRound size={18} />
           <span>{artist.name}</span>
           <small>{artist.albumCount ?? 0} albums</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DetailPanel({
+  detailSelection,
+  detailStatus,
+  detailMessage,
+  queue,
+  currentTrack,
+  onClearDetail,
+  onOpenAlbum,
+  onReplaceQueue,
+  onPlaySong,
+  onQueueSong,
+}: {
+  detailSelection: DetailSelection;
+  detailStatus: "idle" | "loading" | "error";
+  detailMessage: string;
+  queue: Song[];
+  currentTrack: Song | null;
+  onClearDetail: () => void;
+  onOpenAlbum: (album: Album) => void;
+  onReplaceQueue: (songs: Song[], startIndex?: number) => void;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+}) {
+  if (detailStatus === "loading" || detailStatus === "error") {
+    return (
+      <section className={`panel detail-panel ${detailStatus === "error" ? "bad" : ""}`}>
+        <div className="panel-heading">
+          <h3>{detailStatus === "loading" ? "Loading" : "Could not load"}</h3>
+          {detailStatus === "loading" ? <Loader2 size={16} className="spin" /> : <AlertCircle size={16} />}
+        </div>
+        <div className="detail-empty">
+          <p>{detailMessage}</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!detailSelection) {
+    return (
+      <section className="panel detail-panel">
+        <div className="panel-heading">
+          <h3>Now queued</h3>
+          <span>{queue.length ? `${queue.length} tracks` : "Empty"}</span>
+        </div>
+        <QueueList queue={queue} currentTrack={currentTrack} onPlaySong={onPlaySong} />
+      </section>
+    );
+  }
+
+  if (detailSelection.type === "artist") {
+    const artist = detailSelection.data;
+
+    return (
+      <section className="panel detail-panel">
+        <div className="panel-heading">
+          <button className="detail-back" type="button" onClick={onClearDetail}>
+            <ChevronLeft size={16} />
+            Artists
+          </button>
+          <span>{artist.album?.length ?? 0} albums</span>
+        </div>
+        <div className="detail-title">
+          <p className="eyebrow">Artist</p>
+          <h3>{artist.name}</h3>
+        </div>
+        <div className="album-stack">
+          {(artist.album ?? []).map((album) => (
+            <button className="album-row" type="button" key={album.id} onClick={() => onOpenAlbum(album)}>
+              <Disc3 size={18} />
+              <span>{album.name}</span>
+              <small>{album.year ?? ""}</small>
+            </button>
+          ))}
+          {!artist.album?.length ? <EmptyPanel icon={<Disc3 size={20} />} text="No albums returned for this artist." /> : null}
+        </div>
+      </section>
+    );
+  }
+
+  const album = detailSelection.data;
+  const songs = album.song ?? [];
+
+  return (
+    <section className="panel detail-panel">
+      <div className="panel-heading">
+        <button className="detail-back" type="button" onClick={onClearDetail}>
+          <ChevronLeft size={16} />
+          Albums
+        </button>
+        <span>{songs.length} tracks</span>
+      </div>
+      <div className="detail-title">
+        <p className="eyebrow">{album.artist}</p>
+        <h3>{album.name}</h3>
+      </div>
+      <div className="detail-actions">
+        <button className="connect-button" type="button" onClick={() => onReplaceQueue(songs)} disabled={!songs.length}>
+          <Play size={16} fill="currentColor" />
+          Play Album
+        </button>
+        <button className="secondary-button" type="button" onClick={() => songs.forEach(onQueueSong)} disabled={!songs.length}>
+          <ListMusic size={16} />
+          Queue Album
+        </button>
+      </div>
+      <TrackList songs={songs} currentTrack={currentTrack} onPlaySong={onPlaySong} onQueueSong={onQueueSong} />
+    </section>
+  );
+}
+
+function TrackList({
+  songs,
+  currentTrack,
+  onPlaySong,
+  onQueueSong,
+}: {
+  songs: Song[];
+  currentTrack: Song | null;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+}) {
+  if (!songs.length) {
+    return <EmptyPanel icon={<Music2 size={20} />} text="No tracks returned for this album." />;
+  }
+
+  return (
+    <div className="track-list">
+      {songs.map((song, index) => (
+        <div className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`} key={song.id}>
+          <button className="track-play" type="button" aria-label={`Play ${song.title}`} onClick={() => onPlaySong(song)}>
+            <Play size={14} fill="currentColor" />
+          </button>
+          <span className="track-number">{song.track ?? index + 1}</span>
+          <span className="track-name">{song.title}</span>
+          <span className="track-duration">{formatDuration(song.duration)}</span>
+          <button className="track-queue" type="button" aria-label={`Queue ${song.title}`} onClick={() => onQueueSong(song)}>
+            <Plus size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function QueueList({
+  queue,
+  currentTrack,
+  onPlaySong,
+}: {
+  queue: Song[];
+  currentTrack: Song | null;
+  onPlaySong: (song: Song) => void;
+}) {
+  if (!queue.length) {
+    return (
+      <div className="detail-empty">
+        <ListMusic size={22} />
+        <p>Select an album track to start building the queue.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="queue-list">
+      {queue.slice(0, 10).map((song, index) => (
+        <button
+          className={`queue-row ${currentTrack?.id === song.id ? "active" : ""}`}
+          type="button"
+          key={`${song.id}-${index}`}
+          onClick={() => onPlaySong(song)}
+        >
+          <span>{index + 1}</span>
+          <div>
+            <strong>{song.title}</strong>
+            <small>{song.artist ?? "Unknown artist"}</small>
+          </div>
         </button>
       ))}
     </div>
