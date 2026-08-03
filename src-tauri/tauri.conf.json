@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Prism Player",
+  "version": "0.1.0",
+  "identifier": "com.kylejschultz.prism-player",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Prism Player",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg"],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}
