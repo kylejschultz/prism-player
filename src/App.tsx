@@ -1136,14 +1136,37 @@ function TrackList({
   return (
     <div className="track-list">
       {songs.map((song, index) => (
-        <div className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`} key={song.id}>
-          <button className="track-play" type="button" aria-label={`Play ${song.title}`} onClick={() => onPlaySong(song)}>
+        <div
+          className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`}
+          key={song.id}
+          onDoubleClick={() => onPlaySong(song)}
+        >
+          <button
+            className="track-play"
+            type="button"
+            aria-label={`Play ${song.title}`}
+            onClick={() => onPlaySong(song)}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
             <Play size={14} fill="currentColor" />
           </button>
           <span className="track-number">{song.track ?? index + 1}</span>
-          <span className="track-name">{song.title}</span>
+          <button
+            className="track-name"
+            type="button"
+            onClick={() => onPlaySong(song)}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            {song.title}
+          </button>
           <span className="track-duration">{formatDuration(song.duration)}</span>
-          <button className="track-queue" type="button" aria-label={`Queue ${song.title}`} onClick={() => onQueueSong(song)}>
+          <button
+            className="track-queue"
+            type="button"
+            aria-label={`Queue ${song.title}`}
+            onClick={() => onQueueSong(song)}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
             <Plus size={14} />
           </button>
         </div>

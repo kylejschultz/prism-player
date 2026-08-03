@@ -480,6 +480,20 @@ h1 {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.track-name {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.track-name:hover {
+  color: #fff;
+}
+
 .track-row.active {
   background: rgba(240, 210, 123, 0.16);
   color: #f8df91;
