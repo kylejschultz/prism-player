@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from "react";
 import {
   AlertCircle,
   ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Disc3,
   Library,
@@ -74,6 +75,11 @@ type DetailSelection =
   | { type: "album"; data: AlbumDetail }
   | { type: "artist"; data: ArtistDetail }
   | null;
+
+type BrowserSnapshot = {
+  activeView: View;
+  detailSelection: DetailSelection;
+};
 
 const STORAGE_KEY = "prism-player.navidrome";
 const CLIENT_ID = "PrismPlayer";
@@ -228,6 +234,14 @@ function formatDuration(seconds?: number) {
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
+function getSnapshotLabel(snapshot: BrowserSnapshot | null) {
+  if (!snapshot) return "";
+  if (snapshot.detailSelection?.type === "artist") return snapshot.detailSelection.data.name;
+  if (snapshot.detailSelection?.type === "album") return snapshot.detailSelection.data.name;
+  if (snapshot.activeView === "overview") return "Library";
+  return snapshot.activeView.charAt(0).toUpperCase() + snapshot.activeView.slice(1);
+}
+
 export function App() {
   const [activeView, setActiveView] = useState<View>("overview");
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
@@ -239,6 +253,8 @@ export function App() {
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailMessage, setDetailMessage] = useState("");
+  const [backStack, setBackStack] = useState<BrowserSnapshot[]>([]);
+  const [forwardStack, setForwardStack] = useState<BrowserSnapshot[]>([]);
   const [queue, setQueue] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -298,12 +314,16 @@ export function App() {
 
     if (connected) {
       setSetupOpen(false);
+      setBackStack([]);
+      setForwardStack([]);
+      setDetailSelection(null);
       setActiveView("overview");
     }
   }
 
   async function openAlbum(album: Album) {
     if (!config) return;
+    const origin = { activeView, detailSelection };
 
     setDetailStatus("loading");
     setDetailMessage(`Loading ${album.name}...`);
@@ -311,6 +331,8 @@ export function App() {
 
     try {
       const albumDetail = await fetchAlbumDetail(config, album.id);
+      setBackStack((currentStack) => [...currentStack, origin].slice(-40));
+      setForwardStack([]);
       setDetailSelection({ type: "album", data: albumDetail });
       setDetailStatus("idle");
       setDetailMessage("");
@@ -322,6 +344,7 @@ export function App() {
 
   async function openArtist(artist: Artist) {
     if (!config) return;
+    const origin = { activeView, detailSelection };
 
     setDetailStatus("loading");
     setDetailMessage(`Loading ${artist.name}...`);
@@ -329,6 +352,8 @@ export function App() {
 
     try {
       const artistDetail = await fetchArtistDetail(config, artist.id);
+      setBackStack((currentStack) => [...currentStack, origin].slice(-40));
+      setForwardStack([]);
       setDetailSelection({ type: "artist", data: artistDetail });
       setDetailStatus("idle");
       setDetailMessage("");
@@ -347,9 +372,40 @@ export function App() {
   function selectView(view: View) {
     if (view === "overview" || view === "albums" || view === "artists" || view === "playlists") {
       clearDetail();
+      setBackStack([]);
+      setForwardStack([]);
     }
 
     setActiveView(view);
+  }
+
+  function currentSnapshot(): BrowserSnapshot {
+    return { activeView, detailSelection };
+  }
+
+  function applySnapshot(snapshot: BrowserSnapshot) {
+    setActiveView(snapshot.activeView);
+    setDetailSelection(snapshot.detailSelection);
+    setDetailStatus("idle");
+    setDetailMessage("");
+  }
+
+  function navigateBack() {
+    const previous = backStack[backStack.length - 1];
+    if (!previous) return;
+
+    setBackStack(backStack.slice(0, -1));
+    setForwardStack([currentSnapshot(), ...forwardStack].slice(0, 40));
+    applySnapshot(previous);
+  }
+
+  function navigateForward() {
+    const next = forwardStack[0];
+    if (!next) return;
+
+    setForwardStack(forwardStack.slice(1));
+    setBackStack([...backStack, currentSnapshot()].slice(-40));
+    applySnapshot(next);
   }
 
   function replaceQueue(songs: Song[], startIndex = 0) {
@@ -395,6 +451,8 @@ export function App() {
     setForm(emptyConfig);
     setLibraryData({ albums: [], artists: [] });
     setDetailSelection(null);
+    setBackStack([]);
+    setForwardStack([]);
     setQueue([]);
     setCurrentIndex(0);
     setIsPlaying(false);
@@ -533,6 +591,12 @@ export function App() {
             onOpenAlbum={(album) => void openAlbum(album)}
             onOpenArtist={(artist) => void openArtist(artist)}
             onClearDetail={clearDetail}
+            canNavigateBack={backStack.length > 0}
+            canNavigateForward={forwardStack.length > 0}
+            backTarget={backStack[backStack.length - 1] ?? null}
+            forwardTarget={forwardStack[0] ?? null}
+            onNavigateBack={navigateBack}
+            onNavigateForward={navigateForward}
             onReplaceQueue={replaceQueue}
             onPlaySong={playSong}
             onQueueSong={appendToQueue}
@@ -743,6 +807,12 @@ function LibraryView({
   onOpenAlbum,
   onOpenArtist,
   onClearDetail,
+  canNavigateBack,
+  canNavigateForward,
+  backTarget,
+  forwardTarget,
+  onNavigateBack,
+  onNavigateForward,
   onReplaceQueue,
   onPlaySong,
   onQueueSong,
@@ -760,6 +830,12 @@ function LibraryView({
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onClearDetail: () => void;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  backTarget: BrowserSnapshot | null;
+  forwardTarget: BrowserSnapshot | null;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
@@ -789,6 +865,12 @@ function LibraryView({
           detailMessage={detailMessage}
           currentTrack={currentTrack}
           onClearDetail={onClearDetail}
+          canNavigateBack={canNavigateBack}
+          canNavigateForward={canNavigateForward}
+          backTarget={backTarget}
+          forwardTarget={forwardTarget}
+          onNavigateBack={onNavigateBack}
+          onNavigateForward={onNavigateForward}
           onOpenAlbum={onOpenAlbum}
           onReplaceQueue={onReplaceQueue}
           onPlaySong={onPlaySong}
@@ -902,6 +984,12 @@ function DetailPanel({
   detailMessage,
   currentTrack,
   onClearDetail,
+  canNavigateBack,
+  canNavigateForward,
+  backTarget,
+  forwardTarget,
+  onNavigateBack,
+  onNavigateForward,
   onOpenAlbum,
   onReplaceQueue,
   onPlaySong,
@@ -913,6 +1001,12 @@ function DetailPanel({
   detailMessage: string;
   currentTrack: Song | null;
   onClearDetail: () => void;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  backTarget: BrowserSnapshot | null;
+  forwardTarget: BrowserSnapshot | null;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
   onOpenAlbum: (album: Album) => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
@@ -934,6 +1028,10 @@ function DetailPanel({
 
   if (!detailSelection) return null;
 
+  const backLabel = getSnapshotLabel(backTarget);
+  const forwardLabel = getSnapshotLabel(forwardTarget);
+  const fallbackBackLabel = detailSelection.type === "artist" ? "Artists" : "Albums";
+
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
     const artistAlbums = artist.album ?? [];
@@ -946,10 +1044,13 @@ function DetailPanel({
     return (
       <section className="detail-panel">
         <div className="panel-heading">
-          <button className="detail-back" type="button" onClick={onClearDetail}>
-            <ChevronLeft size={16} />
-            Artists
-          </button>
+          <HistoryControls
+            backLabel={backLabel || fallbackBackLabel}
+            forwardLabel={forwardLabel}
+            canNavigateForward={canNavigateForward}
+            onNavigateBack={canNavigateBack ? onNavigateBack : onClearDetail}
+            onNavigateForward={onNavigateForward}
+          />
           <span>{artist.album?.length ?? 0} albums</span>
         </div>
         <div className="artist-hero">
@@ -991,10 +1092,13 @@ function DetailPanel({
   return (
     <section className="detail-panel">
       <div className="panel-heading">
-        <button className="detail-back" type="button" onClick={onClearDetail}>
-          <ChevronLeft size={16} />
-          Albums
-        </button>
+        <HistoryControls
+          backLabel={backLabel || fallbackBackLabel}
+          forwardLabel={forwardLabel}
+          canNavigateForward={canNavigateForward}
+          onNavigateBack={canNavigateBack ? onNavigateBack : onClearDetail}
+          onNavigateForward={onNavigateForward}
+        />
         <span>{songs.length} tracks</span>
       </div>
       <div className="album-hero">
@@ -1055,6 +1159,39 @@ function TrackList({
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+function HistoryControls({
+  backLabel,
+  forwardLabel,
+  canNavigateForward,
+  onNavigateBack,
+  onNavigateForward,
+}: {
+  backLabel: string;
+  forwardLabel: string;
+  canNavigateForward: boolean;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+}) {
+  return (
+    <div className="history-controls">
+      <button className="detail-back" type="button" onClick={onNavigateBack}>
+        <ChevronLeft size={16} />
+        {backLabel}
+      </button>
+      <button
+        className="detail-back"
+        type="button"
+        onClick={onNavigateForward}
+        disabled={!canNavigateForward}
+        aria-label={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
+      >
+        {canNavigateForward ? forwardLabel : "Forward"}
+        <ChevronRight size={16} />
+      </button>
     </div>
   );
 }

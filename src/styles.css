@@ -318,13 +318,32 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   min-height: 30px;
   padding: 0 8px;
   border-radius: 8px;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(244, 241, 236, 0.76);
   font-size: 12px;
   font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-controls .detail-back {
+  max-width: 220px;
+}
+
+.history-controls .detail-back:disabled {
+  opacity: 0.36;
 }
 
 .detail-title {
