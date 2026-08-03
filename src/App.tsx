@@ -557,9 +557,19 @@ export function App() {
 
       <section className="workspace" aria-label="Music workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">{hasConfig ? "Navidrome connected" : "First run setup"}</p>
-            <h2>{activeTitle}</h2>
+          <div className="topbar-title">
+            <BrowserNavigation
+              canNavigateBack={backStack.length > 0}
+              canNavigateForward={forwardStack.length > 0}
+              backTarget={backStack[backStack.length - 1] ?? null}
+              forwardTarget={forwardStack[0] ?? null}
+              onNavigateBack={navigateBack}
+              onNavigateForward={navigateForward}
+            />
+            <div>
+              <p className="eyebrow">{hasConfig ? "Navidrome connected" : "First run setup"}</p>
+              <h2>{activeTitle}</h2>
+            </div>
           </div>
           <button className="connect-button" type="button" onClick={() => setActiveView("settings")}>
             <Settings size={16} />
@@ -590,13 +600,6 @@ export function App() {
             currentTrack={currentTrack}
             onOpenAlbum={(album) => void openAlbum(album)}
             onOpenArtist={(artist) => void openArtist(artist)}
-            onClearDetail={clearDetail}
-            canNavigateBack={backStack.length > 0}
-            canNavigateForward={forwardStack.length > 0}
-            backTarget={backStack[backStack.length - 1] ?? null}
-            forwardTarget={forwardStack[0] ?? null}
-            onNavigateBack={navigateBack}
-            onNavigateForward={navigateForward}
             onReplaceQueue={replaceQueue}
             onPlaySong={playSong}
             onQueueSong={appendToQueue}
@@ -644,6 +647,50 @@ export function App() {
         />
       ) : null}
     </main>
+  );
+}
+
+function BrowserNavigation({
+  canNavigateBack,
+  canNavigateForward,
+  backTarget,
+  forwardTarget,
+  onNavigateBack,
+  onNavigateForward,
+}: {
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  backTarget: BrowserSnapshot | null;
+  forwardTarget: BrowserSnapshot | null;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+}) {
+  const backLabel = getSnapshotLabel(backTarget);
+  const forwardLabel = getSnapshotLabel(forwardTarget);
+
+  return (
+    <div className="browser-nav" aria-label="Browser history">
+      <button
+        className="icon-button"
+        type="button"
+        onClick={onNavigateBack}
+        disabled={!canNavigateBack}
+        aria-label={canNavigateBack ? `Back to ${backLabel}` : "No back history"}
+        title={canNavigateBack ? `Back to ${backLabel}` : "No back history"}
+      >
+        <ChevronLeft size={17} />
+      </button>
+      <button
+        className="icon-button"
+        type="button"
+        onClick={onNavigateForward}
+        disabled={!canNavigateForward}
+        aria-label={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
+        title={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
+      >
+        <ChevronRight size={17} />
+      </button>
+    </div>
   );
 }
 
@@ -806,13 +853,6 @@ function LibraryView({
   currentTrack,
   onOpenAlbum,
   onOpenArtist,
-  onClearDetail,
-  canNavigateBack,
-  canNavigateForward,
-  backTarget,
-  forwardTarget,
-  onNavigateBack,
-  onNavigateForward,
   onReplaceQueue,
   onPlaySong,
   onQueueSong,
@@ -829,13 +869,6 @@ function LibraryView({
   currentTrack: Song | null;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
-  onClearDetail: () => void;
-  canNavigateBack: boolean;
-  canNavigateForward: boolean;
-  backTarget: BrowserSnapshot | null;
-  forwardTarget: BrowserSnapshot | null;
-  onNavigateBack: () => void;
-  onNavigateForward: () => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
@@ -864,13 +897,6 @@ function LibraryView({
           detailStatus={detailStatus}
           detailMessage={detailMessage}
           currentTrack={currentTrack}
-          onClearDetail={onClearDetail}
-          canNavigateBack={canNavigateBack}
-          canNavigateForward={canNavigateForward}
-          backTarget={backTarget}
-          forwardTarget={forwardTarget}
-          onNavigateBack={onNavigateBack}
-          onNavigateForward={onNavigateForward}
           onOpenAlbum={onOpenAlbum}
           onReplaceQueue={onReplaceQueue}
           onPlaySong={onPlaySong}
@@ -983,13 +1009,6 @@ function DetailPanel({
   detailStatus,
   detailMessage,
   currentTrack,
-  onClearDetail,
-  canNavigateBack,
-  canNavigateForward,
-  backTarget,
-  forwardTarget,
-  onNavigateBack,
-  onNavigateForward,
   onOpenAlbum,
   onReplaceQueue,
   onPlaySong,
@@ -1000,13 +1019,6 @@ function DetailPanel({
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
   currentTrack: Song | null;
-  onClearDetail: () => void;
-  canNavigateBack: boolean;
-  canNavigateForward: boolean;
-  backTarget: BrowserSnapshot | null;
-  forwardTarget: BrowserSnapshot | null;
-  onNavigateBack: () => void;
-  onNavigateForward: () => void;
   onOpenAlbum: (album: Album) => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
@@ -1028,10 +1040,6 @@ function DetailPanel({
 
   if (!detailSelection) return null;
 
-  const backLabel = getSnapshotLabel(backTarget);
-  const forwardLabel = getSnapshotLabel(forwardTarget);
-  const fallbackBackLabel = detailSelection.type === "artist" ? "Artists" : "Albums";
-
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
     const artistAlbums = artist.album ?? [];
@@ -1044,13 +1052,7 @@ function DetailPanel({
     return (
       <section className="detail-panel">
         <div className="panel-heading">
-          <HistoryControls
-            backLabel={backLabel || fallbackBackLabel}
-            forwardLabel={forwardLabel}
-            canNavigateForward={canNavigateForward}
-            onNavigateBack={canNavigateBack ? onNavigateBack : onClearDetail}
-            onNavigateForward={onNavigateForward}
-          />
+          <h3>{artist.name}</h3>
           <span>{artist.album?.length ?? 0} albums</span>
         </div>
         <div className="artist-hero">
@@ -1092,13 +1094,7 @@ function DetailPanel({
   return (
     <section className="detail-panel">
       <div className="panel-heading">
-        <HistoryControls
-          backLabel={backLabel || fallbackBackLabel}
-          forwardLabel={forwardLabel}
-          canNavigateForward={canNavigateForward}
-          onNavigateBack={canNavigateBack ? onNavigateBack : onClearDetail}
-          onNavigateForward={onNavigateForward}
-        />
+        <h3>{album.name}</h3>
         <span>{songs.length} tracks</span>
       </div>
       <div className="album-hero">
@@ -1159,39 +1155,6 @@ function TrackList({
           </button>
         </div>
       ))}
-    </div>
-  );
-}
-
-function HistoryControls({
-  backLabel,
-  forwardLabel,
-  canNavigateForward,
-  onNavigateBack,
-  onNavigateForward,
-}: {
-  backLabel: string;
-  forwardLabel: string;
-  canNavigateForward: boolean;
-  onNavigateBack: () => void;
-  onNavigateForward: () => void;
-}) {
-  return (
-    <div className="history-controls">
-      <button className="detail-back" type="button" onClick={onNavigateBack}>
-        <ChevronLeft size={16} />
-        {backLabel}
-      </button>
-      <button
-        className="detail-back"
-        type="button"
-        onClick={onNavigateForward}
-        disabled={!canNavigateForward}
-        aria-label={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
-      >
-        {canNavigateForward ? forwardLabel : "Forward"}
-        <ChevronRight size={16} />
-      </button>
     </div>
   );
 }

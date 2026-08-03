@@ -182,13 +182,28 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 18px;
   margin-bottom: 24px;
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 
 .topbar h2 {
   margin-top: 4px;
   font-size: 28px;
   line-height: 1.1;
+}
+
+.browser-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 .connect-button {
@@ -329,21 +344,6 @@ h1 {
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.history-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.history-controls .detail-back {
-  max-width: 220px;
-}
-
-.history-controls .detail-back:disabled {
-  opacity: 0.36;
 }
 
 .detail-title {
