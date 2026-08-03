@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="prism" x1="128" y1="128" x2="896" y2="896" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0d27b"/>
+      <stop offset="0.46" stop-color="#c8463c"/>
+      <stop offset="1" stop-color="#2f8a80"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="300" y1="180" x2="760" y2="840" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff8dc" stop-opacity="0.68"/>
+      <stop offset="1" stop-color="#fff8dc" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="184" fill="#111111"/>
+  <rect x="112" y="112" width="800" height="800" rx="144" fill="url(#prism)"/>
+  <path d="M214 730L450 272c24-46 90-45 112 2l248 528c15 32-8 69-44 69H259c-37 0-61-39-45-72z" fill="#101010" opacity="0.78"/>
+  <path d="M344 736l152-295c7-14 27-14 34 0l139 295c6 13-3 28-17 28H361c-14 0-23-15-17-28z" fill="url(#shine)"/>
+  <circle cx="512" cy="512" r="78" fill="#f4f1ec" opacity="0.92"/>
+</svg>
