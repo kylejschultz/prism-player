@@ -131,6 +131,109 @@ h1 {
   transition: background 160ms ease, transform 160ms ease, color 160ms ease;
 }
 
+.global-search {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(244, 241, 236, 0.56);
+}
+
+.global-search:focus-within {
+  border-color: rgba(240, 210, 123, 0.44);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.global-search input {
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #f4f1ec;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.global-search input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.global-search input:disabled {
+  cursor: not-allowed;
+}
+
+.search-spinner {
+  justify-self: end;
+}
+
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: grid;
+  gap: 4px;
+  max-height: 430px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(19, 19, 18, 0.98);
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.42);
+  overflow: auto;
+}
+
+.suggestion-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(244, 241, 236, 0.74);
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestion-row:hover,
+.suggestion-row:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.suggestion-row span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-row small,
+.suggestion-note {
+  color: rgba(244, 241, 236, 0.48);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.suggestion-note {
+  padding: 8px;
+}
+
+.suggestion-row.view-all {
+  color: #f0d27b;
+}
+
 .nav-item {
   display: flex;
   align-items: center;
@@ -638,6 +741,11 @@ h1 {
 
 .status-badge.error {
   color: #ffad9f;
+}
+
+.search-results {
+  display: grid;
+  gap: 20px;
 }
 
 .album-grid {

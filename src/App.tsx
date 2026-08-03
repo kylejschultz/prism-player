@@ -53,6 +53,12 @@ type LibraryData = {
   artists: Artist[];
 };
 
+type SearchResults = {
+  artists: Artist[];
+  albums: Album[];
+  songs: Song[];
+};
+
 type Song = {
   id: string;
   title: string;
@@ -89,6 +95,12 @@ const emptyConfig: NavidromeConfig = {
   serverUrl: "",
   username: "",
   password: "",
+};
+
+const emptySearchResults: SearchResults = {
+  artists: [],
+  albums: [],
+  songs: [],
 };
 
 function loadStoredConfig(): NavidromeConfig | null {
@@ -227,6 +239,27 @@ async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Pro
   return response.artist;
 }
 
+async function fetchSearchResults(config: NavidromeConfig, query: string): Promise<SearchResults> {
+  const response = await navidromeRequest<{
+    searchResult3?: {
+      artist?: Artist[];
+      album?: Album[];
+      song?: Song[];
+    };
+  }>(config, "search3", {
+    query,
+    artistCount: "6",
+    albumCount: "8",
+    songCount: "10",
+  });
+
+  return {
+    artists: response.searchResult3?.artist ?? [],
+    albums: response.searchResult3?.album ?? [],
+    songs: response.searchResult3?.song ?? [],
+  };
+}
+
 function formatDuration(seconds?: number) {
   if (!seconds) return "-:--";
   const minutes = Math.floor(seconds / 60);
@@ -255,6 +288,10 @@ export function App() {
   const [detailMessage, setDetailMessage] = useState("");
   const [backStack, setBackStack] = useState<BrowserSnapshot[]>([]);
   const [forwardStack, setForwardStack] = useState<BrowserSnapshot[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResults>(emptySearchResults);
+  const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [queue, setQueue] = useState<Song[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -396,13 +433,21 @@ export function App() {
   }
 
   function selectView(view: View) {
-    if (view === "overview" || view === "albums" || view === "artists" || view === "playlists") {
+    if (view === "overview" || view === "albums" || view === "artists" || view === "playlists" || view === "search") {
       clearDetail();
       setBackStack([]);
       setForwardStack([]);
     }
 
     setActiveView(view);
+  }
+
+  function openSearchView() {
+    clearDetail();
+    setBackStack([]);
+    setForwardStack([]);
+    setActiveView("search");
+    setSearchFocused(false);
   }
 
   function currentSnapshot(): BrowserSnapshot {
@@ -479,6 +524,9 @@ export function App() {
     setDetailSelection(null);
     setBackStack([]);
     setForwardStack([]);
+    setSearchQuery("");
+    setSearchResults(emptySearchResults);
+    setSearchStatus("idle");
     setQueue([]);
     setCurrentIndex(0);
     setIsPlaying(false);
@@ -493,6 +541,32 @@ export function App() {
       void refreshLibrary(config);
     }
   }, []);
+
+  useEffect(() => {
+    const trimmedQuery = searchQuery.trim();
+
+    if (!config || trimmedQuery.length < 2) {
+      setSearchResults(emptySearchResults);
+      setSearchStatus("idle");
+      return;
+    }
+
+    setSearchStatus("searching");
+
+    const timeout = window.setTimeout(() => {
+      void fetchSearchResults(config, trimmedQuery)
+        .then((results) => {
+          setSearchResults(results);
+          setSearchStatus("idle");
+        })
+        .catch(() => {
+          setSearchResults(emptySearchResults);
+          setSearchStatus("error");
+        });
+    }, 240);
+
+    return () => window.clearTimeout(timeout);
+  }, [config, searchQuery]);
 
   const statusTone = status === "connected" ? "good" : status === "error" ? "bad" : "neutral";
   const activeTitle =
@@ -512,6 +586,20 @@ export function App() {
             <h1>Player</h1>
           </div>
         </div>
+
+        <SearchBox
+          query={searchQuery}
+          setQuery={setSearchQuery}
+          status={searchStatus}
+          results={searchResults}
+          hasConfig={hasConfig}
+          isFocused={searchFocused}
+          setFocused={setSearchFocused}
+          onSubmit={openSearchView}
+          onOpenAlbum={(album) => void openAlbum(album)}
+          onOpenArtist={(artist) => void openArtist(artist)}
+          onPlaySong={playSong}
+        />
 
         <nav className="nav-list">
           <button
@@ -557,7 +645,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "search" ? "active" : ""}`}
             type="button"
-            onClick={() => selectView("search")}
+            onClick={openSearchView}
           >
             <Search size={18} />
             Search
@@ -612,6 +700,9 @@ export function App() {
             libraryItems={libraryItems}
             albums={libraryData.albums}
             artists={libraryData.artists}
+            searchQuery={searchQuery}
+            searchResults={searchResults}
+            searchStatus={searchStatus}
             onSelectLibraryView={selectView}
             detailSelection={detailSelection}
             detailStatus={detailStatus}
@@ -712,6 +803,93 @@ function BrowserNavigation({
         <ChevronRight size={17} />
       </button>
     </div>
+  );
+}
+
+function SearchBox({
+  query,
+  setQuery,
+  status,
+  results,
+  hasConfig,
+  isFocused,
+  setFocused,
+  onSubmit,
+  onOpenAlbum,
+  onOpenArtist,
+  onPlaySong,
+}: {
+  query: string;
+  setQuery: (query: string) => void;
+  status: "idle" | "searching" | "error";
+  results: SearchResults;
+  hasConfig: boolean;
+  isFocused: boolean;
+  setFocused: (focused: boolean) => void;
+  onSubmit: () => void;
+  onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onPlaySong: (song: Song) => void;
+}) {
+  const trimmedQuery = query.trim();
+  const totalResults = results.artists.length + results.albums.length + results.songs.length;
+  const showSuggestions = isFocused && trimmedQuery.length >= 2 && (status !== "idle" || totalResults > 0);
+
+  return (
+    <form
+      className="global-search"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (trimmedQuery.length >= 2) onSubmit();
+      }}
+    >
+      <Search size={16} />
+      <input
+        type="search"
+        value={query}
+        placeholder="Search"
+        disabled={!hasConfig}
+        onChange={(event) => setQuery(event.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+      />
+      {status === "searching" ? <Loader2 size={14} className="spin search-spinner" /> : null}
+
+      {showSuggestions ? (
+        <div className="search-suggestions">
+          {status === "error" ? <p className="suggestion-note">Search unavailable</p> : null}
+          {status === "searching" && !totalResults ? <p className="suggestion-note">Searching</p> : null}
+          {results.artists.slice(0, 3).map((artist) => (
+            <button className="suggestion-row" type="button" key={`artist-${artist.id}`} onMouseDown={() => onOpenArtist(artist)}>
+              <UserRound size={15} />
+              <span>{artist.name}</span>
+              <small>Artist</small>
+            </button>
+          ))}
+          {results.albums.slice(0, 3).map((album) => (
+            <button className="suggestion-row" type="button" key={`album-${album.id}`} onMouseDown={() => onOpenAlbum(album)}>
+              <Disc3 size={15} />
+              <span>{album.name}</span>
+              <small>{album.artist || "Album"}</small>
+            </button>
+          ))}
+          {results.songs.slice(0, 4).map((song) => (
+            <button className="suggestion-row" type="button" key={`song-${song.id}`} onMouseDown={() => onPlaySong(song)}>
+              <Music2 size={15} />
+              <span>{song.title}</span>
+              <small>{song.artist ?? "Song"}</small>
+            </button>
+          ))}
+          {totalResults > 4 ? (
+            <button className="suggestion-row view-all" type="button" onMouseDown={onSubmit}>
+              <Search size={15} />
+              <span>View all results</span>
+              <small>{totalResults}</small>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </form>
   );
 }
 
@@ -867,6 +1045,9 @@ function LibraryView({
   libraryItems,
   albums,
   artists,
+  searchQuery,
+  searchResults,
+  searchStatus,
   onSelectLibraryView,
   detailSelection,
   detailStatus,
@@ -885,6 +1066,9 @@ function LibraryView({
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   artists: Artist[];
+  searchQuery: string;
+  searchResults: SearchResults;
+  searchStatus: "idle" | "searching" | "error";
   onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
@@ -898,11 +1082,11 @@ function LibraryView({
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
 }) {
-  if (activeView === "radio" || activeView === "search") {
+  if (activeView === "radio") {
     return (
       <section className="empty-view">
         <p className="eyebrow">{activeView}</p>
-        <h3>{activeView === "radio" ? "Radio comes after library sync." : "Search comes after indexing."}</h3>
+        <h3>Radio comes after library sync.</h3>
         <p>Navidrome connection and library browsing are the active lap.</p>
       </section>
     );
@@ -968,9 +1152,98 @@ function LibraryView({
           {activeView === "playlists" ? (
             <EmptyPanel icon={<ListMusic size={20} />} text="Playlists come next after album and artist browsing." />
           ) : null}
+          {activeView === "search" ? (
+            <SearchResultsView
+              query={searchQuery}
+              status={searchStatus}
+              results={searchResults}
+              config={config}
+              currentTrack={currentTrack}
+              onOpenAlbum={onOpenAlbum}
+              onOpenArtist={onOpenArtist}
+              onPlayAlbum={onPlayAlbum}
+              onPlayArtist={onPlayArtist}
+              onPlaySong={onPlaySong}
+              onQueueSong={onQueueSong}
+            />
+          ) : null}
         </>
       )}
     </section>
+  );
+}
+
+function SearchResultsView({
+  query,
+  status,
+  results,
+  config,
+  currentTrack,
+  onOpenAlbum,
+  onOpenArtist,
+  onPlayAlbum,
+  onPlayArtist,
+  onPlaySong,
+  onQueueSong,
+}: {
+  query: string;
+  status: "idle" | "searching" | "error";
+  results: SearchResults;
+  config: NavidromeConfig | null;
+  currentTrack: Song | null;
+  onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onPlayAlbum: (album: Album) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail) => void;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+}) {
+  const trimmedQuery = query.trim();
+  const totalResults = results.artists.length + results.albums.length + results.songs.length;
+
+  if (trimmedQuery.length < 2) {
+    return <EmptyPanel icon={<Search size={20} />} text="Start typing in the sidebar search." />;
+  }
+
+  if (status === "searching" && !totalResults) {
+    return <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Searching library." />;
+  }
+
+  if (status === "error") {
+    return <EmptyPanel icon={<AlertCircle size={20} />} text="Search failed." />;
+  }
+
+  if (!totalResults) {
+    return <EmptyPanel icon={<Search size={20} />} text="No matches found." />;
+  }
+
+  return (
+    <div className="search-results">
+      {results.artists.length ? (
+        <section>
+          <div className="section-label">
+            <h4>Artists</h4>
+          </div>
+          <ArtistList artists={results.artists} onOpenArtist={onOpenArtist} onPlayArtist={onPlayArtist} />
+        </section>
+      ) : null}
+      {results.albums.length ? (
+        <section>
+          <div className="section-label">
+            <h4>Albums</h4>
+          </div>
+          <AlbumGrid config={config} albums={results.albums} onOpenAlbum={onOpenAlbum} onPlayAlbum={onPlayAlbum} />
+        </section>
+      ) : null}
+      {results.songs.length ? (
+        <section>
+          <div className="section-label">
+            <h4>Songs</h4>
+          </div>
+          <TrackList songs={results.songs} currentTrack={currentTrack} onPlaySong={onPlaySong} onQueueSong={onQueueSong} />
+        </section>
+      ) : null}
+    </div>
   );
 }
 
