@@ -21,8 +21,8 @@ import {
   X,
 } from "lucide-react";
 
-type View = "library" | "radio" | "search" | "settings";
-type LibraryTab = "overview" | "albums" | "artists";
+type LibraryViewMode = "overview" | "albums" | "artists" | "playlists";
+type View = LibraryViewMode | "radio" | "search" | "settings";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 
 type NavidromeConfig = {
@@ -222,14 +222,14 @@ function formatDuration(seconds?: number) {
 }
 
 export function App() {
-  const [activeView, setActiveView] = useState<View>("library");
-  const [libraryTab, setLibraryTab] = useState<LibraryTab>("overview");
+  const [activeView, setActiveView] = useState<View>("overview");
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryData, setLibraryData] = useState<LibraryData>({ albums: [], artists: [] });
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
+  const [connectionPanelOpen, setConnectionPanelOpen] = useState(true);
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailMessage, setDetailMessage] = useState("");
@@ -292,7 +292,8 @@ export function App() {
 
     if (connected) {
       setSetupOpen(false);
-      setActiveView("library");
+      setConnectionPanelOpen(true);
+      setActiveView("overview");
     }
   }
 
@@ -301,7 +302,7 @@ export function App() {
 
     setDetailStatus("loading");
     setDetailMessage(`Loading ${album.name}...`);
-    setLibraryTab("albums");
+    setActiveView("albums");
 
     try {
       const albumDetail = await fetchAlbumDetail(config, album.id);
@@ -319,7 +320,7 @@ export function App() {
 
     setDetailStatus("loading");
     setDetailMessage(`Loading ${artist.name}...`);
-    setLibraryTab("artists");
+    setActiveView("artists");
 
     try {
       const artistDetail = await fetchArtistDetail(config, artist.id);
@@ -397,6 +398,12 @@ export function App() {
   }, []);
 
   const statusTone = status === "connected" ? "good" : status === "error" ? "bad" : "neutral";
+  const activeTitle =
+    activeView === "overview"
+      ? "Library"
+      : activeView === "settings"
+        ? "Settings"
+        : activeView.charAt(0).toUpperCase() + activeView.slice(1);
 
   return (
     <main className="app-shell">
@@ -411,12 +418,36 @@ export function App() {
 
         <nav className="nav-list">
           <button
-            className={`nav-item ${activeView === "library" ? "active" : ""}`}
+            className={`nav-item ${activeView === "overview" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("library")}
+            onClick={() => setActiveView("overview")}
           >
             <Library size={18} />
             Library
+          </button>
+          <button
+            className={`nav-item ${activeView === "albums" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("albums")}
+          >
+            <Disc3 size={18} />
+            Albums
+          </button>
+          <button
+            className={`nav-item ${activeView === "artists" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("artists")}
+          >
+            <UserRound size={18} />
+            Artists
+          </button>
+          <button
+            className={`nav-item ${activeView === "playlists" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActiveView("playlists")}
+          >
+            <ListMusic size={18} />
+            Playlists
           </button>
           <button
             className={`nav-item ${activeView === "radio" ? "active" : ""}`}
@@ -457,7 +488,7 @@ export function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">{hasConfig ? "Navidrome connected" : "First run setup"}</p>
-            <h2>{activeView === "settings" ? "Settings" : "Navidrome library"}</h2>
+            <h2>{activeTitle}</h2>
           </div>
           <button className="connect-button" type="button" onClick={() => setActiveView("settings")}>
             <Settings size={16} />
@@ -477,13 +508,14 @@ export function App() {
         ) : (
           <LibraryView
             activeView={activeView}
-            libraryTab={libraryTab}
-            setLibraryTab={setLibraryTab}
             libraryItems={libraryItems}
             albums={libraryData.albums}
             artists={libraryData.artists}
             status={status}
             statusMessage={statusMessage}
+            connectionPanelOpen={connectionPanelOpen}
+            onSetConnectionPanelOpen={setConnectionPanelOpen}
+            onSelectLibraryView={setActiveView}
             onOpenSettings={() => setActiveView("settings")}
             onRefresh={() => void refreshLibrary()}
             detailSelection={detailSelection}
@@ -692,13 +724,14 @@ function FirstRunWizard({
 
 function LibraryView({
   activeView,
-  libraryTab,
-  setLibraryTab,
   libraryItems,
   albums,
   artists,
   status,
   statusMessage,
+  connectionPanelOpen,
+  onSetConnectionPanelOpen,
+  onSelectLibraryView,
   onOpenSettings,
   onRefresh,
   detailSelection,
@@ -714,13 +747,14 @@ function LibraryView({
   onQueueSong,
 }: {
   activeView: View;
-  libraryTab: LibraryTab;
-  setLibraryTab: (tab: LibraryTab) => void;
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   artists: Artist[];
   status: ConnectionStatus;
   statusMessage: string;
+  connectionPanelOpen: boolean;
+  onSetConnectionPanelOpen: (open: boolean) => void;
+  onSelectLibraryView: (view: View) => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
   detailSelection: DetailSelection;
@@ -745,48 +779,96 @@ function LibraryView({
     );
   }
 
+  const panelTitle =
+    activeView === "overview"
+      ? "Library"
+      : activeView.charAt(0).toUpperCase() + activeView.slice(1);
+
   return (
     <>
-      <section className="hero-panel">
-        <div className="album-art" aria-hidden="true">
-          <div className="album-glow" />
-          <span>PR</span>
-        </div>
-        <div className="hero-copy">
-          <p className="eyebrow">Library spine</p>
-          <h3>{status === "connected" ? "Navidrome is live." : "Connect your server."}</h3>
-          <p>{statusMessage}</p>
-          <div className="hero-actions">
-            <button className="connect-button" type="button" onClick={onRefresh} disabled={status === "checking"}>
+      {connectionPanelOpen ? (
+        <section className="hero-panel">
+          <button
+            className="icon-button hero-dismiss"
+            type="button"
+            aria-label="Hide Navidrome connection panel"
+            onClick={() => onSetConnectionPanelOpen(false)}
+          >
+            <X size={18} />
+          </button>
+          <div className="album-art" aria-hidden="true">
+            <div className="album-glow" />
+            <span>PR</span>
+          </div>
+          <div className="hero-copy">
+            <p className="eyebrow">Library spine</p>
+            <h3>{status === "connected" ? "Navidrome is live." : "Connect your server."}</h3>
+            <p>{statusMessage}</p>
+            <div className="hero-actions">
+              <button className="connect-button" type="button" onClick={onRefresh} disabled={status === "checking"}>
+                {status === "checking" ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
+                Refresh
+              </button>
+              <button className="secondary-button" type="button" onClick={onOpenSettings}>
+                <Settings size={16} />
+                Settings
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section className="sync-strip" aria-label="Navidrome connection">
+          <div>
+            <ConnectionStatusBadge status={status} />
+            <span>{statusMessage}</span>
+          </div>
+          <div className="sync-actions">
+            <button className="secondary-button compact" type="button" onClick={onRefresh} disabled={status === "checking"}>
               {status === "checking" ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
               Refresh
             </button>
-            <button className="secondary-button" type="button" onClick={onOpenSettings}>
-              <Settings size={16} />
-              Settings
+            <button className="secondary-button compact" type="button" onClick={() => onSetConnectionPanelOpen(true)}>
+              Show
             </button>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <div className="content-grid">
         <section className="panel">
           <div className="panel-heading">
-            <h3>Library</h3>
-            <SegmentedTabs active={libraryTab} onChange={setLibraryTab} />
+            <h3>{panelTitle}</h3>
+            {activeView !== "overview" ? (
+              <button className="detail-back" type="button" onClick={() => onSelectLibraryView("overview")}>
+                <ChevronLeft size={16} />
+                Overview
+              </button>
+            ) : null}
           </div>
-          {libraryTab === "overview" ? (
+          {activeView === "overview" ? (
             <div className="list">
               {libraryItems.map((item) => (
-                <button className="list-row" type="button" key={item.label}>
+                <button
+                  className="list-row"
+                  type="button"
+                  key={item.label}
+                  onClick={() => {
+                    if (item.label === "Albums") onSelectLibraryView("albums");
+                    if (item.label === "Artists") onSelectLibraryView("artists");
+                    if (item.label === "Playlists") onSelectLibraryView("playlists");
+                  }}
+                >
                   <span>{item.label}</span>
                   <span>{item.value}</span>
                 </button>
               ))}
             </div>
           ) : null}
-          {libraryTab === "albums" ? <AlbumGrid albums={albums} onOpenAlbum={onOpenAlbum} /> : null}
-          {libraryTab === "artists" ? <ArtistList artists={artists} onOpenArtist={onOpenArtist} /> : null}
+          {activeView === "albums" ? <AlbumGrid albums={albums} onOpenAlbum={onOpenAlbum} /> : null}
+          {activeView === "artists" ? <ArtistList artists={artists} onOpenArtist={onOpenArtist} /> : null}
+          {activeView === "playlists" ? (
+            <EmptyPanel icon={<ListMusic size={20} />} text="Playlists come next after album and artist browsing." />
+          ) : null}
         </section>
 
         <DetailPanel
@@ -803,23 +885,6 @@ function LibraryView({
         />
       </div>
     </>
-  );
-}
-
-function SegmentedTabs({ active, onChange }: { active: LibraryTab; onChange: (tab: LibraryTab) => void }) {
-  return (
-    <div className="segmented-control" aria-label="Library view">
-      {(["overview", "albums", "artists"] as LibraryTab[]).map((tab) => (
-        <button
-          key={tab}
-          className={active === tab ? "active" : ""}
-          type="button"
-          onClick={() => onChange(tab)}
-        >
-          {tab}
-        </button>
-      ))}
-    </div>
   );
 }
 

@@ -65,7 +65,7 @@ input::placeholder {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 34px;
+  gap: 28px;
   padding: 28px 18px;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(12, 12, 12, 0.56);
@@ -223,6 +223,7 @@ h1 {
 }
 
 .hero-panel {
+  position: relative;
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
   gap: 26px;
@@ -233,6 +234,48 @@ h1 {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.26);
+}
+
+.hero-dismiss {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: rgba(244, 241, 236, 0.62);
+}
+
+.sync-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.34);
+}
+
+.sync-strip > div:first-child,
+.sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sync-strip span:last-child {
+  overflow: hidden;
+  color: rgba(244, 241, 236, 0.64);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary-button.compact {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
 }
 
 .album-art {
@@ -569,30 +612,6 @@ h1 {
 
 .status-badge.error {
   color: #ffad9f;
-}
-
-.segmented-control {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.segmented-control button {
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(244, 241, 236, 0.58);
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: capitalize;
-}
-
-.segmented-control button.active {
-  background: rgba(240, 210, 123, 0.18);
-  color: #f5d982;
 }
 
 .album-grid {
