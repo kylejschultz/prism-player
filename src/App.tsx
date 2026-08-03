@@ -363,6 +363,32 @@ export function App() {
     }
   }
 
+  async function playAlbum(album: Album) {
+    if (!config) return;
+
+    try {
+      const albumDetail = await fetchAlbumDetail(config, album.id);
+      replaceQueue(albumDetail.song ?? []);
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function playArtist(artist: Artist | ArtistDetail) {
+    if (!config) return;
+
+    try {
+      const artistDetail = "album" in artist ? artist : await fetchArtistDetail(config, artist.id);
+      const albums = artistDetail.album ?? [];
+      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => fetchAlbumDetail(config, album.id)));
+      replaceQueue(albumDetails.flatMap((album) => album.song ?? []));
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailMessage(getErrorMessage(error));
+    }
+  }
+
   function clearDetail() {
     setDetailSelection(null);
     setDetailStatus("idle");
@@ -593,6 +619,8 @@ export function App() {
             currentTrack={currentTrack}
             onOpenAlbum={(album) => void openAlbum(album)}
             onOpenArtist={(artist) => void openArtist(artist)}
+            onPlayAlbum={(album) => void playAlbum(album)}
+            onPlayArtist={(artist) => void playArtist(artist)}
             onReplaceQueue={replaceQueue}
             onPlaySong={playSong}
             onQueueSong={appendToQueue}
@@ -846,6 +874,8 @@ function LibraryView({
   currentTrack,
   onOpenAlbum,
   onOpenArtist,
+  onPlayAlbum,
+  onPlayArtist,
   onReplaceQueue,
   onPlaySong,
   onQueueSong,
@@ -862,6 +892,8 @@ function LibraryView({
   currentTrack: Song | null;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
+  onPlayAlbum: (album: Album) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail) => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
@@ -891,6 +923,8 @@ function LibraryView({
           detailMessage={detailMessage}
           currentTrack={currentTrack}
           onOpenAlbum={onOpenAlbum}
+          onPlayAlbum={onPlayAlbum}
+          onPlayArtist={onPlayArtist}
           onReplaceQueue={onReplaceQueue}
           onPlaySong={onPlaySong}
           onQueueSong={onQueueSong}
@@ -925,8 +959,12 @@ function LibraryView({
               ))}
             </div>
           ) : null}
-          {activeView === "albums" ? <AlbumGrid config={config} albums={albums} onOpenAlbum={onOpenAlbum} /> : null}
-          {activeView === "artists" ? <ArtistList artists={artists} onOpenArtist={onOpenArtist} /> : null}
+          {activeView === "albums" ? (
+            <AlbumGrid config={config} albums={albums} onOpenAlbum={onOpenAlbum} onPlayAlbum={onPlayAlbum} />
+          ) : null}
+          {activeView === "artists" ? (
+            <ArtistList artists={artists} onOpenArtist={onOpenArtist} onPlayArtist={onPlayArtist} />
+          ) : null}
           {activeView === "playlists" ? (
             <EmptyPanel icon={<ListMusic size={20} />} text="Playlists come next after album and artist browsing." />
           ) : null}
@@ -940,10 +978,12 @@ function AlbumGrid({
   config,
   albums,
   onOpenAlbum,
+  onPlayAlbum,
 }: {
   config: NavidromeConfig | null;
   albums: Album[];
   onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
 }) {
   if (!albums.length) {
     return <EmptyPanel icon={<Disc3 size={20} />} text="Albums load after a successful Navidrome sync." />;
@@ -955,13 +995,40 @@ function AlbumGrid({
         const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "360") : null;
 
         return (
-          <button className="album-tile" type="button" key={album.id} onClick={() => onOpenAlbum(album)}>
-            <CoverArt src={coverUrl} label={album.name} className="album-cover" />
-            <span>{album.name}</span>
+          <div className="album-tile" key={album.id}>
+            <PlayableCover src={coverUrl} label={album.name} className="album-cover" onPlay={() => onPlayAlbum(album)} />
+            <button className="album-title-button" type="button" onClick={() => onOpenAlbum(album)}>
+              {album.name}
+            </button>
             <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
-          </button>
+          </div>
         );
       })}
+    </div>
+  );
+}
+
+function PlayableCover({
+  src,
+  label,
+  className,
+  rounded = false,
+  disabled = false,
+  onPlay,
+}: {
+  src: string | null;
+  label: string;
+  className: string;
+  rounded?: boolean;
+  disabled?: boolean;
+  onPlay: () => void;
+}) {
+  return (
+    <div className={`playable-cover ${rounded ? "round" : ""}`}>
+      <CoverArt src={src} label={label} className={className} />
+      <button className="cover-play-button" type="button" onClick={onPlay} disabled={disabled} aria-label={`Play ${label}`}>
+        <Play size={18} fill="currentColor" />
+      </button>
     </div>
   );
 }
@@ -978,7 +1045,15 @@ function CoverArt({ src, label, className }: { src: string | null; label: string
   return <img className={className} src={src} alt={`${label} cover`} loading="lazy" />;
 }
 
-function ArtistList({ artists, onOpenArtist }: { artists: Artist[]; onOpenArtist: (artist: Artist) => void }) {
+function ArtistList({
+  artists,
+  onOpenArtist,
+  onPlayArtist,
+}: {
+  artists: Artist[];
+  onOpenArtist: (artist: Artist) => void;
+  onPlayArtist: (artist: Artist) => void;
+}) {
   if (!artists.length) {
     return <EmptyPanel icon={<UserRound size={20} />} text="Artists load after a successful Navidrome sync." />;
   }
@@ -986,11 +1061,16 @@ function ArtistList({ artists, onOpenArtist }: { artists: Artist[]; onOpenArtist
   return (
     <div className="artist-list">
       {artists.slice(0, 18).map((artist) => (
-        <button className="artist-row" type="button" key={artist.id} onClick={() => onOpenArtist(artist)}>
-          <UserRound size={18} />
-          <span>{artist.name}</span>
-          <small>{artist.albumCount ?? 0} albums</small>
-        </button>
+        <div className="artist-row" key={artist.id}>
+          <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
+            <UserRound size={18} />
+            <span>{artist.name}</span>
+            <small>{artist.albumCount ?? 0} albums</small>
+          </button>
+          <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
+            <Play size={14} fill="currentColor" />
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -1003,6 +1083,8 @@ function DetailPanel({
   detailMessage,
   currentTrack,
   onOpenAlbum,
+  onPlayAlbum,
+  onPlayArtist,
   onReplaceQueue,
   onPlaySong,
   onQueueSong,
@@ -1013,6 +1095,8 @@ function DetailPanel({
   detailMessage: string;
   currentTrack: Song | null;
   onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
+  onPlayArtist: (artist: ArtistDetail) => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
@@ -1049,7 +1133,7 @@ function DetailPanel({
           <span>{artist.album?.length ?? 0} albums</span>
         </div>
         <div className="artist-hero">
-          <CoverArt src={firstCover} label={artist.name} className="artist-cover" />
+          <PlayableCover src={firstCover} label={artist.name} className="artist-cover" rounded onPlay={() => onPlayArtist(artist)} />
           <div>
             <p className="eyebrow">Artist</p>
             <h3>{artist.name}</h3>
@@ -1067,11 +1151,13 @@ function DetailPanel({
             const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "320") : null;
 
             return (
-              <button className="album-tile" type="button" key={album.id} onClick={() => onOpenAlbum(album)}>
-                <CoverArt src={coverUrl} label={album.name} className="album-cover" />
-                <span>{album.name}</span>
+              <div className="album-tile" key={album.id}>
+                <PlayableCover src={coverUrl} label={album.name} className="album-cover" onPlay={() => onPlayAlbum(album)} />
+                <button className="album-title-button" type="button" onClick={() => onOpenAlbum(album)}>
+                  {album.name}
+                </button>
                 <small>{album.year ?? `${album.songCount ?? 0} tracks`}</small>
-              </button>
+              </div>
             );
           })}
           {!artistAlbums.length ? <EmptyPanel icon={<Disc3 size={20} />} text="No albums returned for this artist." /> : null}
@@ -1091,7 +1177,7 @@ function DetailPanel({
         <span>{songs.length} tracks</span>
       </div>
       <div className="album-hero">
-        <CoverArt src={albumCover} label={album.name} className="detail-cover" />
+        <PlayableCover src={albumCover} label={album.name} className="detail-cover" disabled={!songs.length} onPlay={() => onReplaceQueue(songs)} />
         <div>
           <div className="detail-title">
             <p className="eyebrow">{album.artist}</p>

@@ -119,10 +119,11 @@ h1 {
 .connect-button,
 .secondary-button,
 .list-row,
-.album-tile,
 .album-row,
-.artist-row,
+.album-title-button,
+.artist-main,
 .icon-button,
+.cover-play-button,
 .track-play,
 .track-queue,
 .transport button {
@@ -389,6 +390,46 @@ h1 {
   border-radius: 999px;
 }
 
+.playable-cover {
+  position: relative;
+  min-width: 0;
+}
+
+.playable-cover.round,
+.playable-cover.round .cover-fallback,
+.playable-cover.round .cover-play-button {
+  border-radius: 999px;
+}
+
+.cover-play-button {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #f0d27b;
+  color: #18140d;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.playable-cover:hover .cover-play-button,
+.cover-play-button:focus-visible,
+.album-tile:focus-within .cover-play-button,
+.artist-hero:focus-within .cover-play-button,
+.album-hero:focus-within .cover-play-button {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cover-play-button:disabled {
+  opacity: 0.42;
+}
+
 .cover-fallback {
   display: grid;
   place-items: center;
@@ -617,16 +658,27 @@ h1 {
 }
 
 .album-tile:hover .album-cover,
-.artist-row:hover {
+.artist-row:hover,
+.artist-row:focus-within {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.album-tile span,
-.artist-row span {
+.album-title-button,
+.artist-main span {
   overflow: hidden;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
   font-weight: 800;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.album-title-button:hover,
+.artist-main:hover span {
+  color: #fff;
 }
 
 .album-tile small,
@@ -646,13 +698,24 @@ h1 {
 
 .artist-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 26px;
   align-items: center;
   gap: 8px;
   min-height: 42px;
   padding: 0 10px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.artist-main {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
   text-align: left;
 }
 
