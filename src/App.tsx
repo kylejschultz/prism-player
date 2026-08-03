@@ -72,6 +72,20 @@ function normalizeServerUrl(value: string) {
   return value.trim().replace(/\/+$/, "");
 }
 
+function hasUrlScheme(value: string) {
+  return /^[a-z][a-z\d+.-]*:\/\//i.test(value);
+}
+
+function getServerUrlCandidates(value: string) {
+  const normalized = normalizeServerUrl(value);
+
+  if (!normalized || hasUrlScheme(normalized)) {
+    return normalized ? [normalized] : [];
+  }
+
+  return [`https://${normalized}`, `http://${normalized}`];
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
@@ -125,6 +139,28 @@ async function navidromeRequest<T>(
   }
 }
 
+async function resolveNavidromeConfig(config: NavidromeConfig) {
+  const candidates = getServerUrlCandidates(config.serverUrl);
+  let lastError: unknown = null;
+
+  for (const serverUrl of candidates) {
+    const nextConfig = { ...config, serverUrl };
+
+    try {
+      await navidromeRequest(nextConfig, "ping");
+      return nextConfig;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (candidates.length > 1) {
+    throw new Error(`Could not reach Navidrome over HTTPS or HTTP. ${getErrorMessage(lastError)}`);
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Could not reach Navidrome.");
+}
+
 async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
   const [albumResponse, artistResponse] = await Promise.all([
     navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
@@ -164,20 +200,25 @@ export function App() {
   );
 
   async function refreshLibrary(nextConfig = config) {
-    if (!nextConfig) return;
+    if (!nextConfig) return false;
 
     setStatus("checking");
     setStatusMessage("Checking Navidrome and loading library...");
 
     try {
-      await navidromeRequest(nextConfig, "ping");
-      const nextLibrary = await fetchLibrary(nextConfig);
+      const resolvedConfig = await resolveNavidromeConfig(nextConfig);
+      const nextLibrary = await fetchLibrary(resolvedConfig);
       setLibraryData(nextLibrary);
+      setConfig(resolvedConfig);
+      setForm(resolvedConfig);
       setStatus("connected");
-      setStatusMessage(`Connected to ${normalizeServerUrl(nextConfig.serverUrl)}.`);
+      setStatusMessage(`Connected to ${resolvedConfig.serverUrl}.`);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(resolvedConfig));
+      return true;
     } catch (error) {
       setStatus("error");
       setStatusMessage(getErrorMessage(error));
+      return false;
     }
   }
 
@@ -196,11 +237,12 @@ export function App() {
       return;
     }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextConfig));
-    setConfig(nextConfig);
-    setSetupOpen(false);
-    setActiveView("library");
-    await refreshLibrary(nextConfig);
+    const connected = await refreshLibrary(nextConfig);
+
+    if (connected) {
+      setSetupOpen(false);
+      setActiveView("library");
+    }
   }
 
   function resetConnection() {
