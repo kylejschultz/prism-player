@@ -229,7 +229,6 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryData, setLibraryData] = useState<LibraryData>({ albums: [], artists: [] });
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
-  const [connectionPanelOpen, setConnectionPanelOpen] = useState(true);
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailMessage, setDetailMessage] = useState("");
@@ -292,7 +291,6 @@ export function App() {
 
     if (connected) {
       setSetupOpen(false);
-      setConnectionPanelOpen(true);
       setActiveView("overview");
     }
   }
@@ -337,6 +335,14 @@ export function App() {
     setDetailSelection(null);
     setDetailStatus("idle");
     setDetailMessage("");
+  }
+
+  function selectView(view: View) {
+    if (view === "overview" || view === "albums" || view === "artists" || view === "playlists") {
+      clearDetail();
+    }
+
+    setActiveView(view);
   }
 
   function replaceQueue(songs: Song[], startIndex = 0) {
@@ -420,7 +426,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "overview" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("overview")}
+            onClick={() => selectView("overview")}
           >
             <Library size={18} />
             Library
@@ -428,7 +434,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "albums" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("albums")}
+            onClick={() => selectView("albums")}
           >
             <Disc3 size={18} />
             Albums
@@ -436,7 +442,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "artists" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("artists")}
+            onClick={() => selectView("artists")}
           >
             <UserRound size={18} />
             Artists
@@ -444,7 +450,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "playlists" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("playlists")}
+            onClick={() => selectView("playlists")}
           >
             <ListMusic size={18} />
             Playlists
@@ -452,7 +458,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "radio" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("radio")}
+            onClick={() => selectView("radio")}
           >
             <Radio size={18} />
             Radio
@@ -460,7 +466,7 @@ export function App() {
           <button
             className={`nav-item ${activeView === "search" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("search")}
+            onClick={() => selectView("search")}
           >
             <Search size={18} />
             Search
@@ -511,17 +517,10 @@ export function App() {
             libraryItems={libraryItems}
             albums={libraryData.albums}
             artists={libraryData.artists}
-            status={status}
-            statusMessage={statusMessage}
-            connectionPanelOpen={connectionPanelOpen}
-            onSetConnectionPanelOpen={setConnectionPanelOpen}
-            onSelectLibraryView={setActiveView}
-            onOpenSettings={() => setActiveView("settings")}
-            onRefresh={() => void refreshLibrary()}
+            onSelectLibraryView={selectView}
             detailSelection={detailSelection}
             detailStatus={detailStatus}
             detailMessage={detailMessage}
-            queue={queue}
             currentTrack={currentTrack}
             onOpenAlbum={(album) => void openAlbum(album)}
             onOpenArtist={(artist) => void openArtist(artist)}
@@ -727,17 +726,10 @@ function LibraryView({
   libraryItems,
   albums,
   artists,
-  status,
-  statusMessage,
-  connectionPanelOpen,
-  onSetConnectionPanelOpen,
   onSelectLibraryView,
-  onOpenSettings,
-  onRefresh,
   detailSelection,
   detailStatus,
   detailMessage,
-  queue,
   currentTrack,
   onOpenAlbum,
   onOpenArtist,
@@ -750,17 +742,10 @@ function LibraryView({
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   artists: Artist[];
-  status: ConnectionStatus;
-  statusMessage: string;
-  connectionPanelOpen: boolean;
-  onSetConnectionPanelOpen: (open: boolean) => void;
   onSelectLibraryView: (view: View) => void;
-  onOpenSettings: () => void;
-  onRefresh: () => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
-  queue: Song[];
   currentTrack: Song | null;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
@@ -785,58 +770,22 @@ function LibraryView({
       : activeView.charAt(0).toUpperCase() + activeView.slice(1);
 
   return (
-    <>
-      {connectionPanelOpen ? (
-        <section className="hero-panel">
-          <button
-            className="icon-button hero-dismiss"
-            type="button"
-            aria-label="Hide Navidrome connection panel"
-            onClick={() => onSetConnectionPanelOpen(false)}
-          >
-            <X size={18} />
-          </button>
-          <div className="album-art" aria-hidden="true">
-            <div className="album-glow" />
-            <span>PR</span>
-          </div>
-          <div className="hero-copy">
-            <p className="eyebrow">Library spine</p>
-            <h3>{status === "connected" ? "Navidrome is live." : "Connect your server."}</h3>
-            <p>{statusMessage}</p>
-            <div className="hero-actions">
-              <button className="connect-button" type="button" onClick={onRefresh} disabled={status === "checking"}>
-                {status === "checking" ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
-                Refresh
-              </button>
-              <button className="secondary-button" type="button" onClick={onOpenSettings}>
-                <Settings size={16} />
-                Settings
-              </button>
-            </div>
-          </div>
-        </section>
+    <section className="browser-panel">
+      {detailStatus !== "idle" || detailSelection ? (
+        <DetailPanel
+          detailSelection={detailSelection}
+          detailStatus={detailStatus}
+          detailMessage={detailMessage}
+          currentTrack={currentTrack}
+          onClearDetail={onClearDetail}
+          onOpenAlbum={onOpenAlbum}
+          onReplaceQueue={onReplaceQueue}
+          onPlaySong={onPlaySong}
+          onQueueSong={onQueueSong}
+        />
       ) : (
-        <section className="sync-strip" aria-label="Navidrome connection">
-          <div>
-            <ConnectionStatusBadge status={status} />
-            <span>{statusMessage}</span>
-          </div>
-          <div className="sync-actions">
-            <button className="secondary-button compact" type="button" onClick={onRefresh} disabled={status === "checking"}>
-              {status === "checking" ? <Loader2 size={16} className="spin" /> : <CheckCircle2 size={16} />}
-              Refresh
-            </button>
-            <button className="secondary-button compact" type="button" onClick={() => onSetConnectionPanelOpen(true)}>
-              Show
-            </button>
-          </div>
-        </section>
-      )}
-
-      <div className="content-grid">
-        <section className="panel">
-          <div className="panel-heading">
+        <>
+          <div className="panel-heading browser-heading">
             <h3>{panelTitle}</h3>
             {activeView !== "overview" ? (
               <button className="detail-back" type="button" onClick={() => onSelectLibraryView("overview")}>
@@ -869,22 +818,9 @@ function LibraryView({
           {activeView === "playlists" ? (
             <EmptyPanel icon={<ListMusic size={20} />} text="Playlists come next after album and artist browsing." />
           ) : null}
-        </section>
-
-        <DetailPanel
-          detailSelection={detailSelection}
-          detailStatus={detailStatus}
-          detailMessage={detailMessage}
-          queue={queue}
-          currentTrack={currentTrack}
-          onClearDetail={onClearDetail}
-          onOpenAlbum={onOpenAlbum}
-          onReplaceQueue={onReplaceQueue}
-          onPlaySong={onPlaySong}
-          onQueueSong={onQueueSong}
-        />
-      </div>
-    </>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -930,7 +866,6 @@ function DetailPanel({
   detailSelection,
   detailStatus,
   detailMessage,
-  queue,
   currentTrack,
   onClearDetail,
   onOpenAlbum,
@@ -941,7 +876,6 @@ function DetailPanel({
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
-  queue: Song[];
   currentTrack: Song | null;
   onClearDetail: () => void;
   onOpenAlbum: (album: Album) => void;
@@ -951,7 +885,7 @@ function DetailPanel({
 }) {
   if (detailStatus === "loading" || detailStatus === "error") {
     return (
-      <section className={`panel detail-panel ${detailStatus === "error" ? "bad" : ""}`}>
+      <section className={`detail-panel ${detailStatus === "error" ? "bad" : ""}`}>
         <div className="panel-heading">
           <h3>{detailStatus === "loading" ? "Loading" : "Could not load"}</h3>
           {detailStatus === "loading" ? <Loader2 size={16} className="spin" /> : <AlertCircle size={16} />}
@@ -963,23 +897,13 @@ function DetailPanel({
     );
   }
 
-  if (!detailSelection) {
-    return (
-      <section className="panel detail-panel">
-        <div className="panel-heading">
-          <h3>Now queued</h3>
-          <span>{queue.length ? `${queue.length} tracks` : "Empty"}</span>
-        </div>
-        <QueueList queue={queue} currentTrack={currentTrack} onPlaySong={onPlaySong} />
-      </section>
-    );
-  }
+  if (!detailSelection) return null;
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
 
     return (
-      <section className="panel detail-panel">
+      <section className="detail-panel">
         <div className="panel-heading">
           <button className="detail-back" type="button" onClick={onClearDetail}>
             <ChevronLeft size={16} />
@@ -1009,7 +933,7 @@ function DetailPanel({
   const songs = album.song ?? [];
 
   return (
-    <section className="panel detail-panel">
+    <section className="detail-panel">
       <div className="panel-heading">
         <button className="detail-back" type="button" onClick={onClearDetail}>
           <ChevronLeft size={16} />
@@ -1065,44 +989,6 @@ function TrackList({
             <Plus size={14} />
           </button>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function QueueList({
-  queue,
-  currentTrack,
-  onPlaySong,
-}: {
-  queue: Song[];
-  currentTrack: Song | null;
-  onPlaySong: (song: Song) => void;
-}) {
-  if (!queue.length) {
-    return (
-      <div className="detail-empty">
-        <ListMusic size={22} />
-        <p>Select an album track to start building the queue.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="queue-list">
-      {queue.slice(0, 10).map((song, index) => (
-        <button
-          className={`queue-row ${currentTrack?.id === song.id ? "active" : ""}`}
-          type="button"
-          key={`${song.id}-${index}`}
-          onClick={() => onPlaySong(song)}
-        >
-          <span>{index + 1}</span>
-          <div>
-            <strong>{song.title}</strong>
-            <small>{song.artist ?? "Unknown artist"}</small>
-          </div>
-        </button>
       ))}
     </div>
   );
