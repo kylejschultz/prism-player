@@ -28,6 +28,7 @@
     "active": true,
     "targets": ["dmg"],
     "macOS": {
+      "signingIdentity": "-",
       "minimumSystemVersion": "13.0"
     }
   }
