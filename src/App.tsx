@@ -566,15 +566,8 @@ export function App() {
               onNavigateBack={navigateBack}
               onNavigateForward={navigateForward}
             />
-            <div>
-              <p className="eyebrow">{hasConfig ? "Navidrome connected" : "First run setup"}</p>
-              <h2>{activeTitle}</h2>
-            </div>
+            <h2>{activeTitle}</h2>
           </div>
-          <button className="connect-button" type="button" onClick={() => setActiveView("settings")}>
-            <Settings size={16} />
-            Server Settings
-          </button>
         </header>
 
         {activeView === "settings" ? (

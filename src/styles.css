@@ -174,29 +174,29 @@ h1 {
 
 .workspace {
   min-width: 0;
-  padding: 28px;
+  padding: 22px 28px 28px;
   overflow: hidden;
 }
 
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 24px;
+  min-height: 34px;
+  margin-bottom: 14px;
 }
 
 .topbar-title {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 
 .topbar h2 {
-  margin-top: 4px;
-  font-size: 28px;
-  line-height: 1.1;
+  color: rgba(244, 241, 236, 0.84);
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .browser-nav {
@@ -238,8 +238,8 @@ h1 {
 }
 
 .browser-panel {
-  min-height: calc(100vh - 198px);
-  max-height: calc(100vh - 198px);
+  min-height: calc(100vh - 156px);
+  max-height: calc(100vh - 156px);
   padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
