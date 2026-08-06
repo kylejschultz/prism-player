@@ -243,9 +243,12 @@ type RadioStationState = {
 
 type RadioStationLocale = "en-GB" | "en-US";
 
+type RadioSchedulePersona = { id?: string; name?: string; tagline?: string };
+type RadioScheduleShow = { id?: string; name?: string; topic?: string; mood?: string; personaId?: string; guestPersonaIds?: string[] };
+
 type RadioSchedulePayload = {
-  personas?: Array<{ id?: string; name?: string; tagline?: string }>;
-  shows?: Array<{ id?: string; name?: string; topic?: string; mood?: string; personaId?: string; guestPersonaIds?: string[] }>;
+  personas?: RadioSchedulePersona[];
+  shows?: RadioScheduleShow[];
   schedule?: Record<string, Array<string | null>>;
   timezone?: string | null;
   locale?: RadioStationLocale;
@@ -790,7 +793,8 @@ function radioShowTiming(schedule: RadioSchedulePayload | null, nowMs: number) {
   const shows = schedule.shows ?? [];
   const currentShow = currentShowId ? shows.find((show) => show.id === currentShowId) ?? null : null;
   const locale = schedule.locale ?? "en-US";
-  let nextShowLabel = "No later show";
+  let nextShow: RadioScheduleShow | null = null;
+  let nextShowHour: number | null = null;
 
   for (let offset = 1; offset <= 24 * 7; offset += 1) {
     const nextHourAbsolute = hour + offset;
@@ -799,8 +803,8 @@ function radioShowTiming(schedule: RadioSchedulePayload | null, nowMs: number) {
     const nextGrid = radioScheduleDay(schedule, nextDay);
     const nextShowId = Array.isArray(nextGrid) ? nextGrid[nextHour] ?? null : null;
     if (nextShowId !== currentShowId) {
-      const nextShow = nextShowId ? shows.find((show) => show.id === nextShowId) ?? null : null;
-      nextShowLabel = `${nextShow?.name ?? "Autonomous"} at ${formatStationHour(nextHour, locale)}`;
+      nextShow = nextShowId ? shows.find((show) => show.id === nextShowId) ?? null : null;
+      nextShowHour = nextHour;
       break;
     }
   }
@@ -808,7 +812,8 @@ function radioShowTiming(schedule: RadioSchedulePayload | null, nowMs: number) {
   return {
     currentShow,
     until: `Until ${formatStationHour(endHour + 1, locale)}`,
-    next: nextShowLabel,
+    nextShow,
+    nextShowAt: nextShowHour == null ? null : formatStationHour(nextShowHour, locale),
   };
 }
 
@@ -4244,8 +4249,12 @@ function RadioView({
   const personaId = showTiming?.currentShow?.personaId;
   const scheduleDjName = personaId ? schedule?.personas?.find((persona) => persona.id === personaId)?.name : null;
   const djName = stationState?.activeShow?.persona?.name ?? stationState?.dj?.name ?? scheduleDjName;
-  const showTopic = showTiming?.currentShow?.topic;
-  const showMood = showTiming?.currentShow?.mood;
+  const nextPersonaId = showTiming?.nextShow?.personaId;
+  const nextDjName = nextPersonaId ? schedule?.personas?.find((persona) => persona.id === nextPersonaId)?.name : null;
+  const boothLine = `${showName ?? "Autonomous"}${djName ? ` with ${djName}` : ""}`;
+  const nextShowLine = showTiming?.nextShowAt
+    ? `${showTiming.nextShow?.name ?? "Autonomous"}${nextDjName ? ` with ${nextDjName}` : ""}`
+    : "No later show";
   const coverUrl =
     nowPlaying?.coverUrl ||
     (config && nowPlaying?.coverArt ? buildCoverArtUrl(config, nowPlaying.coverArt, "720") : null) ||
@@ -4253,7 +4262,6 @@ function RadioView({
   const radioDuration = nowPlaying?.duration ?? 0;
   const progressPercent = radioDuration > 0 ? `${Math.min(100, (elapsed / radioDuration) * 100)}%` : "100%";
   const isPlaying = status === "playing";
-  const stationStatus = stationState?.status ?? stationState?.state ?? status;
 
   return (
     <section className="radio-view">
@@ -4277,33 +4285,15 @@ function RadioView({
 
           <div className="radio-broadcast-details" aria-label="Station details">
             <div>
-              <span>Status</span>
-              <strong>{status === "playing" ? "On air" : status === "checking" ? "Connecting" : stationStatus}</strong>
+              <span>In the Booth</span>
+              <strong>{boothLine}</strong>
+              <small>{showTiming?.until ?? "Schedule unavailable"}</small>
             </div>
             <div>
-              <span>Show</span>
-              <strong>{showName ?? "Autonomous"}</strong>
+              <span>Up Next</span>
+              <strong>{nextShowLine}</strong>
+              {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
             </div>
-            <div>
-              <span>DJ</span>
-              <strong>{djName ?? "Subwave"}</strong>
-            </div>
-            <div>
-              <span>Ends</span>
-              <strong>{showTiming?.until ?? "Schedule unavailable"}</strong>
-            </div>
-            {showTiming?.next ? (
-              <div>
-                <span>Next</span>
-                <strong>{showTiming.next}</strong>
-              </div>
-            ) : null}
-            {showTopic || showMood ? (
-              <div>
-                <span>Vibe</span>
-                <strong>{[showTopic, showMood].filter(Boolean).join(" / ")}</strong>
-              </div>
-            ) : null}
           </div>
 
           {savedStations.length > 1 ? (
