@@ -2067,6 +2067,7 @@ button.similar-chip:hover,
   align-content: start;
   gap: 16px;
   max-height: calc(100vh - 166px);
+  min-height: calc(100vh - 190px);
   padding: 0 2px 24px;
   overflow-y: auto;
 }
@@ -2076,7 +2077,7 @@ button.similar-chip:hover,
   display: grid;
   grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
   gap: 22px;
-  min-height: 360px;
+  min-height: min(620px, calc(100vh - 206px));
   padding: 18px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -2145,6 +2146,7 @@ button.similar-chip:hover,
   flex-direction: column;
   justify-content: center;
   min-width: 0;
+  max-width: 820px;
 }
 
 .radio-copy h3 {
@@ -2167,23 +2169,6 @@ button.similar-chip:hover,
   margin-top: 5px;
   color: rgba(244, 241, 236, 0.62);
   font-size: 13px;
-}
-
-.radio-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 18px;
-}
-
-.radio-tags span {
-  min-height: 24px;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(244, 241, 236, 0.72);
-  font-size: 11px;
-  font-weight: 500;
 }
 
 .radio-progress {
@@ -2236,97 +2221,42 @@ button.similar-chip:hover,
   color: rgba(244, 241, 236, 0.82);
 }
 
-.radio-tuner-panel,
-.radio-panel {
+.radio-broadcast-details {
   display: grid;
-  gap: 14px;
-  padding: 16px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 22px;
 }
 
-.radio-station-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 10px;
-  align-items: center;
-}
-
-.radio-side-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
-  gap: 18px;
-}
-
-.radio-track-list {
-  display: grid;
-  gap: 4px;
-}
-
-.radio-track-row {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 9px;
+.radio-broadcast-details div {
+  min-width: 0;
+  min-height: 58px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
+  background: rgba(8, 8, 8, 0.24);
 }
 
-.radio-track-row > span,
-.radio-track-row em {
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 11px;
-  font-style: normal;
-}
-
-.radio-track-row strong,
-.radio-track-row small {
+.radio-broadcast-details span,
+.radio-broadcast-details strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.radio-track-row strong {
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.radio-track-row small {
-  margin-top: 3px;
-  color: rgba(244, 241, 236, 0.5);
+.radio-broadcast-details span {
+  color: rgba(244, 241, 236, 0.48);
   font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
-.radio-stats {
-  display: grid;
-  gap: 8px;
-}
-
-.radio-stats div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 34px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.radio-stats span {
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 11px;
-}
-
-.radio-stats strong {
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(244, 241, 236, 0.76);
+.radio-broadcast-details strong {
+  margin-top: 6px;
+  color: rgba(244, 241, 236, 0.82);
   font-size: 12px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 550;
 }
 
 .search-results {
@@ -3601,6 +3531,17 @@ button.similar-chip:hover,
     font-size: 11px;
   }
 
+  .radio-hero {
+    grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
+  }
+
+  .radio-copy h3 {
+    font-size: 34px;
+  }
+
+  .radio-broadcast-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 940px) {
@@ -3661,6 +3602,19 @@ button.similar-chip:hover,
   .player-bar {
     grid-template-columns: minmax(180px, 0.68fr) minmax(320px, 1.22fr) minmax(184px, 0.62fr);
     gap: 10px;
+  }
+
+  .radio-hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .radio-cover-card {
+    width: min(260px, 56vw);
+  }
+
+  .radio-copy {
+    justify-content: start;
   }
 
   .player-actions {

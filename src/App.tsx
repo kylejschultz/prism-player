@@ -227,7 +227,7 @@ type RadioStationState = {
   queue?: RadioTrack[] | { upcoming?: RadioTrack[]; current?: RadioTrack };
   history?: RadioTrack[];
   listeners?: number | { count?: number; current?: number; total?: number };
-  activeShow?: { name?: string };
+  activeShow?: { name?: string; persona?: { name?: string } };
   dj?: { name?: string };
   context?: {
     stationName?: string;
@@ -239,6 +239,16 @@ type RadioStationState = {
   nowPlayingKnown?: boolean;
   status?: string;
   state?: string;
+};
+
+type RadioStationLocale = "en-GB" | "en-US";
+
+type RadioSchedulePayload = {
+  personas?: Array<{ id?: string; name?: string; tagline?: string }>;
+  shows?: Array<{ id?: string; name?: string; topic?: string; mood?: string; personaId?: string; guestPersonaIds?: string[] }>;
+  schedule?: Record<string, Array<string | null>>;
+  timezone?: string | null;
+  locale?: RadioStationLocale;
 };
 
 type RadioNowPlayingResponse = {
@@ -729,6 +739,79 @@ function radioTrackElapsedSeconds(track: RadioTrack | null, state: RadioStationS
   return Math.max(0, duration > 0 ? Math.min(elapsed, duration) : elapsed);
 }
 
+function padHour(value: number) {
+  return value < 10 ? `0${value}` : String(value);
+}
+
+function formatStationHour(hour: number, locale: RadioStationLocale = "en-US") {
+  const normalizedHour = ((hour % 24) + 24) % 24;
+  if (locale === "en-US") {
+    const suffix = normalizedHour < 12 ? "AM" : "PM";
+    return `${normalizedHour % 12 || 12}:00 ${suffix}`;
+  }
+  return `${padHour(normalizedHour)}:00`;
+}
+
+function zonedDayHour(date: Date, timezone?: string | null) {
+  if (!timezone) return { day: date.getDay(), hour: date.getHours() };
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "short",
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(date);
+    const dayName = parts.find((part) => part.type === "weekday")?.value ?? "";
+    const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(dayName);
+    const hour = Number(parts.find((part) => part.type === "hour")?.value ?? date.getHours());
+    return { day: day >= 0 ? day : date.getDay(), hour: hour === 24 ? 0 : hour };
+  } catch {
+    return { day: date.getDay(), hour: date.getHours() };
+  }
+}
+
+function radioScheduleDay(schedule: RadioSchedulePayload | null, day: number) {
+  return schedule?.schedule?.[String(day)] ?? schedule?.schedule?.[day] ?? null;
+}
+
+function radioShowTiming(schedule: RadioSchedulePayload | null, nowMs: number) {
+  const grid = schedule?.schedule;
+  if (!schedule || !grid) return null;
+
+  const { day, hour } = zonedDayHour(new Date(nowMs), schedule.timezone);
+  const dayGrid = radioScheduleDay(schedule, day);
+  if (!Array.isArray(dayGrid)) return null;
+
+  const currentShowId = dayGrid[hour] ?? null;
+  let endHour = hour;
+  while (endHour + 1 < 24 && (dayGrid[endHour + 1] ?? null) === currentShowId) endHour++;
+
+  const shows = schedule.shows ?? [];
+  const currentShow = currentShowId ? shows.find((show) => show.id === currentShowId) ?? null : null;
+  const locale = schedule.locale ?? "en-US";
+  let nextShowLabel = "No later show";
+
+  for (let offset = 1; offset <= 24 * 7; offset += 1) {
+    const nextHourAbsolute = hour + offset;
+    const nextDay = (day + Math.floor(nextHourAbsolute / 24)) % 7;
+    const nextHour = nextHourAbsolute % 24;
+    const nextGrid = radioScheduleDay(schedule, nextDay);
+    const nextShowId = Array.isArray(nextGrid) ? nextGrid[nextHour] ?? null : null;
+    if (nextShowId !== currentShowId) {
+      const nextShow = nextShowId ? shows.find((show) => show.id === nextShowId) ?? null : null;
+      nextShowLabel = `${nextShow?.name ?? "Autonomous"} at ${formatStationHour(nextHour, locale)}`;
+      break;
+    }
+  }
+
+  return {
+    currentShow,
+    until: `Until ${formatStationHour(endHour + 1, locale)}`,
+    next: nextShowLabel,
+  };
+}
+
 async function fetchRadioJson<T>(stationUrl: string, endpoint: string): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 8000);
@@ -746,6 +829,12 @@ async function fetchRadioJson<T>(stationUrl: string, endpoint: string): Promise<
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function fetchRadioSchedule(stationUrl: string): Promise<RadioSchedulePayload> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+  return fetchRadioJson<RadioSchedulePayload>(origin, "schedule");
 }
 
 async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
@@ -1127,6 +1216,7 @@ export function App() {
   const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
   const [radioStationInput, setRadioStationInput] = useState(appSettings.radioStationUrl);
   const [radioStationState, setRadioStationState] = useState<RadioStationState | null>(null);
+  const [radioSchedule, setRadioSchedule] = useState<RadioSchedulePayload | null>(null);
   const [radioStatus, setRadioStatus] = useState<RadioStatus>("idle");
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
@@ -1291,6 +1381,7 @@ export function App() {
 
     tuneOutRadio("Ready to tune in.");
     setRadioStationState(null);
+    setRadioSchedule(null);
     saveRadioStation(origin);
     void refreshRadio(origin);
   }
@@ -1305,6 +1396,7 @@ export function App() {
     if (radioStationUrl === origin) {
       tuneOutRadio(activeStation ? "Ready to tune in." : "Add a Subwave station URL to start.");
       setRadioStationState(null);
+      setRadioSchedule(null);
     }
 
     updateAppSettings({
@@ -2310,9 +2402,15 @@ export function App() {
   useEffect(() => {
     if (!radioStationUrl) return;
     void refreshRadio(radioStationUrl);
+    void fetchRadioSchedule(radioStationUrl)
+      .then(setRadioSchedule)
+      .catch(() => setRadioSchedule(null));
     const interval = window.setInterval(() => {
       void fetchRadioState(radioStationUrl)
         .then(setRadioStationState)
+        .catch(() => undefined);
+      void fetchRadioSchedule(radioStationUrl)
+        .then(setRadioSchedule)
         .catch(() => undefined);
     }, 12000);
 
@@ -2766,6 +2864,7 @@ export function App() {
             onSelectRadioStation={selectRadioStation}
             onOpenRadioSettings={() => openSettings("radio")}
             radioStationState={radioStationState}
+            radioSchedule={radioSchedule}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
             radioElapsed={radioElapsed}
@@ -4114,6 +4213,7 @@ function RadioView({
   onSelectStation,
   onOpenSettings,
   stationState,
+  schedule,
   status,
   message,
   elapsed,
@@ -4126,6 +4226,7 @@ function RadioView({
   onSelectStation: (stationUrl: string) => void;
   onOpenSettings: () => void;
   stationState: RadioStationState | null;
+  schedule: RadioSchedulePayload | null;
   status: RadioStatus;
   message: string;
   elapsed: number;
@@ -4135,13 +4236,16 @@ function RadioView({
 }) {
   const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const savedStations = appSettings.radioStationUrls;
-  const streamUrl = stationUrl ? buildRadioStreamUrl(stationUrl) : "";
   const nowPlaying = firstRadioTrack(stationState);
-  const upcoming = upcomingRadioTracks(stationState).slice(0, 5);
   const listenerCount = radioListenerCount(stationState);
   const stationName = radioStationName(stationState, stationUrl);
-  const showName = stationState?.activeShow?.name;
-  const djName = stationState?.dj?.name;
+  const showTiming = radioShowTiming(schedule, Date.now());
+  const showName = stationState?.activeShow?.name ?? showTiming?.currentShow?.name;
+  const personaId = showTiming?.currentShow?.personaId;
+  const scheduleDjName = personaId ? schedule?.personas?.find((persona) => persona.id === personaId)?.name : null;
+  const djName = stationState?.activeShow?.persona?.name ?? stationState?.dj?.name ?? scheduleDjName;
+  const showTopic = showTiming?.currentShow?.topic;
+  const showMood = showTiming?.currentShow?.mood;
   const coverUrl =
     nowPlaying?.coverUrl ||
     (config && nowPlaying?.coverArt ? buildCoverArtUrl(config, nowPlaying.coverArt, "720") : null) ||
@@ -4149,6 +4253,7 @@ function RadioView({
   const radioDuration = nowPlaying?.duration ?? 0;
   const progressPercent = radioDuration > 0 ? `${Math.min(100, (elapsed / radioDuration) * 100)}%` : "100%";
   const isPlaying = status === "playing";
+  const stationStatus = stationState?.status ?? stationState?.state ?? status;
 
   return (
     <section className="radio-view">
@@ -4170,10 +4275,35 @@ function RadioView({
           <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
           {nowPlaying?.album ? <p className="radio-album">{nowPlaying.album}{nowPlaying.year ? ` / ${nowPlaying.year}` : ""}</p> : null}
 
-          <div className="radio-tags">
-            <span>{status === "playing" ? "On air" : status === "checking" ? "Connecting" : "Ready"}</span>
-            {showName ? <span>{showName}</span> : null}
-            {djName ? <span>{djName}</span> : null}
+          <div className="radio-broadcast-details" aria-label="Station details">
+            <div>
+              <span>Status</span>
+              <strong>{status === "playing" ? "On air" : status === "checking" ? "Connecting" : stationStatus}</strong>
+            </div>
+            <div>
+              <span>Show</span>
+              <strong>{showName ?? "Autonomous"}</strong>
+            </div>
+            <div>
+              <span>DJ</span>
+              <strong>{djName ?? "Subwave"}</strong>
+            </div>
+            <div>
+              <span>Ends</span>
+              <strong>{showTiming?.until ?? "Schedule unavailable"}</strong>
+            </div>
+            {showTiming?.next ? (
+              <div>
+                <span>Next</span>
+                <strong>{showTiming.next}</strong>
+              </div>
+            ) : null}
+            {showTopic || showMood ? (
+              <div>
+                <span>Vibe</span>
+                <strong>{[showTopic, showMood].filter(Boolean).join(" / ")}</strong>
+              </div>
+            ) : null}
           </div>
 
           {savedStations.length > 1 ? (
@@ -4209,58 +4339,6 @@ function RadioView({
           <p className={`radio-status ${status === "error" ? "bad" : ""}`}>{message}</p>
         </div>
       </div>
-
-      <div className="radio-side-grid">
-        <section className="radio-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Up Next</p>
-              <h3>Live queue</h3>
-            </div>
-            <ListMusic size={18} />
-          </div>
-          <div className="radio-track-list">
-            {upcoming.length ? (
-              upcoming.map((track, index) => (
-                <div className="radio-track-row" key={`${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`}>
-                  <span>{index + 1}</span>
-                  <div>
-                    <strong>{track.title ?? "Unknown track"}</strong>
-                    <small>{track.artist ?? track.album ?? "Subwave"}</small>
-                  </div>
-                  {track.requestedBy ? <em>{track.requestedBy}</em> : null}
-                </div>
-              ))
-            ) : (
-              <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
-            )}
-          </div>
-        </section>
-
-        <section className="radio-panel">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Signal</p>
-              <h3>Station state</h3>
-            </div>
-            <Waves size={18} />
-          </div>
-          <div className="radio-stats">
-            <div>
-              <span>Status</span>
-              <strong>{stationState?.status ?? stationState?.state ?? status}</strong>
-            </div>
-            <div>
-              <span>Stream</span>
-              <strong>{streamUrl ? "/stream.mp3" : "Unset"}</strong>
-            </div>
-            <div>
-              <span>Metadata</span>
-              <strong>{stationState ? "Live" : "Waiting"}</strong>
-            </div>
-          </div>
-        </section>
-      </div>
     </section>
   );
 }
@@ -4276,6 +4354,7 @@ function LibraryView({
   onSelectRadioStation,
   onOpenRadioSettings,
   radioStationState,
+  radioSchedule,
   radioStatus,
   radioMessage,
   radioElapsed,
@@ -4333,6 +4412,7 @@ function LibraryView({
   onSelectRadioStation: (stationUrl: string) => void;
   onOpenRadioSettings: () => void;
   radioStationState: RadioStationState | null;
+  radioSchedule: RadioSchedulePayload | null;
   radioStatus: RadioStatus;
   radioMessage: string;
   radioElapsed: number;
@@ -4388,6 +4468,7 @@ function LibraryView({
         onSelectStation={onSelectRadioStation}
         onOpenSettings={onOpenRadioSettings}
         stationState={radioStationState}
+        schedule={radioSchedule}
         status={radioStatus}
         message={radioMessage}
         elapsed={radioElapsed}
