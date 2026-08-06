@@ -106,13 +106,13 @@ textarea {
 
 .cover-wash-backdrop {
   position: absolute;
-  inset: -10%;
+  inset: -8%;
   z-index: 0;
   pointer-events: none;
   background-position: center;
   background-size: cover;
-  opacity: 0.3;
-  filter: blur(56px) saturate(130%);
+  opacity: 0.62;
+  filter: blur(54px) saturate(150%);
   transform: scale(1.08);
 }
 
@@ -122,7 +122,7 @@ textarea {
   content: "";
   background:
     radial-gradient(circle at 22% 16%, rgba(240, 210, 123, 0.08), transparent 28rem),
-    linear-gradient(135deg, rgba(15, 17, 16, 0.82), rgba(23, 21, 20, 0.88) 54%, rgba(11, 12, 12, 0.92));
+    linear-gradient(135deg, rgba(15, 17, 16, 0.58), rgba(23, 21, 20, 0.68) 54%, rgba(11, 12, 12, 0.76));
 }
 
 .sidebar,
@@ -2095,8 +2095,8 @@ button.similar-chip:hover,
   pointer-events: none;
   background-position: center;
   background-size: cover;
-  opacity: 0.26;
-  filter: blur(42px) saturate(132%);
+  opacity: 0.68;
+  filter: blur(40px) saturate(155%);
   transform: scale(1.08);
 }
 
@@ -2104,7 +2104,7 @@ button.similar-chip:hover,
   position: absolute;
   inset: 0;
   content: "";
-  background: linear-gradient(115deg, rgba(13, 13, 12, 0.5), rgba(13, 13, 12, 0.82) 58%, rgba(13, 13, 12, 0.58));
+  background: linear-gradient(115deg, rgba(13, 13, 12, 0.32), rgba(13, 13, 12, 0.64) 58%, rgba(13, 13, 12, 0.44));
 }
 
 .radio-cover-card,

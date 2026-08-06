@@ -667,6 +667,22 @@ function buildRadioStreamUrl(stationUrl: string) {
   return `${normalizeStationUrl(stationUrl)}/stream.mp3`;
 }
 
+function buildRadioCoverUrl(stationUrl: string, track: RadioTrack | null) {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin || !track) return null;
+
+  if (track.coverUrl) {
+    try {
+      return new URL(track.coverUrl, origin).toString();
+    } catch {
+      return track.coverUrl;
+    }
+  }
+
+  const coverId = track.coverArt ?? track.subsonic_id;
+  return coverId ? `${origin}/api/cover/${encodeURIComponent(coverId)}` : null;
+}
+
 function firstRadioTrack(state: RadioStationState | null): RadioTrack | null {
   if (!state) return null;
   if (state.nowPlayingKnown) return state.nowPlaying ?? null;
@@ -1271,10 +1287,7 @@ export function App() {
   const radioHistory = previousRadioTracks(radioStationState);
   const isRadioPlaying = radioStatus === "playing";
   const radioElapsed = isRadioPlaying ? radioTrackElapsedSeconds(radioNowPlaying, radioStationState, radioClockNow) : 0;
-  const radioCoverUrl =
-    radioNowPlaying?.coverUrl ||
-    (config && radioNowPlaying?.coverArt ? buildCoverArtUrl(config, radioNowPlaying.coverArt, "720") : null) ||
-    (config && radioNowPlaying?.subsonic_id ? buildCoverArtUrl(config, radioNowPlaying.subsonic_id, "720") : null);
+  const radioCoverUrl = buildRadioCoverUrl(radioStationUrl, radioNowPlaying);
   const footerTrack = isRadioPlaying || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const coverWashUrl = appSettings.coverWashEnabled
@@ -4264,10 +4277,7 @@ function RadioView({
   const nextShowLine = showTiming?.nextShowAt
     ? `${showTiming.nextShow?.name ?? "Autonomous"}${nextDjName ? ` with ${nextDjName}` : ""}`
     : "No later show";
-  const coverUrl =
-    nowPlaying?.coverUrl ||
-    (config && nowPlaying?.coverArt ? buildCoverArtUrl(config, nowPlaying.coverArt, "720") : null) ||
-    (config && nowPlaying?.subsonic_id ? buildCoverArtUrl(config, nowPlaying.subsonic_id, "720") : null);
+  const coverUrl = buildRadioCoverUrl(stationUrl, nowPlaying);
   const radioDuration = nowPlaying?.duration ?? 0;
   const progressPercent = radioDuration > 0 ? `${Math.min(100, (elapsed / radioDuration) * 100)}%` : "100%";
   const isPlaying = status === "playing";
