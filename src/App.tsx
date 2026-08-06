@@ -755,6 +755,15 @@ function formatStationHour(hour: number, locale: RadioStationLocale = "en-US") {
   return `${padHour(normalizedHour)}:00`;
 }
 
+function splitFeaturedTitle(title: string) {
+  const match = title.match(/\s+((?:feat\.?|ft\.?|featuring)\s+.+)$/i);
+  if (!match?.index) return { main: title, feature: "" };
+  return {
+    main: title.slice(0, match.index).trim(),
+    feature: match[1]?.trim() ?? "",
+  };
+}
+
 function zonedDayHour(date: Date, timezone?: string | null) {
   if (!timezone) return { day: date.getDay(), hour: date.getHours() };
 
@@ -4262,6 +4271,8 @@ function RadioView({
   const radioDuration = nowPlaying?.duration ?? 0;
   const progressPercent = radioDuration > 0 ? `${Math.min(100, (elapsed / radioDuration) * 100)}%` : "100%";
   const isPlaying = status === "playing";
+  const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
+  const radioTitleParts = splitFeaturedTitle(radioTitle);
 
   return (
     <section className="radio-view">
@@ -4279,22 +4290,12 @@ function RadioView({
 
         <div className="radio-copy">
           <p className="eyebrow">{listenerCount == null ? "Radio" : `${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
-          <h3>{nowPlaying?.title ?? "Tune into Subwave"}</h3>
+          <h3>
+            <span>{radioTitleParts.main}</span>
+            {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
+          </h3>
           <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
           {nowPlaying?.album ? <p className="radio-album">{nowPlaying.album}{nowPlaying.year ? ` / ${nowPlaying.year}` : ""}</p> : null}
-
-          <div className="radio-broadcast-details" aria-label="Station details">
-            <div>
-              <span>In the Booth</span>
-              <strong>{boothLine}</strong>
-              <small>{showTiming?.until ?? "Schedule unavailable"}</small>
-            </div>
-            <div>
-              <span>Up Next</span>
-              <strong>{nextShowLine}</strong>
-              {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
-            </div>
-          </div>
 
           {savedStations.length > 1 ? (
             <label className="radio-channel-select">
@@ -4327,6 +4328,19 @@ function RadioView({
             </button>
           </div>
           <p className={`radio-status ${status === "error" ? "bad" : ""}`}>{message}</p>
+        </div>
+
+        <div className="radio-broadcast-details" aria-label="Station details">
+          <div>
+            <span>In the Booth</span>
+            <strong>{boothLine}</strong>
+            <small>{showTiming?.until ?? "Schedule unavailable"}</small>
+          </div>
+          <div>
+            <span>Up Next</span>
+            <strong>{nextShowLine}</strong>
+            {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
+          </div>
         </div>
       </div>
     </section>

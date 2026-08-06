@@ -2077,6 +2077,7 @@ button.similar-chip:hover,
   position: relative;
   display: grid;
   grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 22px;
   min-height: 100%;
   padding: 18px;
@@ -2159,6 +2160,20 @@ button.similar-chip:hover,
   line-height: 1.02;
 }
 
+.radio-copy h3 span,
+.radio-copy h3 em {
+  display: block;
+}
+
+.radio-copy h3 em {
+  margin-top: 6px;
+  color: rgba(244, 241, 236, 0.64);
+  font-size: 0.48em;
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.18;
+}
+
 .radio-artist {
   margin-top: 10px;
   color: #f2d985;
@@ -2230,8 +2245,12 @@ button.similar-chip:hover,
 
 .radio-broadcast-details {
   display: grid;
-  gap: 18px;
-  margin-top: 24px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: end;
+  gap: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .radio-broadcast-details div {
@@ -3621,6 +3640,10 @@ button.similar-chip:hover,
 
   .radio-copy {
     justify-content: start;
+  }
+
+  .radio-broadcast-details {
+    grid-template-columns: 1fr;
   }
 
   .player-actions {
