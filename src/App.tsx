@@ -2167,6 +2167,14 @@ export function App() {
 
   useEffect(() => {
     if (!rightPanelOpen || rightPanelTab !== "lyrics") return;
+    const isRadioLyricsSession = radioStatus === "playing" || radioStatus === "checking";
+
+    if (isRadioLyricsSession || !isPlaying) {
+      setLyricsStatus("idle");
+      setLyricsLines([]);
+      setLyricsMessage(isRadioLyricsSession ? "No lyrics available for radio yet." : "No active playback.");
+      return;
+    }
 
     if (!config || !currentTrack) {
       setLyricsStatus("idle");
@@ -2197,7 +2205,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [config, currentTrack, rightPanelOpen, rightPanelTab]);
+  }, [config, currentTrack, isPlaying, radioStatus, rightPanelOpen, rightPanelTab]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -3343,7 +3351,7 @@ function RightSidebar({
                 <span>{radioStationLabel}</span>
               </div>
             </>
-          ) : isPlaying && currentTrack ? (
+          ) : currentTrack ? (
             <>
               <CoverArt
                 src={nowPlayingCoverUrl}
@@ -3410,7 +3418,7 @@ function RightSidebar({
         <div className="right-panel-section lyrics-panel">
           {isRadioSession ? (
             <EmptyPanel icon={<RadioTower size={20} />} text="No lyrics available for radio yet." />
-          ) : currentTrack ? (
+          ) : isPlaying && currentTrack ? (
             <>
               <div className="lyrics-track">
                 <p className="eyebrow">{currentTrack.artist ?? "Unknown artist"}</p>
