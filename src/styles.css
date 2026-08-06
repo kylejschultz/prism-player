@@ -1914,6 +1914,60 @@ button.similar-chip:hover,
   height: 16px;
 }
 
+.settings-station-list {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-station-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.settings-station-row.active {
+  background: rgba(242, 217, 133, 0.13);
+  color: #f8df91;
+}
+
+.settings-station-main {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-station-main:hover,
+.settings-station-main:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-station-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-station-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 10px;
+  align-items: center;
+}
+
 .connection-status-row {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr);
@@ -2137,6 +2191,21 @@ button.similar-chip:hover,
 
 .radio-status.bad {
   color: #ffad9f;
+}
+
+.radio-channel-select {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 260px);
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  color: rgba(244, 241, 236, 0.58);
+  font-size: 12px;
+}
+
+.radio-channel-select select {
+  min-height: 34px;
+  color: rgba(244, 241, 236, 0.82);
 }
 
 .radio-tuner-panel,
@@ -3166,6 +3235,28 @@ button.similar-chip:hover,
 
 .radio-queue-row {
   grid-template-columns: 28px minmax(0, 1fr) 42px;
+}
+
+.radio-queue-section {
+  display: grid;
+  gap: 3px;
+}
+
+.radio-queue-section > p {
+  padding: 8px 8px 2px;
+  color: rgba(244, 241, 236, 0.42);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.radio-queue-row.previous {
+  opacity: 0.62;
+}
+
+.radio-queue-row.current {
+  background: rgba(242, 217, 133, 0.13);
+  color: #f8df91;
 }
 
 .queue-row > small {

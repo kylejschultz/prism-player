@@ -61,6 +61,7 @@ type AppSettings = {
   analyticsPromptDismissed: boolean;
   coverWashEnabled: boolean;
   radioStationUrl: string;
+  radioStationUrls: string[];
 };
 
 type Album = {
@@ -285,6 +286,7 @@ const defaultSettings: AppSettings = {
   analyticsPromptDismissed: false,
   coverWashEnabled: true,
   radioStationUrl: "",
+  radioStationUrls: [],
 };
 
 const ALPHABET = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -386,11 +388,24 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function normalizeRadioStationList(values: Array<string | undefined | null>) {
+  const stations: string[] = [];
+
+  values.forEach((value) => {
+    const normalized = normalizeStationUrl(value ?? "");
+    if (normalized && !stations.includes(normalized)) stations.push(normalized);
+  });
+
+  return stations;
+}
+
 function loadStoredSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw) as Partial<AppSettings> & { defaultVolume?: number };
+    const activeStation = normalizeStationUrl(parsed.radioStationUrl ?? "");
+    const radioStationUrls = normalizeRadioStationList([...(parsed.radioStationUrls ?? []), activeStation]);
 
     return {
       lastVolume: clampNumber(Number(parsed.lastVolume ?? parsed.defaultVolume ?? defaultSettings.lastVolume), 0, 1),
@@ -401,7 +416,8 @@ function loadStoredSettings(): AppSettings {
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
-      radioStationUrl: typeof parsed.radioStationUrl === "string" ? parsed.radioStationUrl : defaultSettings.radioStationUrl,
+      radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
+      radioStationUrls,
     };
   } catch {
     return defaultSettings;
@@ -637,6 +653,11 @@ function upcomingRadioTracks(state: RadioStationState | null): RadioTrack[] {
   if (!Array.isArray(state.queue) && Array.isArray(state.queue?.upcoming)) return state.queue.upcoming;
   if (Array.isArray(state.queue)) return state.queue;
   return [];
+}
+
+function previousRadioTracks(state: RadioStationState | null): RadioTrack[] {
+  if (!state || !Array.isArray(state.history)) return [];
+  return state.history;
 }
 
 function radioListenerCount(state: RadioStationState | null): number | null {
@@ -1031,6 +1052,7 @@ export function App() {
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
   const [radioElapsed, setRadioElapsed] = useState(0);
+  const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
   const [playlistCreatorOpen, setPlaylistCreatorOpen] = useState(false);
@@ -1063,12 +1085,13 @@ export function App() {
   const radioStationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const radioNowPlaying = firstRadioTrack(radioStationState);
   const radioUpcoming = upcomingRadioTracks(radioStationState);
+  const radioHistory = previousRadioTracks(radioStationState);
   const radioCoverUrl =
     radioNowPlaying?.coverUrl ||
     (config && radioNowPlaying?.coverArt ? buildCoverArtUrl(config, radioNowPlaying.coverArt, "720") : null) ||
     (config && radioNowPlaying?.subsonic_id ? buildCoverArtUrl(config, radioNowPlaying.subsonic_id, "720") : null);
   const isRadioPlaying = radioStatus === "playing";
-  const footerTrack = isRadioPlaying ? null : currentTrack ?? lastPlayedTrack;
+  const footerTrack = isRadioPlaying || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const coverWashUrl = appSettings.coverWashEnabled
     ? isRadioPlaying
@@ -1150,6 +1173,68 @@ export function App() {
     ],
   );
 
+  function normalizeAppSettings(nextSettings: AppSettings) {
+    const radioStationUrls = normalizeRadioStationList([...nextSettings.radioStationUrls, nextSettings.radioStationUrl]);
+    const activeStation = normalizeStationUrl(nextSettings.radioStationUrl) || radioStationUrls[0] || "";
+
+    return {
+      ...nextSettings,
+      lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
+      sidebarPlaylistLimit: Math.round(clampNumber(nextSettings.sidebarPlaylistLimit, 3, 20)),
+      radioStationUrl: activeStation,
+      radioStationUrls: radioStationUrls.includes(activeStation) ? radioStationUrls : normalizeRadioStationList([activeStation, ...radioStationUrls]),
+    };
+  }
+
+  function updateAppSettings(nextSettings: AppSettings) {
+    const normalizedSettings = normalizeAppSettings(nextSettings);
+
+    setAppSettings(normalizedSettings);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizedSettings));
+  }
+
+  function saveRadioStation(origin: string) {
+    const normalized = normalizeStationUrl(origin);
+    if (!normalized) return;
+
+    updateAppSettings({
+      ...appSettings,
+      radioStationUrl: normalized,
+      radioStationUrls: normalizeRadioStationList([...appSettings.radioStationUrls, normalized]),
+    });
+    setRadioStationInput(normalized);
+  }
+
+  function selectRadioStation(nextUrl: string) {
+    const origin = normalizeStationUrl(nextUrl);
+    if (!origin) return;
+
+    tuneOutRadio("Ready to tune in.");
+    setRadioStationState(null);
+    saveRadioStation(origin);
+    void refreshRadio(origin);
+  }
+
+  function removeRadioStation(nextUrl: string) {
+    const origin = normalizeStationUrl(nextUrl);
+    if (!origin) return;
+
+    const remainingStations = appSettings.radioStationUrls.filter((stationUrl) => stationUrl !== origin);
+    const activeStation = radioStationUrl === origin ? remainingStations[0] ?? "" : radioStationUrl;
+
+    if (radioStationUrl === origin) {
+      tuneOutRadio(activeStation ? "Ready to tune in." : "Add a Subwave station URL to start.");
+      setRadioStationState(null);
+    }
+
+    updateAppSettings({
+      ...appSettings,
+      radioStationUrl: activeStation,
+      radioStationUrls: remainingStations,
+    });
+    setRadioStationInput(activeStation);
+  }
+
   async function refreshRadio(nextUrl = radioStationInput) {
     const origin = normalizeStationUrl(nextUrl);
     if (!origin) {
@@ -1164,8 +1249,7 @@ export function App() {
     try {
       const nextState = await fetchRadioState(origin);
       setRadioStationState(nextState);
-      updateAppSettings({ ...appSettings, radioStationUrl: origin });
-      setRadioStationInput(origin);
+      saveRadioStation(origin);
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
       setRadioMessage("Station connected.");
       return nextState;
@@ -1181,6 +1265,7 @@ export function App() {
     const audio = radioAudioRef.current;
     audio?.pause();
     if (audio) audio.removeAttribute("src");
+    setSuppressLocalFooter(true);
     setRadioStatus(radioStationState ? "ready" : "idle");
     setRadioMessage(message);
   }
@@ -1208,6 +1293,7 @@ export function App() {
 
     try {
       await radioAudio.play();
+      setSuppressLocalFooter(false);
       setRadioStatus("playing");
       setRadioMessage("On air.");
     } catch {
@@ -1233,17 +1319,6 @@ export function App() {
     setRightPanelTab(tab);
     localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
     setRightPanelState(true);
-  }
-
-  function updateAppSettings(nextSettings: AppSettings) {
-    const normalizedSettings = {
-      ...nextSettings,
-      lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
-      sidebarPlaylistLimit: Math.round(clampNumber(nextSettings.sidebarPlaylistLimit, 3, 20)),
-    };
-
-    setAppSettings(normalizedSettings);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizedSettings));
   }
 
   function setSidebarCollapsedState(collapsed: boolean) {
@@ -1735,6 +1810,7 @@ export function App() {
   function replaceQueue(songs: Song[], startIndex = 0) {
     if (!songs.length) return;
     tuneOutRadio();
+    setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
     setQueue(songs);
     setCurrentIndex(Math.min(Math.max(startIndex, 0), songs.length - 1));
@@ -1759,6 +1835,7 @@ export function App() {
   function playSong(song: Song) {
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     tuneOutRadio();
+    setSuppressLocalFooter(false);
 
     if (existingIndex >= 0) {
       scrobbledPlayRef.current = "";
@@ -1797,6 +1874,7 @@ export function App() {
       if (!nextSongs.length) return false;
 
       tuneOutRadio();
+      setSuppressLocalFooter(false);
       audioRef.current?.pause();
       scrobbledPlayRef.current = "";
       resetPlaybackPosition();
@@ -1932,6 +2010,7 @@ export function App() {
 
   function selectQueueTrack(index: number) {
     tuneOutRadio();
+    setSuppressLocalFooter(false);
     audioRef.current?.pause();
     scrobbledPlayRef.current = "";
     setCurrentIndex(index);
@@ -2024,6 +2103,7 @@ export function App() {
     }
 
     tuneOutRadio();
+    setSuppressLocalFooter(false);
     if (audio && currentStreamUrl) {
       void audio.play().catch(() => {
         setPlayerError("Playback was blocked by the browser.");
@@ -2564,6 +2644,8 @@ export function App() {
             statusMessage={statusMessage}
             appSettings={appSettings}
             updateAppSettings={updateAppSettings}
+            onSelectRadioStation={selectRadioStation}
+            onRemoveRadioStation={removeRadioStation}
             setAnalyticsConsent={setAnalyticsConsent}
             resetAppSettings={resetAppSettings}
             setAlbumViewMode={setAlbumViewMode}
@@ -2580,6 +2662,7 @@ export function App() {
             appSettings={appSettings}
             radioStationInput={radioStationInput}
             setRadioStationInput={setRadioStationInput}
+            onSelectRadioStation={selectRadioStation}
             radioStationState={radioStationState}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
@@ -2653,6 +2736,7 @@ export function App() {
           onPlay={() => setRadioStatus("playing")}
           onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
           onError={() => {
+            setSuppressLocalFooter(true);
             setRadioStatus("error");
             setRadioMessage("The radio stream failed.");
           }}
@@ -2818,6 +2902,7 @@ export function App() {
           radioStationState={radioStationState}
           radioNowPlaying={radioNowPlaying}
           radioUpcoming={radioUpcoming}
+          radioHistory={radioHistory}
           radioCoverUrl={radioCoverUrl}
           radioStationUrl={radioStationUrl}
           radioStatus={radioStatus}
@@ -3013,6 +3098,7 @@ function RightSidebar({
   radioStationState,
   radioNowPlaying,
   radioUpcoming,
+  radioHistory,
   radioCoverUrl,
   radioStationUrl,
   radioStatus,
@@ -3048,6 +3134,7 @@ function RightSidebar({
   radioStationState: RadioStationState | null;
   radioNowPlaying: RadioTrack | null;
   radioUpcoming: RadioTrack[];
+  radioHistory: RadioTrack[];
   radioCoverUrl: string | null;
   radioStationUrl: string;
   radioStatus: RadioStatus;
@@ -3078,6 +3165,8 @@ function RightSidebar({
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
   const radioStationLabel = radioStationName(radioStationState, radioStationUrl);
   const radioDuration = radioNowPlaying?.duration ?? 0;
+  const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
+  const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const activeLyricIndex = useMemo(() => {
     const elapsedMs = Math.max(0, position * 1000);
@@ -3136,12 +3225,12 @@ function RightSidebar({
       {tab === "queue" ? (
         <div className="right-panel-section queue-panel-section">
           <div className="queue-heading">
-            <p className="eyebrow">{isRadioPlaying ? "Radio Up Next" : "Now + Next"}</p>
+            <p className="eyebrow">{isRadioSession ? "Radio Timeline" : "Now + Next"}</p>
             <div className="queue-heading-actions">
               <span>
-                {isRadioPlaying
-                  ? radioUpcoming.length
-                    ? `${radioUpcoming.length} tracks`
+                {isRadioSession
+                  ? hasRadioQueuePayload
+                    ? `${radioHistory.length + (radioNowPlaying ? 1 : 0) + radioUpcoming.length} tracks`
                     : "Live"
                   : displayedQueue.length
                     ? `${displayedQueue.length} tracks`
@@ -3153,18 +3242,32 @@ function RightSidebar({
             </div>
           </div>
           <div className="queue-list right-queue-list">
-            {isRadioPlaying ? (
-              radioUpcoming.length ? (
-                radioUpcoming.slice(0, 8).map((track, index) => (
-                  <div className="queue-row radio-queue-row" key={`${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`}>
-                    <small>{index + 1}</small>
-                    <div className="queue-track">
-                      <strong>{track.title ?? "Unknown track"}</strong>
-                      <small>{track.artist ?? track.album ?? "Subwave"}</small>
+            {isRadioSession ? (
+              hasRadioQueuePayload ? (
+                <>
+                  {radioHistory.length ? (
+                    <div className="radio-queue-section">
+                      <p>Recently played</p>
+                      {radioHistory.slice(0, 6).map((track, index) => (
+                        <RadioQueueRow track={track} marker={`${radioHistory.length - index}`} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                      ))}
                     </div>
-                    {track.duration ? <small>{formatDuration(track.duration)}</small> : null}
-                  </div>
-                ))
+                  ) : null}
+                  {radioNowPlaying ? (
+                    <div className="radio-queue-section">
+                      <p>On air</p>
+                      <RadioQueueRow track={radioNowPlaying} marker="Now" tone="current" />
+                    </div>
+                  ) : null}
+                  {radioUpcoming.length ? (
+                    <div className="radio-queue-section">
+                      <p>Up next</p>
+                      {radioUpcoming.slice(0, 8).map((track, index) => (
+                        <RadioQueueRow track={track} marker={`${index + 1}`} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                      ))}
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
               )
@@ -3307,7 +3410,9 @@ function RightSidebar({
         </div>
       ) : (
         <div className="right-panel-section lyrics-panel">
-          {currentTrack ? (
+          {isRadioSession ? (
+            <EmptyPanel icon={<RadioTower size={20} />} text="No lyrics available for radio yet." />
+          ) : currentTrack ? (
             <>
               <div className="lyrics-track">
                 <p className="eyebrow">{currentTrack.artist ?? "Unknown artist"}</p>
@@ -3337,6 +3442,19 @@ function RightSidebar({
         </div>
       )}
     </aside>
+  );
+}
+
+function RadioQueueRow({ track, marker, tone = "next" }: { track: RadioTrack; marker: string; tone?: "previous" | "current" | "next" }) {
+  return (
+    <div className={`queue-row radio-queue-row ${tone}`}>
+      <small>{marker}</small>
+      <div className="queue-track">
+        <strong>{track.title ?? "Unknown track"}</strong>
+        <small>{track.artist ?? track.album ?? "Subwave"}</small>
+      </div>
+      {track.duration ? <small>{formatDuration(track.duration)}</small> : null}
+    </div>
   );
 }
 
@@ -3540,6 +3658,8 @@ function SettingsView({
   statusMessage,
   appSettings,
   updateAppSettings,
+  onSelectRadioStation,
+  onRemoveRadioStation,
   setAnalyticsConsent,
   resetAppSettings,
   setAlbumViewMode,
@@ -3553,6 +3673,8 @@ function SettingsView({
   statusMessage: string;
   appSettings: AppSettings;
   updateAppSettings: (settings: AppSettings) => void;
+  onSelectRadioStation: (stationUrl: string) => void;
+  onRemoveRadioStation: (stationUrl: string) => void;
   setAnalyticsConsent: (enabled: boolean) => void;
   resetAppSettings: () => void;
   setAlbumViewMode: (mode: AlbumViewMode) => void;
@@ -3560,6 +3682,8 @@ function SettingsView({
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
+  const [newRadioStationUrl, setNewRadioStationUrl] = useState("");
+
   function setDefaultAlbumView(mode: AlbumViewMode) {
     updateAppSettings({ ...appSettings, defaultAlbumView: mode });
     setAlbumViewMode(mode);
@@ -3568,6 +3692,15 @@ function SettingsView({
   function setDefaultArtistView(mode: ArtistViewMode) {
     updateAppSettings({ ...appSettings, defaultArtistView: mode });
     setArtistViewMode(mode);
+  }
+
+  function addRadioStation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const origin = normalizeStationUrl(newRadioStationUrl);
+    if (!origin) return;
+
+    onSelectRadioStation(origin);
+    setNewRadioStationUrl("");
   }
 
   return (
@@ -3709,20 +3842,45 @@ function SettingsView({
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Radio</p>
-            <h3>Subwave station</h3>
+            <h3>Subwave channels</h3>
           </div>
           <RadioTower size={18} />
         </div>
-        <label>
-          Station URL
+        {appSettings.radioStationUrls.length ? (
+          <div className="settings-station-list">
+            {appSettings.radioStationUrls.map((stationUrl) => (
+              <div className={`settings-station-row ${stationUrl === appSettings.radioStationUrl ? "active" : ""}`} key={stationUrl}>
+                <button className="settings-station-main" type="button" onClick={() => onSelectRadioStation(stationUrl)}>
+                  <RadioTower size={15} />
+                  <span>{stationUrl.replace(/^https?:\/\//, "")}</span>
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label={`Remove ${stationUrl}`}
+                  onClick={() => onRemoveRadioStation(stationUrl)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="settings-note">No Subwave channels saved yet.</p>
+        )}
+        <form className="settings-station-form" onSubmit={addRadioStation}>
           <input
-            value={appSettings.radioStationUrl}
-            onChange={(event) => updateAppSettings({ ...appSettings, radioStationUrl: event.target.value })}
+            value={newRadioStationUrl}
+            onChange={(event) => setNewRadioStationUrl(event.target.value)}
             placeholder="https://radio.example.com"
             autoComplete="url"
             inputMode="url"
           />
-        </label>
+          <button className="secondary-button compact-button" type="submit" disabled={!normalizeStationUrl(newRadioStationUrl)}>
+            <Plus size={15} />
+            Add
+          </button>
+        </form>
         <p className="settings-note">Prism validates this against `/api/state` and plays the station stream from `/stream.mp3`.</p>
       </section>
 
@@ -3834,6 +3992,7 @@ function RadioView({
   appSettings,
   stationInput,
   setStationInput,
+  onSelectStation,
   stationState,
   status,
   message,
@@ -3848,6 +4007,7 @@ function RadioView({
   appSettings: AppSettings;
   stationInput: string;
   setStationInput: (value: string) => void;
+  onSelectStation: (stationUrl: string) => void;
   stationState: RadioStationState | null;
   status: RadioStatus;
   message: string;
@@ -3859,6 +4019,7 @@ function RadioView({
   setVolume: (nextVolume: number) => void;
 }) {
   const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
+  const savedStations = appSettings.radioStationUrls;
   const streamUrl = stationUrl ? buildRadioStreamUrl(stationUrl) : "";
   const nowPlaying = firstRadioTrack(stationState);
   const upcoming = upcomingRadioTracks(stationState).slice(0, 5);
@@ -3899,6 +4060,19 @@ function RadioView({
             {showName ? <span>{showName}</span> : null}
             {djName ? <span>{djName}</span> : null}
           </div>
+
+          {savedStations.length > 1 ? (
+            <label className="radio-channel-select">
+              <span>Channel</span>
+              <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
+                {savedStations.map((savedStationUrl) => (
+                  <option value={savedStationUrl} key={savedStationUrl}>
+                    {savedStationUrl.replace(/^https?:\/\//, "")}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
           <div className="radio-progress" aria-hidden="true">
             <span style={{ width: progressPercent }} />
@@ -4016,6 +4190,7 @@ function LibraryView({
   appSettings,
   radioStationInput,
   setRadioStationInput,
+  onSelectRadioStation,
   radioStationState,
   radioStatus,
   radioMessage,
@@ -4073,6 +4248,7 @@ function LibraryView({
   appSettings: AppSettings;
   radioStationInput: string;
   setRadioStationInput: (value: string) => void;
+  onSelectRadioStation: (stationUrl: string) => void;
   radioStationState: RadioStationState | null;
   radioStatus: RadioStatus;
   radioMessage: string;
@@ -4130,6 +4306,7 @@ function LibraryView({
         appSettings={appSettings}
         stationInput={radioStationInput}
         setStationInput={setRadioStationInput}
+        onSelectStation={onSelectRadioStation}
         stationState={radioStationState}
         status={radioStatus}
         message={radioMessage}
