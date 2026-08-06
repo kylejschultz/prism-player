@@ -2173,15 +2173,6 @@ button.similar-chip:hover,
   margin-top: 18px;
 }
 
-.radio-volume {
-  display: grid;
-  grid-template-columns: 16px 120px;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  color: rgba(244, 241, 236, 0.58);
-}
-
 .radio-status {
   min-height: 18px;
   margin-top: 12px;

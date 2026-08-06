@@ -2666,12 +2666,10 @@ export function App() {
             radioStationState={radioStationState}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
-            radioVolume={radioVolume}
             radioElapsed={radioElapsed}
             refreshRadio={refreshRadio}
             tuneInRadio={tuneInRadio}
             tuneOutRadio={tuneOutRadio}
-            setRadioPlaybackVolume={setRadioPlaybackVolume}
             libraryItems={libraryItems}
             albums={libraryData.albums}
             recentAlbums={libraryData.recentAlbums}
@@ -3345,7 +3343,7 @@ function RightSidebar({
                 <span>{radioStationLabel}</span>
               </div>
             </>
-          ) : currentTrack ? (
+          ) : isPlaying && currentTrack ? (
             <>
               <CoverArt
                 src={nowPlayingCoverUrl}
@@ -3437,7 +3435,7 @@ function RightSidebar({
               )}
             </>
           ) : (
-            <EmptyPanel icon={<Music2 size={20} />} text="Play a track to load lyrics." />
+            <EmptyPanel icon={<Music2 size={20} />} text="No active playback." />
           )}
         </div>
       )}
@@ -3996,12 +3994,10 @@ function RadioView({
   stationState,
   status,
   message,
-  radioVolume,
   elapsed,
   refreshRadio,
   tuneIn,
   tuneOut,
-  setVolume,
 }: {
   config: NavidromeConfig | null;
   appSettings: AppSettings;
@@ -4011,12 +4007,10 @@ function RadioView({
   stationState: RadioStationState | null;
   status: RadioStatus;
   message: string;
-  radioVolume: number;
   elapsed: number;
   refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneIn: () => Promise<void>;
   tuneOut: () => void;
-  setVolume: (nextVolume: number) => void;
 }) {
   const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const savedStations = appSettings.radioStationUrls;
@@ -4087,19 +4081,6 @@ function RadioView({
               <RadioTower size={15} />
               Refresh
             </button>
-            <div className="radio-volume">
-              <Volume2 size={15} />
-              <input
-                className="volume-slider"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={radioVolume}
-                onChange={(event) => setVolume(Number(event.target.value))}
-                aria-label="Radio volume"
-              />
-            </div>
           </div>
           <p className={`radio-status ${status === "error" ? "bad" : ""}`}>{message}</p>
         </div>
@@ -4194,12 +4175,10 @@ function LibraryView({
   radioStationState,
   radioStatus,
   radioMessage,
-  radioVolume,
   radioElapsed,
   refreshRadio,
   tuneInRadio,
   tuneOutRadio,
-  setRadioPlaybackVolume,
   libraryItems,
   albums,
   recentAlbums,
@@ -4252,12 +4231,10 @@ function LibraryView({
   radioStationState: RadioStationState | null;
   radioStatus: RadioStatus;
   radioMessage: string;
-  radioVolume: number;
   radioElapsed: number;
   refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneInRadio: () => Promise<void>;
   tuneOutRadio: () => void;
-  setRadioPlaybackVolume: (nextVolume: number) => void;
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   recentAlbums: Album[];
@@ -4310,12 +4287,10 @@ function LibraryView({
         stationState={radioStationState}
         status={radioStatus}
         message={radioMessage}
-        radioVolume={radioVolume}
         elapsed={radioElapsed}
         refreshRadio={refreshRadio}
         tuneIn={tuneInRadio}
         tuneOut={tuneOutRadio}
-        setVolume={setRadioPlaybackVolume}
       />
     );
   }
