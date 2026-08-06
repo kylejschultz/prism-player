@@ -1,9 +1,12 @@
 name: Build
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   macos:
@@ -35,3 +38,12 @@ jobs:
           name: prism-player-macos-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+
+      - name: Attach DMG to GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for dmg in src-tauri/target/release/bundle/dmg/*.dmg; do
+            gh release upload "${{ github.event.release.tag_name }}" "$dmg" --clobber
+          done
