@@ -1176,12 +1176,13 @@ export function App() {
     }
   }
 
-  function tuneOutRadio(nextMessage = radioStationState ? "Ready to tune in." : "Add a Subwave station URL to start.") {
+  function tuneOutRadio(nextMessage?: string) {
+    const message = nextMessage ?? (radioStationState ? "Ready to tune in." : "Add a Subwave station URL to start.");
     const audio = radioAudioRef.current;
     audio?.pause();
     if (audio) audio.removeAttribute("src");
     setRadioStatus(radioStationState ? "ready" : "idle");
-    setRadioMessage(nextMessage);
+    setRadioMessage(message);
   }
 
   async function tuneInRadio() {
@@ -1232,15 +1233,6 @@ export function App() {
     setRightPanelTab(tab);
     localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
     setRightPanelState(true);
-  }
-
-  function toggleQueuePanel() {
-    if (rightPanelOpen && rightPanelTab === "queue") {
-      setRightPanelState(false);
-      return;
-    }
-
-    selectRightPanelTab("queue");
   }
 
   function updateAppSettings(nextSettings: AppSettings) {
@@ -2586,7 +2578,6 @@ export function App() {
             libraryStatus={libraryStatus}
             statusMessage={statusMessage}
             appSettings={appSettings}
-            updateAppSettings={updateAppSettings}
             radioStationInput={radioStationInput}
             setRadioStationInput={setRadioStationInput}
             radioStationState={radioStationState}
@@ -2612,20 +2603,7 @@ export function App() {
             searchQuery={searchQuery}
             searchResults={searchResults}
             searchStatus={searchStatus}
-            queue={queue}
-            playlistCreatorOpen={playlistCreatorOpen}
             setPlaylistCreatorOpen={setPlaylistCreatorOpen}
-            playlistName={playlistName}
-            setPlaylistName={setPlaylistName}
-            playlistDescription={playlistDescription}
-            setPlaylistDescription={setPlaylistDescription}
-            playlistPublic={playlistPublic}
-            setPlaylistPublic={setPlaylistPublic}
-            playlistFromQueue={playlistFromQueue}
-            setPlaylistFromQueue={setPlaylistFromQueue}
-            playlistCreateStatus={playlistCreateStatus}
-            playlistCreateMessage={playlistCreateMessage}
-            onCreatePlaylist={savePlaylist}
             onSongContextMenu={openSongContextMenu}
             onRetryLibrary={() => void refreshLibrary()}
             onSelectLibraryView={selectView}
@@ -3927,7 +3905,7 @@ function RadioView({
           </div>
 
           <div className="radio-controls">
-            <button className="connect-button compact-button" type="button" onClick={isPlaying ? tuneOut : () => void tuneIn()}>
+            <button className="connect-button compact-button" type="button" onClick={isPlaying ? () => tuneOut() : () => void tuneIn()}>
               {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
               {isPlaying ? "Tune Out" : "Tune In"}
             </button>
@@ -4036,7 +4014,6 @@ function LibraryView({
   libraryStatus,
   statusMessage,
   appSettings,
-  updateAppSettings,
   radioStationInput,
   setRadioStationInput,
   radioStationState,
@@ -4062,20 +4039,7 @@ function LibraryView({
   searchQuery,
   searchResults,
   searchStatus,
-  queue,
-  playlistCreatorOpen,
   setPlaylistCreatorOpen,
-  playlistName,
-  setPlaylistName,
-  playlistDescription,
-  setPlaylistDescription,
-  playlistPublic,
-  setPlaylistPublic,
-  playlistFromQueue,
-  setPlaylistFromQueue,
-  playlistCreateStatus,
-  playlistCreateMessage,
-  onCreatePlaylist,
   onSongContextMenu,
   onSelectLibraryView,
   detailSelection,
@@ -4107,7 +4071,6 @@ function LibraryView({
   libraryStatus: LibraryStatus;
   statusMessage: string;
   appSettings: AppSettings;
-  updateAppSettings: (settings: AppSettings) => void;
   radioStationInput: string;
   setRadioStationInput: (value: string) => void;
   radioStationState: RadioStationState | null;
@@ -4133,20 +4096,7 @@ function LibraryView({
   searchQuery: string;
   searchResults: SearchResults;
   searchStatus: "idle" | "searching" | "error";
-  queue: Song[];
-  playlistCreatorOpen: boolean;
   setPlaylistCreatorOpen: (open: boolean) => void;
-  playlistName: string;
-  setPlaylistName: (name: string) => void;
-  playlistDescription: string;
-  setPlaylistDescription: (description: string) => void;
-  playlistPublic: boolean;
-  setPlaylistPublic: (isPublic: boolean) => void;
-  playlistFromQueue: boolean;
-  setPlaylistFromQueue: (fromQueue: boolean) => void;
-  playlistCreateStatus: "idle" | "saving" | "error";
-  playlistCreateMessage: string;
-  onCreatePlaylist: (event?: FormEvent<HTMLFormElement>) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
   onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
@@ -4231,7 +4181,6 @@ function LibraryView({
           onRemovePlaylistSong={onRemovePlaylistSong}
           onReorderPlaylist={onReorderPlaylist}
           onReplaceQueue={onReplaceQueue}
-          onPlaySong={onPlaySong}
           onQueueSong={onQueueSong}
           onSongContextMenu={onSongContextMenu}
         />
@@ -5831,7 +5780,6 @@ function DetailPanel({
   onRemovePlaylistSong,
   onReorderPlaylist,
   onReplaceQueue,
-  onPlaySong,
   onQueueSong,
   onSongContextMenu,
 }: {
@@ -5856,7 +5804,6 @@ function DetailPanel({
   onRemovePlaylistSong: (playlist: PlaylistDetail, index: number) => Promise<void>;
   onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
-  onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
 }) {
