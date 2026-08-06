@@ -1872,6 +1872,43 @@ button.similar-chip:hover,
   overflow-y: auto;
 }
 
+.settings-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 12px;
+  background: rgba(14, 14, 13, 0.92);
+  backdrop-filter: blur(16px);
+}
+
+.settings-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.065);
+  color: rgba(244, 241, 236, 0.66);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.settings-tabs button:hover,
+.settings-tabs button:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f4f1ec;
+}
+
+.settings-tabs button.active {
+  background: rgba(242, 217, 133, 0.18);
+  color: #f8df91;
+}
+
 .settings-form,
 .settings-panel,
 .connection-status-row {

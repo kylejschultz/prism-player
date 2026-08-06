@@ -37,6 +37,7 @@ import {
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
+type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type AlbumViewMode = "art" | "list";
@@ -212,10 +213,13 @@ type RadioTrack = {
   coverArt?: string;
   coverUrl?: string;
   requestedBy?: string;
+  startedAt?: string;
+  endedAt?: string;
+  timestamp?: number;
 };
 
 type RadioStationState = {
-  nowPlaying?: RadioTrack;
+  nowPlaying?: RadioTrack | null;
   now_playing?: RadioTrack;
   current?: RadioTrack;
   track?: RadioTrack;
@@ -230,8 +234,21 @@ type RadioStationState = {
     station?: { name?: string };
   };
   station?: { name?: string };
+  stream?: { bufferSeconds?: number | null };
+  streamOnline?: boolean | null;
+  nowPlayingKnown?: boolean;
   status?: string;
   state?: string;
+};
+
+type RadioNowPlayingResponse = {
+  nowPlaying?: RadioTrack | null;
+  context?: RadioStationState["context"] | null;
+  dj?: RadioStationState["dj"] | null;
+  activeShow?: RadioStationState["activeShow"] | null;
+  listeners?: RadioStationState["listeners"];
+  stream?: RadioStationState["stream"];
+  streamOnline?: boolean | null;
 };
 
 type RadioStatus = "idle" | "checking" | "ready" | "playing" | "error";
@@ -639,6 +656,7 @@ function buildRadioStreamUrl(stationUrl: string) {
 
 function firstRadioTrack(state: RadioStationState | null): RadioTrack | null {
   if (!state) return null;
+  if (state.nowPlayingKnown) return state.nowPlaying ?? null;
   if (state.nowPlaying) return state.nowPlaying;
   if (state.now_playing) return state.now_playing;
   if (state.current) return state.current;
@@ -676,26 +694,86 @@ function radioStationName(state: RadioStationState | null, stationUrl: string) {
   );
 }
 
-async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
-  const origin = normalizeStationUrl(stationUrl);
-  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+function sameRadioTrack(first: RadioTrack | null | undefined, second: RadioTrack | null | undefined) {
+  if (!first || !second) return false;
+  if (first.subsonic_id && second.subsonic_id) return first.subsonic_id === second.subsonic_id;
+  return Boolean(first.title && second.title && first.title === second.title && (first.artist ?? "") === (second.artist ?? ""));
+}
 
+function parseRadioTimestampMs(value: string | number | undefined | null) {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    const ms = value < 10_000_000_000 ? value * 1000 : value;
+    return Number.isFinite(ms) ? ms : null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function radioTrackStartedAtMs(track: RadioTrack | null, state: RadioStationState | null) {
+  const directStart = parseRadioTimestampMs(track?.startedAt ?? track?.timestamp);
+  if (directStart != null) return directStart;
+
+  const currentStart = sameRadioTrack(track, state?.current) ? parseRadioTimestampMs(state?.current?.startedAt ?? state?.current?.timestamp) : null;
+  return currentStart;
+}
+
+function radioTrackElapsedSeconds(track: RadioTrack | null, state: RadioStationState | null, nowMs: number) {
+  const startedAt = radioTrackStartedAtMs(track, state);
+  if (startedAt == null) return 0;
+
+  const bufferSeconds = clampNumber(Number(state?.stream?.bufferSeconds ?? 0), 0, 60);
+  const elapsed = Math.floor((nowMs - (startedAt + bufferSeconds * 1000)) / 1000);
+  const duration = track?.duration ?? 0;
+  return Math.max(0, duration > 0 ? Math.min(elapsed, duration) : elapsed);
+}
+
+async function fetchRadioJson<T>(stationUrl: string, endpoint: string): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 8000);
 
   try {
-    const response = await fetch(buildRadioApiUrl(origin, "state"), {
+    const response = await fetch(buildRadioApiUrl(stationUrl, endpoint), {
       cache: "no-store",
       signal: controller.signal,
     });
 
     if (!response.ok) throw new Error("That address answered, but not like a Subwave station.");
-    const data = (await response.json()) as RadioStationState;
+    const data = (await response.json()) as T;
     if (!data || typeof data !== "object") throw new Error("That station response was not readable.");
     return data;
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+
+  const [state, nowPlayingResponse] = await Promise.all([
+    fetchRadioJson<RadioStationState>(origin, "state"),
+    fetchRadioJson<RadioNowPlayingResponse>(origin, "now-playing").catch(() => null),
+  ]);
+
+  if (!nowPlayingResponse) return state;
+
+  const stateTrack = firstRadioTrack(state);
+  const nowPlaying = nowPlayingResponse.nowPlaying ?? null;
+  const mergedNowPlaying = nowPlaying && stateTrack && sameRadioTrack(stateTrack, nowPlaying) ? { ...stateTrack, ...nowPlaying } : nowPlaying;
+
+  return {
+    ...state,
+    nowPlaying: mergedNowPlaying,
+    nowPlayingKnown: true,
+    context: nowPlayingResponse.context ?? state.context,
+    dj: nowPlayingResponse.dj ?? state.dj,
+    activeShow: nowPlayingResponse.activeShow ?? state.activeShow,
+    listeners: nowPlayingResponse.listeners ?? state.listeners,
+    stream: nowPlayingResponse.stream ?? state.stream,
+    streamOnline: nowPlayingResponse.streamOnline ?? state.streamOnline,
+  };
 }
 
 async function navidromeRequest<T>(
@@ -1029,6 +1107,7 @@ export function App() {
   const [sidebarPlaylistsOpen, setSidebarPlaylistsOpen] = useState(true);
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
   const [queue, setQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -1051,7 +1130,7 @@ export function App() {
   const [radioStatus, setRadioStatus] = useState<RadioStatus>("idle");
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
-  const [radioElapsed, setRadioElapsed] = useState(0);
+  const [radioClockNow, setRadioClockNow] = useState(() => Date.now());
   const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
@@ -1086,11 +1165,12 @@ export function App() {
   const radioNowPlaying = firstRadioTrack(radioStationState);
   const radioUpcoming = upcomingRadioTracks(radioStationState);
   const radioHistory = previousRadioTracks(radioStationState);
+  const isRadioPlaying = radioStatus === "playing";
+  const radioElapsed = isRadioPlaying ? radioTrackElapsedSeconds(radioNowPlaying, radioStationState, radioClockNow) : 0;
   const radioCoverUrl =
     radioNowPlaying?.coverUrl ||
     (config && radioNowPlaying?.coverArt ? buildCoverArtUrl(config, radioNowPlaying.coverArt, "720") : null) ||
     (config && radioNowPlaying?.subsonic_id ? buildCoverArtUrl(config, radioNowPlaying.subsonic_id, "720") : null);
-  const isRadioPlaying = radioStatus === "playing";
   const footerTrack = isRadioPlaying || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const coverWashUrl = appSettings.coverWashEnabled
@@ -1765,6 +1845,11 @@ export function App() {
     setActiveView(view);
   }
 
+  function openSettings(tab: SettingsTab = "connection") {
+    setSettingsTab(tab);
+    setActiveView("settings");
+  }
+
   function openSearchView() {
     clearDetail();
     setBackStack([]);
@@ -2236,13 +2321,10 @@ export function App() {
 
   useEffect(() => {
     if (!isRadioPlaying) return;
-    const interval = window.setInterval(() => setRadioElapsed((value) => value + 1), 1000);
+    setRadioClockNow(Date.now());
+    const interval = window.setInterval(() => setRadioClockNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [isRadioPlaying]);
-
-  useEffect(() => {
-    setRadioElapsed(0);
-  }, [radioNowPlaying?.title, radioNowPlaying?.artist]);
 
   useEffect(() => {
     if (!currentTrack) return;
@@ -2461,6 +2543,15 @@ export function App() {
     return () => window.clearTimeout(timeout);
   }, [config, searchQuery]);
 
+  const radioDuration = radioNowPlaying?.duration ?? 0;
+  const radioHasTimedTrack = Boolean(isRadioPlaying && radioNowPlaying && radioDuration > 0);
+  const footerRadioTitle = radioNowPlaying?.title ?? radioStationName(radioStationState, radioStationUrl);
+  const footerRadioMeta = radioNowPlaying
+    ? [radioNowPlaying.artist, radioNowPlaying.album].filter(Boolean).join(" - ") || radioStationName(radioStationState, radioStationUrl)
+    : "Live broadcast";
+  const seekDuration = isRadioPlaying ? (radioHasTimedTrack ? radioDuration : Math.max(radioElapsed, 1)) : playerDuration || currentTrack?.duration || 0;
+  const seekPosition = isRadioPlaying ? (radioHasTimedTrack ? Math.min(radioElapsed, radioDuration) : 0) : position;
+
   return (
     <main
       className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
@@ -2606,7 +2697,7 @@ export function App() {
           <button
             className={`nav-item sidebar-settings ${activeView === "settings" ? "active" : ""}`}
             type="button"
-            onClick={() => setActiveView("settings")}
+            onClick={() => openSettings()}
           >
             <Settings size={18} />
             Settings
@@ -2651,6 +2742,8 @@ export function App() {
             status={status}
             statusMessage={statusMessage}
             appSettings={appSettings}
+            activeTab={settingsTab}
+            setActiveTab={setSettingsTab}
             updateAppSettings={updateAppSettings}
             onSelectRadioStation={selectRadioStation}
             onRemoveRadioStation={removeRadioStation}
@@ -2671,6 +2764,7 @@ export function App() {
             radioStationInput={radioStationInput}
             setRadioStationInput={setRadioStationInput}
             onSelectRadioStation={selectRadioStation}
+            onOpenRadioSettings={() => openSettings("radio")}
             radioStationState={radioStationState}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
@@ -2761,15 +2855,9 @@ export function App() {
           <div className="now-playing-copy">
             {isRadioPlaying ? (
               <>
-                <span className="track-title radio-footer-title">{radioNowPlaying?.title ?? "Live radio"}</span>
+                <span className="track-title radio-footer-title">{footerRadioTitle}</span>
                 <p className="track-meta">
-                  <span>{radioNowPlaying?.artist ?? radioStationName(radioStationState, radioStationUrl)}</span>
-                  {radioNowPlaying?.album ? (
-                    <>
-                      <span aria-hidden="true"> - </span>
-                      <span>{radioNowPlaying.album}</span>
-                    </>
-                  ) : null}
+                  <span>{footerRadioMeta}</span>
                 </p>
               </>
             ) : footerTrack ? (
@@ -2857,14 +2945,14 @@ export function App() {
               className="seek-slider"
               type="range"
               min="0"
-              max={Math.max(isRadioPlaying ? radioNowPlaying?.duration ?? 0 : playerDuration, currentTrack?.duration ?? 0, 1)}
+              max={Math.max(seekDuration, 1)}
               step="1"
-              value={Math.min(isRadioPlaying ? radioElapsed : position, Math.max(isRadioPlaying ? radioNowPlaying?.duration ?? 0 : playerDuration, currentTrack?.duration ?? 0, 1))}
+              value={Math.min(seekPosition, Math.max(seekDuration, 1))}
               onChange={(event) => seekTo(Number(event.target.value))}
               disabled={isRadioPlaying || !currentTrack}
               aria-label="Seek"
             />
-            <span>{isRadioPlaying ? formatDuration(radioNowPlaying?.duration) : formatDuration(playerDuration || currentTrack?.duration)}</span>
+            <span>{isRadioPlaying ? (radioHasTimedTrack ? formatDuration(radioDuration) : "") : formatDuration(playerDuration || currentTrack?.duration)}</span>
           </div>
           {isRadioPlaying ? <p className="player-error">{radioMessage}</p> : playerError ? <p className="player-error">{playerError}</p> : null}
         </div>
@@ -3663,6 +3751,8 @@ function SettingsView({
   status,
   statusMessage,
   appSettings,
+  activeTab,
+  setActiveTab,
   updateAppSettings,
   onSelectRadioStation,
   onRemoveRadioStation,
@@ -3678,6 +3768,8 @@ function SettingsView({
   status: ConnectionStatus;
   statusMessage: string;
   appSettings: AppSettings;
+  activeTab: SettingsTab;
+  setActiveTab: (tab: SettingsTab) => void;
   updateAppSettings: (settings: AppSettings) => void;
   onSelectRadioStation: (stationUrl: string) => void;
   onRemoveRadioStation: (stationUrl: string) => void;
@@ -3711,7 +3803,30 @@ function SettingsView({
 
   return (
     <section className="settings-layout">
-      <form className="settings-form" onSubmit={onSave}>
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {[
+          { id: "connection", label: "Connection", icon: <CheckCircle2 size={15} /> },
+          { id: "library", label: "Library", icon: <Library size={15} /> },
+          { id: "appearance", label: "Appearance", icon: <Waves size={15} /> },
+          { id: "radio", label: "Radio", icon: <RadioTower size={15} /> },
+          { id: "privacy", label: "Privacy", icon: <CheckCircle2 size={15} /> },
+          { id: "advanced", label: "Advanced", icon: <Settings size={15} /> },
+        ].map((tab) => (
+          <button
+            className={activeTab === tab.id ? "active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            onClick={() => setActiveTab(tab.id as SettingsTab)}
+            key={tab.id}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "connection" ? <form className="settings-form" onSubmit={onSave}>
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Navidrome</p>
@@ -3771,9 +3886,9 @@ function SettingsView({
             Reset Connection
           </button>
         </div>
-      </form>
+      </form> : null}
 
-      <section className="settings-panel">
+      {activeTab === "library" ? <section className="settings-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Library</p>
@@ -3795,9 +3910,9 @@ function SettingsView({
             <option value="art">Art</option>
           </select>
         </label>
-      </section>
+      </section> : null}
 
-      <section className="settings-panel">
+      {activeTab === "library" ? <section className="settings-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Sidebar</p>
@@ -3824,9 +3939,9 @@ function SettingsView({
             onChange={(event) => updateAppSettings({ ...appSettings, sidebarPlaylistLimit: Number(event.target.value) })}
           />
         </label>
-      </section>
+      </section> : null}
 
-      <section className="settings-panel">
+      {activeTab === "appearance" ? <section className="settings-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Appearance</p>
@@ -3842,9 +3957,9 @@ function SettingsView({
           />
           <span>Use current album art as the background wash</span>
         </label>
-      </section>
+      </section> : null}
 
-      <section className="settings-panel">
+      {activeTab === "radio" ? <section className="settings-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Radio</p>
@@ -3888,9 +4003,9 @@ function SettingsView({
           </button>
         </form>
         <p className="settings-note">Prism validates this against `/api/state` and plays the station stream from `/stream.mp3`.</p>
-      </section>
+      </section> : null}
 
-      <section className="settings-panel">
+      {activeTab === "privacy" ? <section className="settings-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Analytics</p>
@@ -3909,9 +4024,9 @@ function SettingsView({
         <p className="settings-note">
           Sends a periodic Beacon ping with app version, install id, platform, channel, and dev/release flag. No library, account, or playback data is sent.
         </p>
-      </section>
+      </section> : null}
 
-      <section className="settings-panel">
+      {activeTab === "advanced" ? <section className="settings-panel">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Advanced</p>
@@ -3924,7 +4039,7 @@ function SettingsView({
             Reset App Settings
           </button>
         </div>
-      </section>
+      </section> : null}
     </section>
   );
 }
@@ -3996,9 +4111,8 @@ function FirstRunWizard({
 function RadioView({
   config,
   appSettings,
-  stationInput,
-  setStationInput,
   onSelectStation,
+  onOpenSettings,
   stationState,
   status,
   message,
@@ -4009,9 +4123,8 @@ function RadioView({
 }: {
   config: NavidromeConfig | null;
   appSettings: AppSettings;
-  stationInput: string;
-  setStationInput: (value: string) => void;
   onSelectStation: (stationUrl: string) => void;
+  onOpenSettings: () => void;
   stationState: RadioStationState | null;
   status: RadioStatus;
   message: string;
@@ -4089,30 +4202,11 @@ function RadioView({
               <RadioTower size={15} />
               Refresh
             </button>
+            <button className="icon-button" type="button" onClick={onOpenSettings} aria-label="Radio settings" title="Radio settings">
+              <Settings size={16} />
+            </button>
           </div>
           <p className={`radio-status ${status === "error" ? "bad" : ""}`}>{message}</p>
-        </div>
-      </div>
-
-      <div className="radio-tuner-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Station</p>
-            <h3>{stationName}</h3>
-          </div>
-          <RadioTower size={18} />
-        </div>
-        <div className="radio-station-form">
-          <input
-            value={stationInput}
-            onChange={(event) => setStationInput(event.target.value)}
-            placeholder="https://radio.example.com"
-            inputMode="url"
-            autoComplete="url"
-          />
-          <button className="secondary-button compact-button" type="button" onClick={() => void refreshRadio()}>
-            Save Station
-          </button>
         </div>
       </div>
 
@@ -4180,6 +4274,7 @@ function LibraryView({
   radioStationInput,
   setRadioStationInput,
   onSelectRadioStation,
+  onOpenRadioSettings,
   radioStationState,
   radioStatus,
   radioMessage,
@@ -4236,6 +4331,7 @@ function LibraryView({
   radioStationInput: string;
   setRadioStationInput: (value: string) => void;
   onSelectRadioStation: (stationUrl: string) => void;
+  onOpenRadioSettings: () => void;
   radioStationState: RadioStationState | null;
   radioStatus: RadioStatus;
   radioMessage: string;
@@ -4289,9 +4385,8 @@ function LibraryView({
       <RadioView
         config={config}
         appSettings={appSettings}
-        stationInput={radioStationInput}
-        setStationInput={setRadioStationInput}
         onSelectStation={onSelectRadioStation}
+        onOpenSettings={onOpenRadioSettings}
         stationState={radioStationState}
         status={radioStatus}
         message={radioMessage}
