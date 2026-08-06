@@ -1,35 +1,66 @@
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, MouseEvent, ReactNode } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Disc3,
+  History,
+  Home,
   Library,
   ListMusic,
   Loader2,
   Music2,
   Pause,
+  PanelRightClose,
+  PanelRightOpen,
   Play,
   Plus,
-  Radio,
+  RadioTower,
+  Repeat,
+  Repeat1,
   Search,
   Settings,
+  Shuffle,
   SkipBack,
   SkipForward,
+  Star,
+  Trash2,
+  Menu,
   UserRound,
+  Volume2,
+  Waves,
   X,
 } from "lucide-react";
 
-type LibraryViewMode = "overview" | "albums" | "artists" | "playlists";
+type LibraryViewMode = "overview" | "albums" | "artists" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
+type LibraryStatus = "idle" | "loading" | "ready" | "error";
+type AlbumViewMode = "art" | "list";
+type ArtistViewMode = "art" | "list";
+type RepeatMode = "off" | "all" | "one";
+type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
+type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
 type NavidromeConfig = {
   serverUrl: string;
   username: string;
   password: string;
+};
+
+type AppSettings = {
+  lastVolume: number;
+  defaultAlbumView: AlbumViewMode;
+  defaultArtistView: ArtistViewMode;
+  showSidebarPlaylists: boolean;
+  sidebarPlaylistLimit: number;
+  analyticsEnabled: boolean;
+  analyticsPromptDismissed: boolean;
+  coverWashEnabled: boolean;
+  radioStationUrl: string;
 };
 
 type Album = {
@@ -48,38 +79,78 @@ type Artist = {
   albumCount?: number;
 };
 
+type ArtistInfo = {
+  biography?: string;
+  musicBrainzId?: string;
+  lastFmUrl?: string;
+  smallImageUrl?: string;
+  mediumImageUrl?: string;
+  largeImageUrl?: string;
+  similarArtist?: Artist[];
+};
+
 type LibraryData = {
   albums: Album[];
+  recentAlbums: Album[];
+  recentlyPlayedAlbums: Album[];
   artists: Artist[];
+  playlists: Playlist[];
+  favorites: {
+    artists: Artist[];
+    albums: Album[];
+    songs: Song[];
+  };
 };
 
 type SearchResults = {
   artists: Artist[];
   albums: Album[];
   songs: Song[];
+  playlists: Playlist[];
 };
 
 type Song = {
   id: string;
   title: string;
+  albumId?: string;
+  artistId?: string;
   artist?: string;
   album?: string;
   coverArt?: string;
   duration?: number;
   track?: number;
+  discNumber?: number;
+};
+
+type Playlist = {
+  id: string;
+  name: string;
+  songCount?: number;
+  duration?: number;
+  owner?: string;
+  comment?: string;
+  public?: boolean;
+  created?: string;
+  changed?: string;
 };
 
 type AlbumDetail = Album & {
   song?: Song[];
 };
 
+type PlaylistDetail = Playlist & {
+  entry?: Song[];
+};
+
 type ArtistDetail = Artist & {
   album?: Album[];
+  info?: ArtistInfo | null;
 };
 
 type DetailSelection =
   | { type: "album"; data: AlbumDetail }
   | { type: "artist"; data: ArtistDetail }
+  | { type: "playlist"; data: PlaylistDetail }
   | null;
 
 type BrowserSnapshot = {
@@ -87,7 +158,94 @@ type BrowserSnapshot = {
   detailSelection: DetailSelection;
 };
 
+type SongContextMenuState = {
+  song: Song;
+  x: number;
+  y: number;
+} | null;
+
+type LibraryContextMenuState =
+  | { type: "album"; item: Album; x: number; y: number }
+  | { type: "artist"; item: Artist; x: number; y: number }
+  | { type: "playlist"; item: Playlist; x: number; y: number }
+  | null;
+
+type FavoriteKind = "song" | "album" | "artist";
+type FavoriteIds = {
+  songs: Set<string>;
+  albums: Set<string>;
+  artists: Set<string>;
+};
+type PlaylistDetailsUpdate = {
+  name: string;
+  comment: string;
+  public: boolean;
+};
+
+type LyricsPayload = {
+  lyrics?: {
+    value?: string;
+    synced?: boolean;
+    line?: Array<{ value?: string; start?: number | string; startMs?: number | string } | string>;
+  } | string;
+};
+
+type LyricLine = {
+  text: string;
+  startMs: number | null;
+};
+
+type PlaybackSnapshot = {
+  queue: Song[];
+  currentIndex: number;
+  position: number;
+};
+
+type RadioTrack = {
+  title?: string;
+  artist?: string;
+  album?: string;
+  year?: number;
+  duration?: number;
+  subsonic_id?: string;
+  coverArt?: string;
+  coverUrl?: string;
+  requestedBy?: string;
+};
+
+type RadioStationState = {
+  nowPlaying?: RadioTrack;
+  now_playing?: RadioTrack;
+  current?: RadioTrack;
+  track?: RadioTrack;
+  upcoming?: RadioTrack[];
+  queue?: RadioTrack[] | { upcoming?: RadioTrack[]; current?: RadioTrack };
+  history?: RadioTrack[];
+  listeners?: number | { count?: number; current?: number; total?: number };
+  activeShow?: { name?: string };
+  dj?: { name?: string };
+  context?: {
+    stationName?: string;
+    station?: { name?: string };
+  };
+  station?: { name?: string };
+  status?: string;
+  state?: string;
+};
+
+type RadioStatus = "idle" | "checking" | "ready" | "playing" | "error";
+
 const STORAGE_KEY = "prism-player.navidrome";
+const SETTINGS_KEY = "prism-player.settings";
+const LAST_PLAYED_TRACK_KEY = "prism-player.lastPlayedTrack";
+const PLAYBACK_STATE_KEY = "prism-player.playbackState";
+const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
+const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
+const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
+const INSTALL_ID_KEY = "prism-player.installId";
+const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
+const APP_VERSION = "0.1.0";
+const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
 const API_VERSION = "1.16.1";
 
@@ -101,7 +259,116 @@ const emptySearchResults: SearchResults = {
   artists: [],
   albums: [],
   songs: [],
+  playlists: [],
 };
+
+const emptyLibraryData: LibraryData = {
+  albums: [],
+  recentAlbums: [],
+  recentlyPlayedAlbums: [],
+  artists: [],
+  playlists: [],
+  favorites: {
+    artists: [],
+    albums: [],
+    songs: [],
+  },
+};
+
+const defaultSettings: AppSettings = {
+  lastVolume: 0.82,
+  defaultAlbumView: "art",
+  defaultArtistView: "list",
+  showSidebarPlaylists: true,
+  sidebarPlaylistLimit: 8,
+  analyticsEnabled: false,
+  analyticsPromptDismissed: false,
+  coverWashEnabled: true,
+  radioStationUrl: "",
+};
+
+const ALPHABET = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
+
+type AlphaGroup<T> = {
+  letter: string;
+  items: T[];
+};
+
+function alphaSectionId(prefix: string, letter: string) {
+  return `${prefix}-${letter === "#" ? "num" : letter}`;
+}
+
+function getAlphaKey(value: string) {
+  const first = value.trim().charAt(0).toUpperCase();
+  return /^[A-Z]$/.test(first) ? first : "#";
+}
+
+function groupByAlpha<T>(items: T[], getLabel: (item: T) => string): AlphaGroup<T>[] {
+  const buckets = new Map<string, T[]>();
+
+  for (const item of [...items].sort((a, b) => getLabel(a).localeCompare(getLabel(b)))) {
+    const letter = getAlphaKey(getLabel(item));
+    buckets.set(letter, [...(buckets.get(letter) ?? []), item]);
+  }
+
+  return ALPHABET.map((letter) => ({ letter, items: buckets.get(letter) ?? [] })).filter((group) => group.items.length);
+}
+
+function getViewLabel(view: View) {
+  const labels: Record<View, string> = {
+    overview: "Home",
+    albums: "Albums",
+    artists: "Artists",
+    playlists: "Playlists",
+    recentlyAdded: "Recently Added",
+    recentlyPlayed: "Recently Played",
+    favorites: "Favorites",
+    radio: "Radio",
+    search: "Search",
+    settings: "Settings",
+  };
+
+  return labels[view];
+}
+
+function getGreetingPeriod() {
+  const hour = new Date().getHours();
+  if (hour < 5) return "night";
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  if (hour < 22) return "evening";
+  return "night";
+}
+
+function formatDisplayName(value?: string) {
+  if (!value) return "there";
+  return value
+    .trim()
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function sortAlbumsChronologically(albums: Album[]) {
+  return [...albums].sort((a, b) => {
+    const yearA = a.year ?? Number.MAX_SAFE_INTEGER;
+    const yearB = b.year ?? Number.MAX_SAFE_INTEGER;
+
+    if (yearA !== yearB) return yearA - yearB;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function getArtistImageUrl(info?: ArtistInfo | null) {
+  return info?.largeImageUrl || info?.mediumImageUrl || info?.smallImageUrl || null;
+}
+
+function cleanBiography(value?: string) {
+  if (!value) return "";
+  const document = new DOMParser().parseFromString(value, "text/html");
+  return document.body.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
 
 function loadStoredConfig(): NavidromeConfig | null {
   try {
@@ -112,6 +379,174 @@ function loadStoredConfig(): NavidromeConfig | null {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function loadStoredSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return defaultSettings;
+    const parsed = JSON.parse(raw) as Partial<AppSettings> & { defaultVolume?: number };
+
+    return {
+      lastVolume: clampNumber(Number(parsed.lastVolume ?? parsed.defaultVolume ?? defaultSettings.lastVolume), 0, 1),
+      defaultAlbumView: parsed.defaultAlbumView === "list" ? "list" : "art",
+      defaultArtistView: parsed.defaultArtistView === "art" ? "art" : "list",
+      showSidebarPlaylists: parsed.showSidebarPlaylists ?? defaultSettings.showSidebarPlaylists,
+      sidebarPlaylistLimit: clampNumber(Number(parsed.sidebarPlaylistLimit ?? defaultSettings.sidebarPlaylistLimit), 3, 20),
+      analyticsEnabled: Boolean(parsed.analyticsEnabled),
+      analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
+      radioStationUrl: typeof parsed.radioStationUrl === "string" ? parsed.radioStationUrl : defaultSettings.radioStationUrl,
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
+
+function getInstallId() {
+  try {
+    const existing = localStorage.getItem(INSTALL_ID_KEY);
+    if (existing) return existing;
+    const installId = crypto.randomUUID();
+    localStorage.setItem(INSTALL_ID_KEY, installId);
+    return installId;
+  } catch {
+    return "unknown-install";
+  }
+}
+
+function getRuntimePlatform() {
+  const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  return userAgentData?.platform || navigator.platform || "unknown";
+}
+
+function getRuntimeArch() {
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (userAgent.includes("arm64") || userAgent.includes("aarch64")) return "arm64";
+  if (userAgent.includes("x86_64") || userAgent.includes("win64") || userAgent.includes("wow64")) return "x64";
+  return "unknown";
+}
+
+function isDevRuntime() {
+  return Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+}
+
+async function sendAnalyticsPing() {
+  const isDev = isDevRuntime();
+
+  await fetch(BEACON_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project: "prism-player",
+      install_id: getInstallId(),
+      version: APP_VERSION,
+      arch: getRuntimeArch(),
+      timestamp: new Date().toISOString(),
+      channel: isDev ? "dev" : "release",
+      os: getRuntimePlatform(),
+      dev: isDev,
+    }),
+  });
+}
+
+function lyricTextLines(value: string): LyricLine[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((text) => ({ text, startMs: null }));
+}
+
+function parseLyricStartMs(value: number | string | undefined) {
+  if (value == null || value === "") return null;
+  const raw = String(value).trim();
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return raw.includes(".") && numeric < 1000 ? Math.round(numeric * 1000) : Math.round(numeric);
+}
+
+function normalizeLyrics(response: LyricsPayload): LyricLine[] {
+  const lyrics = response.lyrics;
+
+  if (!lyrics) return [];
+  if (typeof lyrics === "string") return lyricTextLines(lyrics);
+  if (typeof lyrics.value === "string") return lyricTextLines(lyrics.value);
+  if (Array.isArray(lyrics.line)) {
+    return lyrics.line
+      .map((line) => {
+        if (typeof line === "string") return { text: line.trim(), startMs: null };
+        return {
+          text: (line.value ?? "").trim(),
+          startMs: parseLyricStartMs(line.startMs ?? line.start),
+        };
+      })
+      .filter((line) => line.text);
+  }
+
+  return [];
+}
+
+function loadLastPlayedTrack() {
+  try {
+    const raw = localStorage.getItem(LAST_PLAYED_TRACK_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<Song>;
+    return typeof parsed.id === "string" && typeof parsed.title === "string" ? (parsed as Song) : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStoredSong(value: unknown): value is Song {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as Partial<Song>).id === "string" &&
+      typeof (value as Partial<Song>).title === "string",
+  );
+}
+
+function loadPlaybackSnapshot(): PlaybackSnapshot | null {
+  try {
+    const raw = localStorage.getItem(PLAYBACK_STATE_KEY);
+    if (!raw) {
+      const lastPlayedTrack = loadLastPlayedTrack();
+      return lastPlayedTrack ? { queue: [lastPlayedTrack], currentIndex: 0, position: 0 } : null;
+    }
+    const parsed = JSON.parse(raw) as Partial<PlaybackSnapshot>;
+    const queue = Array.isArray(parsed.queue) ? parsed.queue.filter(isStoredSong) : [];
+    const currentIndex = Math.round(clampNumber(Number(parsed.currentIndex ?? 0), 0, Math.max(queue.length - 1, 0)));
+    const position = clampNumber(Number(parsed.position ?? 0), 0, 24 * 60 * 60);
+
+    return queue.length ? { queue, currentIndex, position } : null;
+  } catch {
+    const lastPlayedTrack = loadLastPlayedTrack();
+    return lastPlayedTrack ? { queue: [lastPlayedTrack], currentIndex: 0, position: 0 } : null;
+  }
+}
+
+function loadStoredBoolean(key: string, fallback: boolean) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function loadStoredRightPanelTab(): RightPanelTab {
+  try {
+    const storedTab = localStorage.getItem(RIGHT_PANEL_TAB_KEY);
+    return storedTab === "nowPlaying" || storedTab === "lyrics" ? storedTab : "queue";
+  } catch {
+    return "queue";
   }
 }
 
@@ -137,7 +572,7 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-function buildNavidromeUrl(config: NavidromeConfig, endpoint: string, params: Record<string, string>) {
+function buildNavidromeUrl(config: NavidromeConfig, endpoint: string, params: Record<string, string | string[]>) {
   const url = new URL(`${normalizeServerUrl(config.serverUrl)}/rest/${endpoint}.view`);
   url.searchParams.set("u", config.username);
   url.searchParams.set("p", config.password);
@@ -146,6 +581,11 @@ function buildNavidromeUrl(config: NavidromeConfig, endpoint: string, params: Re
   url.searchParams.set("f", "json");
 
   Object.entries(params).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => url.searchParams.append(key, item));
+      return;
+    }
+
     url.searchParams.set(key, value);
   });
 
@@ -157,10 +597,90 @@ function buildCoverArtUrl(config: NavidromeConfig, coverArt?: string, size = "42
   return buildNavidromeUrl(config, "getCoverArt", { id: coverArt, size }).toString();
 }
 
+function buildStreamUrl(config: NavidromeConfig, songId: string) {
+  return buildNavidromeUrl(config, "stream", { id: songId }).toString();
+}
+
+function normalizeStationUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const candidate = hasUrlScheme(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    return new URL(candidate).origin;
+  } catch {
+    return "";
+  }
+}
+
+function buildRadioApiUrl(stationUrl: string, endpoint: string) {
+  return `${normalizeStationUrl(stationUrl)}/api/${endpoint.replace(/^\/+/, "")}`;
+}
+
+function buildRadioStreamUrl(stationUrl: string) {
+  return `${normalizeStationUrl(stationUrl)}/stream.mp3`;
+}
+
+function firstRadioTrack(state: RadioStationState | null): RadioTrack | null {
+  if (!state) return null;
+  if (state.nowPlaying) return state.nowPlaying;
+  if (state.now_playing) return state.now_playing;
+  if (state.current) return state.current;
+  if (state.track) return state.track;
+  if (!Array.isArray(state.queue) && state.queue?.current) return state.queue.current;
+  return null;
+}
+
+function upcomingRadioTracks(state: RadioStationState | null): RadioTrack[] {
+  if (!state) return [];
+  if (Array.isArray(state.upcoming)) return state.upcoming;
+  if (!Array.isArray(state.queue) && Array.isArray(state.queue?.upcoming)) return state.queue.upcoming;
+  if (Array.isArray(state.queue)) return state.queue;
+  return [];
+}
+
+function radioListenerCount(state: RadioStationState | null): number | null {
+  const listeners = state?.listeners;
+  if (typeof listeners === "number") return listeners;
+  if (!listeners) return null;
+  return listeners.count ?? listeners.current ?? listeners.total ?? null;
+}
+
+function radioStationName(state: RadioStationState | null, stationUrl: string) {
+  return (
+    state?.context?.stationName ||
+    state?.context?.station?.name ||
+    state?.station?.name ||
+    (stationUrl ? new URL(normalizeStationUrl(stationUrl)).host : "Subwave")
+  );
+}
+
+async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(buildRadioApiUrl(origin, "state"), {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new Error("That address answered, but not like a Subwave station.");
+    const data = (await response.json()) as RadioStationState;
+    if (!data || typeof data !== "object") throw new Error("That station response was not readable.");
+    return data;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function navidromeRequest<T>(
   config: NavidromeConfig,
   endpoint: string,
-  params: Record<string, string> = {},
+  params: Record<string, string | string[]> = {},
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 10000);
@@ -214,19 +734,57 @@ async function resolveNavidromeConfig(config: NavidromeConfig) {
 }
 
 async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
-  const [albumResponse, artistResponse] = await Promise.all([
+  const [albums, recentAlbumResponse, recentlyPlayedResponse, artistResponse, playlistResponse, starredResponse] = await Promise.all([
+    fetchAlbumLibrary(config),
+    navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
+      type: "newest",
+      size: "60",
+    }),
     navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
       type: "recent",
-      size: "24",
+      size: "60",
     }),
     navidromeRequest<{ artists?: { index?: Array<{ artist?: Artist[] }> } }>(config, "getArtists"),
+    navidromeRequest<{ playlists?: { playlist?: Playlist[] } }>(config, "getPlaylists").catch(() => null),
+    navidromeRequest<{
+      starred2?: {
+        artist?: Artist[];
+        album?: Album[];
+        song?: Song[];
+      };
+    }>(config, "getStarred2").catch(() => null),
   ]);
 
   return {
-    albums: albumResponse.albumList2?.album ?? [],
-    artists:
-      artistResponse.artists?.index?.flatMap((index) => index.artist ?? [])?.slice(0, 36) ?? [],
+    albums,
+    recentAlbums: recentAlbumResponse.albumList2?.album ?? [],
+    recentlyPlayedAlbums: recentlyPlayedResponse.albumList2?.album ?? [],
+    artists: artistResponse.artists?.index?.flatMap((index) => index.artist ?? []) ?? [],
+    playlists: playlistResponse?.playlists?.playlist ?? [],
+    favorites: {
+      artists: starredResponse?.starred2?.artist ?? [],
+      albums: starredResponse?.starred2?.album ?? [],
+      songs: starredResponse?.starred2?.song ?? [],
+    },
   };
+}
+
+async function fetchAlbumLibrary(config: NavidromeConfig): Promise<Album[]> {
+  const albums: Album[] = [];
+  const size = 500;
+
+  for (let offset = 0; offset < 5000; offset += size) {
+    const response = await navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
+      type: "alphabeticalByName",
+      size: String(size),
+      offset: String(offset),
+    });
+    const page = response.albumList2?.album ?? [];
+    albums.push(...page);
+    if (page.length < size) break;
+  }
+
+  return albums;
 }
 
 async function fetchAlbumDetail(config: NavidromeConfig, albumId: string): Promise<AlbumDetail> {
@@ -235,53 +793,207 @@ async function fetchAlbumDetail(config: NavidromeConfig, albumId: string): Promi
 }
 
 async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Promise<ArtistDetail> {
-  const response = await navidromeRequest<{ artist: ArtistDetail }>(config, "getArtist", { id: artistId });
-  return response.artist;
+  const [artistResponse, infoResponse] = await Promise.all([
+    navidromeRequest<{ artist: ArtistDetail }>(config, "getArtist", { id: artistId }),
+    navidromeRequest<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id: artistId }).catch(() => null),
+  ]);
+
+  return {
+    ...artistResponse.artist,
+    info: infoResponse?.artistInfo2 ?? null,
+  };
+}
+
+async function fetchPlaylistDetail(config: NavidromeConfig, playlistId: string): Promise<PlaylistDetail> {
+  const response = await navidromeRequest<{ playlist: PlaylistDetail }>(config, "getPlaylist", { id: playlistId });
+  return response.playlist;
+}
+
+async function fetchLyrics(config: NavidromeConfig, song: Song) {
+  const response = await navidromeRequest<LyricsPayload>(config, "getLyrics", {
+    artist: song.artist ?? "",
+    title: song.title,
+  });
+
+  return normalizeLyrics(response);
+}
+
+async function fetchAutoplaySongs(config: NavidromeConfig, seedSong: Song) {
+  const similarResponse = await navidromeRequest<{ similarSongs2?: { song?: Song[] } }>(config, "getSimilarSongs2", {
+    id: seedSong.id,
+    count: "25",
+  }).catch(() => null);
+
+  const similarSongs = similarResponse?.similarSongs2?.song ?? [];
+  if (similarSongs.length) return similarSongs;
+
+  const randomResponse = await navidromeRequest<{ randomSongs?: { song?: Song[] } }>(config, "getRandomSongs", {
+    size: "25",
+  });
+
+  return randomResponse.randomSongs?.song ?? [];
+}
+
+async function createPlaylist(config: NavidromeConfig, name: string, songs: Song[] = []) {
+  await navidromeRequest(config, "createPlaylist", {
+    name,
+    songId: songs.map((song) => song.id),
+  });
+}
+
+async function updatePlaylistDetails(config: NavidromeConfig, playlistId: string, details: PlaylistDetailsUpdate) {
+  await navidromeRequest(config, "updatePlaylist", {
+    playlistId,
+    name: details.name,
+    comment: details.comment,
+    public: String(details.public),
+  });
+}
+
+async function deletePlaylist(config: NavidromeConfig, playlistId: string) {
+  await navidromeRequest(config, "deletePlaylist", { id: playlistId });
+}
+
+async function removePlaylistSong(config: NavidromeConfig, playlistId: string, index: number) {
+  await navidromeRequest(config, "updatePlaylist", {
+    playlistId,
+    songIndexToRemove: String(index),
+  });
+}
+
+async function replacePlaylistSongs(config: NavidromeConfig, playlist: PlaylistDetail, songs: Song[]) {
+  const currentSongs = playlist.entry ?? [];
+  await navidromeRequest(config, "updatePlaylist", {
+    playlistId: playlist.id,
+    name: playlist.name,
+    comment: playlist.comment ?? "",
+    public: String(Boolean(playlist.public)),
+    songIndexToRemove: currentSongs.map((_, index) => String(currentSongs.length - index - 1)),
+    songIdToAdd: songs.map((song) => song.id),
+  });
+}
+
+async function addSongsToPlaylist(config: NavidromeConfig, playlistId: string, songs: Song[]) {
+  await navidromeRequest(config, "updatePlaylist", {
+    playlistId,
+    songIdToAdd: songs.map((song) => song.id),
+  });
+}
+
+async function setNavidromeFavorite(config: NavidromeConfig, kind: FavoriteKind, id: string, favorite: boolean) {
+  const params: Record<string, string> =
+    kind === "song" ? { id } : kind === "album" ? { albumId: id } : { artistId: id };
+
+  await navidromeRequest(config, favorite ? "star" : "unstar", params);
+}
+
+async function scrobbleSong(config: NavidromeConfig, song: Song) {
+  await navidromeRequest(config, "scrobble", {
+    id: song.id,
+    time: String(Date.now()),
+    submission: "true",
+  });
 }
 
 async function fetchSearchResults(config: NavidromeConfig, query: string): Promise<SearchResults> {
-  const response = await navidromeRequest<{
-    searchResult3?: {
-      artist?: Artist[];
-      album?: Album[];
-      song?: Song[];
-    };
-  }>(config, "search3", {
-    query,
-    artistCount: "6",
-    albumCount: "8",
-    songCount: "10",
-  });
+  const [response, playlistResponse] = await Promise.all([
+    navidromeRequest<{
+      searchResult3?: {
+        artist?: Artist[];
+        album?: Album[];
+        song?: Song[];
+      };
+    }>(config, "search3", {
+      query,
+      artistCount: "12",
+      albumCount: "18",
+      songCount: "40",
+    }),
+    navidromeRequest<{ playlists?: { playlist?: Playlist[] } }>(config, "getPlaylists").catch(() => null),
+  ]);
+
+  const normalizedQuery = query.toLocaleLowerCase();
+  const playlists =
+    playlistResponse?.playlists?.playlist
+      ?.filter((playlist) => playlist.name.toLocaleLowerCase().includes(normalizedQuery))
+      .slice(0, 20) ?? [];
 
   return {
     artists: response.searchResult3?.artist ?? [],
     albums: response.searchResult3?.album ?? [],
     songs: response.searchResult3?.song ?? [],
+    playlists,
   };
 }
 
 function formatDuration(seconds?: number) {
-  if (!seconds) return "-:--";
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
+  if (!seconds || !Number.isFinite(seconds)) return "-:--";
+  const wholeSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+function getSongDisc(song: Song) {
+  return song.discNumber ?? Number.MAX_SAFE_INTEGER;
+}
+
+function getSongTrack(song: Song) {
+  return song.track ?? Number.MAX_SAFE_INTEGER;
+}
+
+function sortAlbumSongs(songs: Song[]) {
+  return [...songs].sort((a, b) => {
+    const discA = getSongDisc(a);
+    const discB = getSongDisc(b);
+    const trackA = getSongTrack(a);
+    const trackB = getSongTrack(b);
+
+    return (
+      discA - discB ||
+      trackA - trackB ||
+      a.title.localeCompare(b.title)
+    );
+  });
+}
+
+type DiscGroup = {
+  discNumber: number | null;
+  songs: Song[];
+};
+
+function groupSongsByDisc(songs: Song[]): DiscGroup[] {
+  const groups = new Map<number | null, Song[]>();
+
+  for (const song of songs) {
+    const discNumber = song.discNumber ?? null;
+    groups.set(discNumber, [...(groups.get(discNumber) ?? []), song]);
+  }
+
+  return [...groups.entries()].map(([discNumber, groupedSongs]) => ({
+    discNumber,
+    songs: groupedSongs,
+  }));
 }
 
 function getSnapshotLabel(snapshot: BrowserSnapshot | null) {
   if (!snapshot) return "";
   if (snapshot.detailSelection?.type === "artist") return snapshot.detailSelection.data.name;
   if (snapshot.detailSelection?.type === "album") return snapshot.detailSelection.data.name;
-  if (snapshot.activeView === "overview") return "Library";
-  return snapshot.activeView.charAt(0).toUpperCase() + snapshot.activeView.slice(1);
+  if (snapshot.detailSelection?.type === "playlist") return snapshot.detailSelection.data.name;
+  return getViewLabel(snapshot.activeView);
 }
 
 export function App() {
+  const [initialPlaybackSnapshot] = useState(() => loadPlaybackSnapshot());
   const [activeView, setActiveView] = useState<View>("overview");
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
+  const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
-  const [libraryData, setLibraryData] = useState<LibraryData>({ albums: [], artists: [] });
+  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
+  const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -292,27 +1004,296 @@ export function App() {
   const [searchResults, setSearchResults] = useState<SearchResults>(emptySearchResults);
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
   const [searchFocused, setSearchFocused] = useState(false);
-  const [queue, setQueue] = useState<Song[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadStoredBoolean(SIDEBAR_COLLAPSED_KEY, false));
+  const [sidebarPlaylistsOpen, setSidebarPlaylistsOpen] = useState(true);
+  const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
+  const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
+  const [queue, setQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
+  const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
+    () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
+  );
+  const [position, setPosition] = useState(() => initialPlaybackSnapshot?.position ?? 0);
+  const [playerDuration, setPlayerDuration] = useState(() => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex]?.duration ?? 0);
+  const [volume, setVolume] = useState(() => loadStoredSettings().lastVolume);
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => loadStoredBoolean(RIGHT_PANEL_OPEN_KEY, false));
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>(() => loadStoredRightPanelTab());
+  const [lyricsStatus, setLyricsStatus] = useState<LyricsStatus>("idle");
+  const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
+  const [lyricsMessage, setLyricsMessage] = useState("");
+  const [playerError, setPlayerError] = useState("");
+  const [shuffleEnabled, setShuffleEnabled] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
+  const [radioStationInput, setRadioStationInput] = useState(appSettings.radioStationUrl);
+  const [radioStationState, setRadioStationState] = useState<RadioStationState | null>(null);
+  const [radioStatus, setRadioStatus] = useState<RadioStatus>("idle");
+  const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
+  const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
+  const [radioElapsed, setRadioElapsed] = useState(0);
+  const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
+  const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
+  const [playlistCreatorOpen, setPlaylistCreatorOpen] = useState(false);
+  const [playlistName, setPlaylistName] = useState("");
+  const [playlistDescription, setPlaylistDescription] = useState("");
+  const [playlistPublic, setPlaylistPublic] = useState(false);
+  const [playlistFromQueue, setPlaylistFromQueue] = useState(true);
+  const [playlistCreateStatus, setPlaylistCreateStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [playlistCreateMessage, setPlaylistCreateMessage] = useState("");
+  const [songContextMenu, setSongContextMenu] = useState<SongContextMenuState>(null);
+  const [libraryContextMenu, setLibraryContextMenu] = useState<LibraryContextMenuState>(null);
+  const [playlistDeleteTarget, setPlaylistDeleteTarget] = useState<Playlist | null>(null);
+  const [playlistDeleteStatus, setPlaylistDeleteStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [playlistDeleteMessage, setPlaylistDeleteMessage] = useState("");
+  const [playlistEditRequestKey, setPlaylistEditRequestKey] = useState(0);
+  const [playlistAddStatus, setPlaylistAddStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [playlistAddMessage, setPlaylistAddMessage] = useState("");
+  const [favoriteBusyKey, setFavoriteBusyKey] = useState("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const radioAudioRef = useRef<HTMLAudioElement | null>(null);
+  const scrobbledPlayRef = useRef("");
+  const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
+  const lastPlaybackPersistRef = useRef(0);
+  const lastPlaybackPersistTrackRef = useRef("");
+  const autoplayLoadingRef = useRef(false);
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
+  const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "160") : null;
+  const radioStationUrl = normalizeStationUrl(appSettings.radioStationUrl);
+  const radioNowPlaying = firstRadioTrack(radioStationState);
+  const radioUpcoming = upcomingRadioTracks(radioStationState);
+  const radioCoverUrl =
+    radioNowPlaying?.coverUrl ||
+    (config && radioNowPlaying?.coverArt ? buildCoverArtUrl(config, radioNowPlaying.coverArt, "720") : null) ||
+    (config && radioNowPlaying?.subsonic_id ? buildCoverArtUrl(config, radioNowPlaying.subsonic_id, "720") : null);
+  const isRadioPlaying = radioStatus === "playing";
+  const footerTrack = isRadioPlaying ? null : currentTrack ?? lastPlayedTrack;
+  const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
+  const coverWashUrl = appSettings.coverWashEnabled
+    ? isRadioPlaying
+      ? radioCoverUrl
+      : config && footerTrack
+        ? buildCoverArtUrl(config, footerTrack.coverArt, "900")
+        : null
+    : null;
+  const currentStreamUrl = config && currentTrack ? buildStreamUrl(config, currentTrack.id) : null;
+  const favoriteIds = useMemo<FavoriteIds>(
+    () => ({
+      songs: new Set(libraryData.favorites.songs.map((song) => song.id)),
+      albums: new Set(libraryData.favorites.albums.map((album) => album.id)),
+      artists: new Set(libraryData.favorites.artists.map((artist) => artist.id)),
+    }),
+    [libraryData.favorites.albums, libraryData.favorites.artists, libraryData.favorites.songs],
+  );
+  const albumLookup = useMemo(() => {
+    const albums = [
+      ...libraryData.albums,
+      ...libraryData.recentAlbums,
+      ...libraryData.recentlyPlayedAlbums,
+      ...libraryData.favorites.albums,
+      ...searchResults.albums,
+    ];
+    return new Map(albums.map((album) => [album.id, album]));
+  }, [libraryData.albums, libraryData.favorites.albums, libraryData.recentAlbums, libraryData.recentlyPlayedAlbums, searchResults.albums]);
+  const artistLookup = useMemo(() => {
+    const artists = [...libraryData.artists, ...libraryData.favorites.artists, ...searchResults.artists];
+    return new Map(artists.map((artist) => [artist.id, artist]));
+  }, [libraryData.artists, libraryData.favorites.artists, searchResults.artists]);
+  const playlistLookup = useMemo(() => {
+    const playlists = [...libraryData.playlists, ...searchResults.playlists];
+    return new Map(playlists.map((playlist) => [playlist.id, playlist]));
+  }, [libraryData.playlists, searchResults.playlists]);
+  const displayedQueue = useMemo(() => {
+    const items = queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0));
+    const draggedDisplayIndex = items.findIndex((item) => item.index === draggedQueueIndex);
+    const dragOverDisplayIndex = items.findIndex((item) => item.index === dragOverQueueIndex);
+
+    if (
+      draggedQueueIndex == null ||
+      dragOverQueueIndex == null ||
+      draggedQueueIndex === dragOverQueueIndex ||
+      draggedDisplayIndex < 0 ||
+      dragOverDisplayIndex < 0
+    ) {
+      return items;
+    }
+
+    const [draggedItem] = items.splice(draggedDisplayIndex, 1);
+    items.splice(dragOverDisplayIndex, 0, draggedItem);
+    return items;
+  }, [currentIndex, dragOverQueueIndex, draggedQueueIndex, queue]);
   const libraryItems = useMemo(
     () => [
-      { label: "Recently Added", value: `${libraryData.albums.length || "-"} albums` },
-      { label: "Albums", value: hasConfig ? `${libraryData.albums.length} loaded` : "Needs server" },
       { label: "Artists", value: hasConfig ? `${libraryData.artists.length} loaded` : "Needs server" },
-      { label: "Playlists", value: "Coming next" },
-      { label: "Favorites", value: "Coming next" },
+      { label: "Albums", value: hasConfig ? `${libraryData.albums.length} loaded` : "Needs server" },
+      { label: "Playlists", value: hasConfig ? `${libraryData.playlists.length} loaded` : "Needs server" },
+      { label: "Recently Added", value: hasConfig ? `${libraryData.recentAlbums.length} albums` : "Needs server" },
+      { label: "Recently Played", value: hasConfig ? `${libraryData.recentlyPlayedAlbums.length} albums` : "Needs server" },
+      {
+        label: "Favorites",
+        value: hasConfig
+          ? `${libraryData.favorites.artists.length + libraryData.favorites.albums.length + libraryData.favorites.songs.length} saved`
+          : "Needs server",
+      },
     ],
-    [hasConfig, libraryData.albums.length, libraryData.artists.length],
+    [
+      hasConfig,
+      libraryData.albums.length,
+      libraryData.artists.length,
+      libraryData.favorites.albums.length,
+      libraryData.favorites.artists.length,
+      libraryData.favorites.songs.length,
+      libraryData.playlists.length,
+      libraryData.recentAlbums.length,
+      libraryData.recentlyPlayedAlbums.length,
+    ],
   );
+
+  async function refreshRadio(nextUrl = radioStationInput) {
+    const origin = normalizeStationUrl(nextUrl);
+    if (!origin) {
+      setRadioStatus("error");
+      setRadioMessage("Enter a valid Subwave station URL.");
+      return null;
+    }
+
+    setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "checking"));
+    setRadioMessage("Checking station...");
+
+    try {
+      const nextState = await fetchRadioState(origin);
+      setRadioStationState(nextState);
+      updateAppSettings({ ...appSettings, radioStationUrl: origin });
+      setRadioStationInput(origin);
+      setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
+      setRadioMessage("Station connected.");
+      return nextState;
+    } catch (error) {
+      setRadioStatus("error");
+      setRadioMessage(getErrorMessage(error));
+      return null;
+    }
+  }
+
+  function tuneOutRadio(nextMessage = radioStationState ? "Ready to tune in." : "Add a Subwave station URL to start.") {
+    const audio = radioAudioRef.current;
+    audio?.pause();
+    if (audio) audio.removeAttribute("src");
+    setRadioStatus(radioStationState ? "ready" : "idle");
+    setRadioMessage(nextMessage);
+  }
+
+  async function tuneInRadio() {
+    const origin = normalizeStationUrl(radioStationInput || appSettings.radioStationUrl);
+    const radioAudio = radioAudioRef.current;
+    if (!origin || !radioAudio) {
+      setRadioStatus("error");
+      setRadioMessage("Enter a valid Subwave station URL.");
+      return;
+    }
+
+    if (!radioStationState || origin !== radioStationUrl) {
+      const nextState = await refreshRadio(origin);
+      if (!nextState) return;
+    }
+
+    audioRef.current?.pause();
+    setIsPlaying(false);
+    radioAudio.src = buildRadioStreamUrl(origin);
+    radioAudio.volume = radioVolume;
+    setRadioStatus("checking");
+    setRadioMessage("Tuning in...");
+
+    try {
+      await radioAudio.play();
+      setRadioStatus("playing");
+      setRadioMessage("On air.");
+    } catch {
+      setRadioStatus("error");
+      setRadioMessage("The stream could not start.");
+    }
+  }
+
+  function setRadioPlaybackVolume(nextVolume: number) {
+    const clamped = clampNumber(nextVolume, 0, 1);
+    const audio = radioAudioRef.current;
+    if (audio) audio.volume = clamped;
+    setRadioVolume(clamped);
+    updateAppSettings({ ...appSettings, lastVolume: clamped });
+  }
+
+  function setRightPanelState(open: boolean) {
+    setRightPanelOpen(open);
+    localStorage.setItem(RIGHT_PANEL_OPEN_KEY, String(open));
+  }
+
+  function selectRightPanelTab(tab: RightPanelTab) {
+    setRightPanelTab(tab);
+    localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
+    setRightPanelState(true);
+  }
+
+  function toggleQueuePanel() {
+    if (rightPanelOpen && rightPanelTab === "queue") {
+      setRightPanelState(false);
+      return;
+    }
+
+    selectRightPanelTab("queue");
+  }
+
+  function updateAppSettings(nextSettings: AppSettings) {
+    const normalizedSettings = {
+      ...nextSettings,
+      lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
+      sidebarPlaylistLimit: Math.round(clampNumber(nextSettings.sidebarPlaylistLimit, 3, 20)),
+    };
+
+    setAppSettings(normalizedSettings);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizedSettings));
+  }
+
+  function setSidebarCollapsedState(collapsed: boolean) {
+    setSidebarCollapsed(collapsed);
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+  }
+
+  function setAnalyticsConsent(enabled: boolean) {
+    updateAppSettings({
+      ...appSettings,
+      analyticsEnabled: enabled,
+      analyticsPromptDismissed: true,
+    });
+
+    if (enabled) {
+      void sendAnalyticsPing()
+        .then(() => localStorage.setItem(ANALYTICS_LAST_PING_KEY, new Date().toISOString()))
+        .catch(() => undefined);
+    }
+  }
+
+  function dismissAnalyticsPrompt() {
+    updateAppSettings({
+      ...appSettings,
+      analyticsPromptDismissed: true,
+    });
+  }
+
+  function resetAppSettings() {
+    updateAppSettings(defaultSettings);
+    setAlbumViewMode(defaultSettings.defaultAlbumView);
+    setArtistViewMode(defaultSettings.defaultArtistView);
+    const audio = audioRef.current;
+    if (audio) audio.volume = defaultSettings.lastVolume;
+    setVolume(defaultSettings.lastVolume);
+  }
 
   async function refreshLibrary(nextConfig = config) {
     if (!nextConfig) return false;
 
     setStatus("checking");
+    setLibraryStatus("loading");
     setStatusMessage("Checking Navidrome and loading library...");
 
     try {
@@ -322,11 +1303,13 @@ export function App() {
       setConfig(resolvedConfig);
       setForm(resolvedConfig);
       setStatus("connected");
+      setLibraryStatus("ready");
       setStatusMessage(`Connected to ${resolvedConfig.serverUrl}.`);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(resolvedConfig));
       return true;
     } catch (error) {
       setStatus("error");
+      setLibraryStatus("error");
       setStatusMessage(getErrorMessage(error));
       return false;
     }
@@ -358,16 +1341,16 @@ export function App() {
     }
   }
 
-  async function openAlbum(album: Album) {
+  async function openAlbumById(albumId: string, label = "album") {
     if (!config) return;
     const origin = { activeView, detailSelection };
 
     setDetailStatus("loading");
-    setDetailMessage(`Loading ${album.name}...`);
+    setDetailMessage(`Loading ${label}...`);
     setActiveView("albums");
 
     try {
-      const albumDetail = await fetchAlbumDetail(config, album.id);
+      const albumDetail = await fetchAlbumDetail(config, albumId);
       setBackStack((currentStack) => [...currentStack, origin].slice(-40));
       setForwardStack([]);
       setDetailSelection({ type: "album", data: albumDetail });
@@ -379,16 +1362,20 @@ export function App() {
     }
   }
 
-  async function openArtist(artist: Artist) {
+  async function openAlbum(album: Album) {
+    await openAlbumById(album.id, album.name);
+  }
+
+  async function openArtistById(artistId: string, label = "artist") {
     if (!config) return;
     const origin = { activeView, detailSelection };
 
     setDetailStatus("loading");
-    setDetailMessage(`Loading ${artist.name}...`);
+    setDetailMessage(`Loading ${label}...`);
     setActiveView("artists");
 
     try {
-      const artistDetail = await fetchArtistDetail(config, artist.id);
+      const artistDetail = await fetchArtistDetail(config, artistId);
       setBackStack((currentStack) => [...currentStack, origin].slice(-40));
       setForwardStack([]);
       setDetailSelection({ type: "artist", data: artistDetail });
@@ -400,12 +1387,48 @@ export function App() {
     }
   }
 
+  async function openArtist(artist: Artist) {
+    await openArtistById(artist.id, artist.name);
+  }
+
+  async function openPlaylistById(playlistId: string, label = "playlist", editAfterOpen = false) {
+    if (!config) return;
+    const origin = { activeView, detailSelection };
+
+    setDetailStatus("loading");
+    setDetailMessage(`Loading ${label}...`);
+    setActiveView("playlists");
+
+    try {
+      const playlistDetail = await fetchPlaylistDetail(config, playlistId);
+      setBackStack((currentStack) => [...currentStack, origin].slice(-40));
+      setForwardStack([]);
+      setDetailSelection({ type: "playlist", data: playlistDetail });
+      if (editAfterOpen) {
+        setPlaylistEditRequestKey((key) => key + 1);
+      }
+      setDetailStatus("idle");
+      setDetailMessage("");
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function openPlaylist(playlist: Playlist) {
+    await openPlaylistById(playlist.id, playlist.name);
+  }
+
+  async function openPlaylistForEdit(playlist: Playlist) {
+    await openPlaylistById(playlist.id, playlist.name, true);
+  }
+
   async function playAlbum(album: Album) {
     if (!config) return;
 
     try {
       const albumDetail = await fetchAlbumDetail(config, album.id);
-      replaceQueue(albumDetail.song ?? []);
+      replaceQueue(sortAlbumSongs(albumDetail.song ?? []));
     } catch (error) {
       setDetailStatus("error");
       setDetailMessage(getErrorMessage(error));
@@ -426,6 +1449,230 @@ export function App() {
     }
   }
 
+  async function playPlaylist(playlist: Playlist) {
+    if (!config) return;
+
+    try {
+      const playlistDetail = await fetchPlaylistDetail(config, playlist.id);
+      replaceQueue(playlistDetail.entry ?? []);
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailMessage(getErrorMessage(error));
+    }
+  }
+
+  async function savePlaylist(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!config || playlistCreateStatus === "saving") return;
+
+    const trimmedName = playlistName.trim();
+    if (!trimmedName) {
+      setPlaylistCreateStatus("error");
+      setPlaylistCreateMessage("Playlist name is required.");
+      return;
+    }
+
+    const seedSongs = playlistFromQueue ? queue : [];
+    const trimmedDescription = playlistDescription.trim();
+    setPlaylistCreateStatus("saving");
+    setPlaylistCreateMessage("Creating playlist...");
+
+    try {
+      await createPlaylist(config, trimmedName, seedSongs);
+      let nextLibrary = await fetchLibrary(config);
+
+      let createdPlaylist = [...nextLibrary.playlists]
+        .filter((playlist) => playlist.name === trimmedName)
+        .sort((a, b) => (b.changed ?? b.created ?? "").localeCompare(a.changed ?? a.created ?? ""))[0];
+
+      if (createdPlaylist && (trimmedDescription || playlistPublic)) {
+        await updatePlaylistDetails(config, createdPlaylist.id, {
+          name: trimmedName,
+          comment: trimmedDescription,
+          public: playlistPublic,
+        });
+        nextLibrary = await fetchLibrary(config);
+        createdPlaylist =
+          nextLibrary.playlists.find((playlist) => playlist.id === createdPlaylist?.id) ??
+          [...nextLibrary.playlists]
+            .filter((playlist) => playlist.name === trimmedName)
+            .sort((a, b) => (b.changed ?? b.created ?? "").localeCompare(a.changed ?? a.created ?? ""))[0];
+      }
+
+      setLibraryData(nextLibrary);
+      setPlaylistName("");
+      setPlaylistDescription("");
+      setPlaylistPublic(false);
+      setPlaylistCreatorOpen(false);
+      setPlaylistCreateStatus("idle");
+      setPlaylistCreateMessage("");
+
+      if (createdPlaylist) {
+        await openPlaylist(createdPlaylist);
+      } else {
+        selectView("playlists");
+      }
+    } catch (error) {
+      setPlaylistCreateStatus("error");
+      setPlaylistCreateMessage(getErrorMessage(error));
+    }
+  }
+
+  async function savePlaylistDetails(playlist: Playlist, details: PlaylistDetailsUpdate) {
+    if (!config) return;
+
+    await updatePlaylistDetails(config, playlist.id, details);
+    const [nextLibrary, updatedPlaylist] = await Promise.all([
+      fetchLibrary(config),
+      fetchPlaylistDetail(config, playlist.id),
+    ]);
+
+    setLibraryData(nextLibrary);
+    setDetailSelection({ type: "playlist", data: updatedPlaylist });
+  }
+
+  async function deletePlaylistAndReturn(playlist: Playlist) {
+    if (!config) return;
+
+    await deletePlaylist(config, playlist.id);
+    const nextLibrary = await fetchLibrary(config);
+    setLibraryData(nextLibrary);
+    setDetailSelection(null);
+    selectView("playlists");
+  }
+
+  async function confirmContextPlaylistDelete() {
+    if (!playlistDeleteTarget) return;
+
+    setPlaylistDeleteStatus("saving");
+    setPlaylistDeleteMessage("Deleting playlist...");
+
+    try {
+      await deletePlaylistAndReturn(playlistDeleteTarget);
+      setPlaylistDeleteTarget(null);
+      setPlaylistDeleteStatus("idle");
+      setPlaylistDeleteMessage("");
+    } catch (error) {
+      setPlaylistDeleteStatus("error");
+      setPlaylistDeleteMessage(getErrorMessage(error));
+    }
+  }
+
+  async function removeSongFromPlaylistAndRefresh(playlist: PlaylistDetail, index: number) {
+    if (!config) return;
+
+    await removePlaylistSong(config, playlist.id, index);
+    const [nextLibrary, updatedPlaylist] = await Promise.all([
+      fetchLibrary(config),
+      fetchPlaylistDetail(config, playlist.id),
+    ]);
+    setLibraryData(nextLibrary);
+    setDetailSelection({ type: "playlist", data: updatedPlaylist });
+  }
+
+  async function reorderPlaylistAndRefresh(playlist: PlaylistDetail, songs: Song[]) {
+    if (!config) return;
+
+    await replacePlaylistSongs(config, playlist, songs);
+    const [nextLibrary, updatedPlaylist] = await Promise.all([
+      fetchLibrary(config),
+      fetchPlaylistDetail(config, playlist.id),
+    ]);
+    setLibraryData(nextLibrary);
+    setDetailSelection({ type: "playlist", data: updatedPlaylist });
+  }
+
+  async function addSongToPlaylist(playlist: Playlist, song: Song) {
+    if (!config || playlistAddStatus === "saving") return;
+
+    setPlaylistAddStatus("saving");
+    setPlaylistAddMessage(`Adding to ${playlist.name}...`);
+
+    try {
+      await addSongsToPlaylist(config, playlist.id, [song]);
+      const [nextLibrary, updatedPlaylist] = await Promise.all([
+        fetchLibrary(config),
+        detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id
+          ? fetchPlaylistDetail(config, playlist.id).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
+      setLibraryData(nextLibrary);
+      if (updatedPlaylist) {
+        setDetailSelection({ type: "playlist", data: updatedPlaylist });
+      }
+      setPlaylistAddStatus("idle");
+      setPlaylistAddMessage("");
+      setSongContextMenu(null);
+    } catch (error) {
+      setPlaylistAddStatus("error");
+      setPlaylistAddMessage(getErrorMessage(error));
+    }
+  }
+
+  async function toggleFavorite(kind: FavoriteKind, id: string, favorite: boolean) {
+    if (!config) return;
+
+    const busyKey = `${kind}:${id}`;
+    setFavoriteBusyKey(busyKey);
+
+    try {
+      await setNavidromeFavorite(config, kind, id, favorite);
+      const nextLibrary = await fetchLibrary(config);
+      setLibraryData(nextLibrary);
+      setSongContextMenu(null);
+    } catch (error) {
+      setPlaylistAddStatus("error");
+      setPlaylistAddMessage(getErrorMessage(error));
+    } finally {
+      setFavoriteBusyKey("");
+    }
+  }
+
+  function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song) {
+    event.preventDefault();
+    setLibraryContextMenu(null);
+    setPlaylistAddStatus("idle");
+    setPlaylistAddMessage("");
+    setSongContextMenu({ song, x: event.clientX, y: event.clientY });
+  }
+
+  function openLibraryContextMenu(event: MouseEvent<HTMLElement>) {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const element = target?.closest<HTMLElement>("[data-context-kind][data-context-id]");
+    if (!element || target?.closest(".search-song-row, .track-row, .song-context-menu, .library-context-menu")) return;
+
+    const id = element.dataset.contextId;
+    const type = element.dataset.contextKind;
+    if (!id || !type) return;
+
+    if (type === "album") {
+      const item = albumLookup.get(id);
+      if (!item) return;
+      event.preventDefault();
+      setSongContextMenu(null);
+      setLibraryContextMenu({ type, item, x: event.clientX, y: event.clientY });
+      return;
+    }
+
+    if (type === "artist") {
+      const item = artistLookup.get(id);
+      if (!item) return;
+      event.preventDefault();
+      setSongContextMenu(null);
+      setLibraryContextMenu({ type, item, x: event.clientX, y: event.clientY });
+      return;
+    }
+
+    if (type === "playlist") {
+      const item = playlistLookup.get(id);
+      if (!item) return;
+      event.preventDefault();
+      setSongContextMenu(null);
+      setLibraryContextMenu({ type, item, x: event.clientX, y: event.clientY });
+    }
+  }
+
   function clearDetail() {
     setDetailSelection(null);
     setDetailStatus("idle");
@@ -433,7 +1680,16 @@ export function App() {
   }
 
   function selectView(view: View) {
-    if (view === "overview" || view === "albums" || view === "artists" || view === "playlists" || view === "search") {
+    if (
+      view === "overview" ||
+      view === "albums" ||
+      view === "artists" ||
+      view === "playlists" ||
+      view === "recentlyAdded" ||
+      view === "recentlyPlayed" ||
+      view === "favorites" ||
+      view === "search"
+    ) {
       clearDetail();
       setBackStack([]);
       setForwardStack([]);
@@ -479,10 +1735,19 @@ export function App() {
     applySnapshot(next);
   }
 
+  function resetPlaybackPosition() {
+    pendingResumePositionRef.current = 0;
+    setPosition(0);
+  }
+
   function replaceQueue(songs: Song[], startIndex = 0) {
     if (!songs.length) return;
+    tuneOutRadio();
+    scrobbledPlayRef.current = "";
     setQueue(songs);
-    setCurrentIndex(startIndex);
+    setCurrentIndex(Math.min(Math.max(startIndex, 0), songs.length - 1));
+    resetPlaybackPosition();
+    setPlayerError("");
     setIsPlaying(true);
   }
 
@@ -490,37 +1755,307 @@ export function App() {
     setQueue((currentQueue) => [...currentQueue, song]);
   }
 
+  function insertNextInQueue(song: Song) {
+    setQueue((currentQueue) => {
+      if (!currentQueue.length) return [song];
+      const nextQueue = [...currentQueue];
+      nextQueue.splice(currentIndex + 1, 0, song);
+      return nextQueue;
+    });
+  }
+
   function playSong(song: Song) {
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
+    tuneOutRadio();
 
     if (existingIndex >= 0) {
+      scrobbledPlayRef.current = "";
       setCurrentIndex(existingIndex);
+      resetPlaybackPosition();
+      setPlayerError("");
       setIsPlaying(true);
       return;
     }
 
+    scrobbledPlayRef.current = "";
     setQueue((currentQueue) => [...currentQueue, song]);
     setCurrentIndex(queue.length);
+    resetPlaybackPosition();
+    setPlayerError("");
     setIsPlaying(true);
   }
 
-  function playNext() {
+  function getRandomQueueIndex() {
+    if (queue.length <= 1) return currentIndex;
+
+    const availableIndexes = queue.map((_, index) => index).filter((index) => index !== currentIndex);
+    return availableIndexes[Math.floor(Math.random() * availableIndexes.length)] ?? currentIndex;
+  }
+
+  async function continueAutoplay(seedTrack: Song) {
+    if (!config || autoplayLoadingRef.current) return false;
+
+    autoplayLoadingRef.current = true;
+
+    try {
+      const autoplaySongs = await fetchAutoplaySongs(config, seedTrack);
+      const queuedIds = new Set(queue.map((song) => song.id));
+      const nextSongs = autoplaySongs.filter((song) => !queuedIds.has(song.id));
+
+      if (!nextSongs.length) return false;
+
+      tuneOutRadio();
+      audioRef.current?.pause();
+      scrobbledPlayRef.current = "";
+      resetPlaybackPosition();
+      setQueue((currentQueue) => [...currentQueue, ...nextSongs]);
+      setCurrentIndex(queue.length);
+      setPlayerError("");
+      setIsPlaying(true);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      autoplayLoadingRef.current = false;
+    }
+  }
+
+  function playNext(fromTrackEnd = false) {
     if (!queue.length) return;
+
+    if (fromTrackEnd && repeatMode === "one") {
+      scrobbledPlayRef.current = "";
+      seekTo(0);
+      pendingResumePositionRef.current = 0;
+      setIsPlaying(true);
+      void audioRef.current?.play().catch(() => {
+        setPlayerError("Playback was blocked by the browser.");
+      });
+      return;
+    }
+
+    if (shuffleEnabled && queue.length > 1) {
+      audioRef.current?.pause();
+      scrobbledPlayRef.current = "";
+      setCurrentIndex(getRandomQueueIndex());
+      resetPlaybackPosition();
+      setPlayerError("");
+      setIsPlaying(true);
+      return;
+    }
+
+    if (currentIndex >= queue.length - 1) {
+      if (repeatMode === "all") {
+        audioRef.current?.pause();
+        if (queue.length > 1) {
+          scrobbledPlayRef.current = "";
+          setCurrentIndex(0);
+        } else {
+          scrobbledPlayRef.current = "";
+          seekTo(0);
+          void audioRef.current?.play().catch(() => {
+            setPlayerError("Playback was blocked by the browser.");
+          });
+        }
+        resetPlaybackPosition();
+        setPlayerError("");
+        setIsPlaying(true);
+        return;
+      }
+
+      if (config && currentTrack) {
+        void continueAutoplay(currentTrack).then((continued) => {
+          if (!continued) {
+            setIsPlaying(false);
+            seekTo(0);
+          }
+        });
+        return;
+      }
+
+      setIsPlaying(false);
+      seekTo(0);
+      return;
+    }
+
+    audioRef.current?.pause();
+    scrobbledPlayRef.current = "";
     setCurrentIndex((index) => Math.min(index + 1, queue.length - 1));
+    resetPlaybackPosition();
+    setPlayerError("");
     setIsPlaying(true);
   }
 
   function playPrevious() {
     if (!queue.length) return;
+    audioRef.current?.pause();
+    scrobbledPlayRef.current = "";
     setCurrentIndex((index) => Math.max(index - 1, 0));
+    resetPlaybackPosition();
+    setPlayerError("");
     setIsPlaying(true);
+  }
+
+  function seekTo(nextPosition: number) {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(nextPosition)) return;
+    audio.currentTime = nextPosition;
+    setPosition(nextPosition);
+  }
+
+  function handleLoadedMetadata(duration: number) {
+    setPlayerDuration(duration || currentTrack?.duration || 0);
+
+    const audio = audioRef.current;
+    const resumePosition = pendingResumePositionRef.current;
+    pendingResumePositionRef.current = 0;
+
+    if (!audio || !currentTrack || resumePosition <= 0) return;
+
+    const safeDuration = duration || currentTrack.duration || 0;
+    const safePosition = safeDuration > 0 ? Math.min(resumePosition, Math.max(safeDuration - 2, 0)) : resumePosition;
+
+    if (safePosition <= 0) return;
+    audio.currentTime = safePosition;
+    setPosition(safePosition);
+  }
+
+  function persistPlaybackSnapshot(positionOverride = position) {
+    if (!queue.length) {
+      localStorage.removeItem(PLAYBACK_STATE_KEY);
+      return;
+    }
+
+    const safeIndex = Math.min(Math.max(currentIndex, 0), queue.length - 1);
+    const safePosition = clampNumber(positionOverride, 0, 24 * 60 * 60);
+    localStorage.setItem(
+      PLAYBACK_STATE_KEY,
+      JSON.stringify({
+        queue,
+        currentIndex: safeIndex,
+        position: safePosition,
+      }),
+    );
+  }
+
+  function selectQueueTrack(index: number) {
+    tuneOutRadio();
+    audioRef.current?.pause();
+    scrobbledPlayRef.current = "";
+    setCurrentIndex(index);
+    resetPlaybackPosition();
+    setPlayerError("");
+    setIsPlaying(true);
+  }
+
+  function cycleRepeatMode() {
+    setRepeatMode((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
+  }
+
+  function reorderQueueItem(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex || !queue[fromIndex] || !queue[toIndex]) return;
+
+    setQueue((currentQueue) => {
+      const nextQueue = [...currentQueue];
+      const [movedSong] = nextQueue.splice(fromIndex, 1);
+      nextQueue.splice(toIndex, 0, movedSong);
+      return nextQueue;
+    });
+
+    if (currentIndex === fromIndex) {
+      setCurrentIndex(toIndex);
+    } else if (fromIndex < currentIndex && toIndex >= currentIndex) {
+      setCurrentIndex((index) => index - 1);
+    } else if (fromIndex > currentIndex && toIndex <= currentIndex) {
+      setCurrentIndex((index) => index + 1);
+    }
+  }
+
+  function dropQueueItem(toIndex: number) {
+    if (draggedQueueIndex == null) return;
+    reorderQueueItem(draggedQueueIndex, toIndex);
+    setDraggedQueueIndex(null);
+    setDragOverQueueIndex(null);
+  }
+
+  function removeQueueItem(index: number) {
+    if (!queue[index]) return;
+
+    const removingCurrentTrack = index === currentIndex;
+    setQueue((currentQueue) => currentQueue.filter((_, queueIndex) => queueIndex !== index));
+
+    if (queue.length <= 1) {
+      audioRef.current?.pause();
+      setCurrentIndex(0);
+      resetPlaybackPosition();
+      setIsPlaying(false);
+      return;
+    }
+
+    if (index < currentIndex) {
+      setCurrentIndex((current) => Math.max(0, current - 1));
+    } else if (removingCurrentTrack) {
+      audioRef.current?.pause();
+      scrobbledPlayRef.current = "";
+      setCurrentIndex(Math.min(currentIndex, queue.length - 2));
+      resetPlaybackPosition();
+      setPlayerError("");
+      setIsPlaying(true);
+    }
+  }
+
+  function clearQueue() {
+    audioRef.current?.pause();
+    setQueue([]);
+    setCurrentIndex(0);
+    resetPlaybackPosition();
+    setPlayerDuration(0);
+    setPlayerError("");
+    setIsPlaying(false);
+  }
+
+  function closePlaylistCreator() {
+    setPlaylistCreatorOpen(false);
+    setPlaylistName("");
+    setPlaylistDescription("");
+    setPlaylistPublic(false);
+  }
+
+  function togglePlayback() {
+    if (!queue.length) return;
+    const audio = audioRef.current;
+
+    if (isPlaying) {
+      audio?.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    tuneOutRadio();
+    if (audio && currentStreamUrl) {
+      void audio.play().catch(() => {
+        setPlayerError("Playback was blocked by the browser.");
+      });
+    }
+
+    setIsPlaying(true);
+  }
+
+  function setPlayerVolume(nextVolume: number) {
+    const clampedVolume = Math.min(1, Math.max(0, nextVolume));
+    const audio = audioRef.current;
+    if (audio) audio.volume = clampedVolume;
+    setVolume(clampedVolume);
+    updateAppSettings({ ...appSettings, lastVolume: clampedVolume });
   }
 
   function resetConnection() {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LAST_PLAYED_TRACK_KEY);
+    localStorage.removeItem(PLAYBACK_STATE_KEY);
     setConfig(null);
     setForm(emptyConfig);
-    setLibraryData({ albums: [], artists: [] });
+    setLibraryData(emptyLibraryData);
     setDetailSelection(null);
     setBackStack([]);
     setForwardStack([]);
@@ -528,9 +2063,11 @@ export function App() {
     setSearchResults(emptySearchResults);
     setSearchStatus("idle");
     setQueue([]);
+    setLastPlayedTrack(null);
     setCurrentIndex(0);
     setIsPlaying(false);
     setStatus("idle");
+    setLibraryStatus("idle");
     setStatusMessage("Add a Navidrome server to start syncing.");
     setSetupOpen(true);
     setActiveView("settings");
@@ -541,6 +2078,282 @@ export function App() {
       void refreshLibrary(config);
     }
   }, []);
+
+  useEffect(() => {
+    if (!appSettings.analyticsEnabled) return;
+
+    const lastPing = localStorage.getItem(ANALYTICS_LAST_PING_KEY);
+    const lastPingTime = lastPing ? new Date(lastPing).getTime() : 0;
+    const shouldPing = !lastPingTime || Date.now() - lastPingTime > 12 * 60 * 60 * 1000;
+
+    if (!shouldPing) return;
+
+    void sendAnalyticsPing()
+      .then(() => localStorage.setItem(ANALYTICS_LAST_PING_KEY, new Date().toISOString()))
+      .catch(() => undefined);
+  }, [appSettings.analyticsEnabled]);
+
+  useEffect(() => {
+    if (!rightPanelOpen || rightPanelTab !== "lyrics") return;
+
+    if (!config || !currentTrack) {
+      setLyricsStatus("idle");
+      setLyricsLines([]);
+      setLyricsMessage(currentTrack ? "Connect to Navidrome to load lyrics." : "Play a track to load lyrics.");
+      return;
+    }
+
+    let cancelled = false;
+    setLyricsStatus("loading");
+    setLyricsLines([]);
+    setLyricsMessage("");
+
+    void fetchLyrics(config, currentTrack)
+      .then((lines) => {
+        if (cancelled) return;
+        setLyricsLines(lines);
+        setLyricsStatus(lines.length ? "ready" : "empty");
+        setLyricsMessage(lines.length ? "" : "No lyrics found for this track.");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLyricsLines([]);
+        setLyricsStatus("error");
+        setLyricsMessage("Lyrics are unavailable for this track.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config, currentTrack, rightPanelOpen, rightPanelTab]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    setRadioStationInput(appSettings.radioStationUrl);
+  }, [appSettings.radioStationUrl]);
+
+  useEffect(() => {
+    setRadioVolume(appSettings.lastVolume);
+    if (radioAudioRef.current) radioAudioRef.current.volume = appSettings.lastVolume;
+  }, [appSettings.lastVolume]);
+
+  useEffect(() => {
+    if (!radioStationUrl) return;
+    void refreshRadio(radioStationUrl);
+    const interval = window.setInterval(() => {
+      void fetchRadioState(radioStationUrl)
+        .then(setRadioStationState)
+        .catch(() => undefined);
+    }, 12000);
+
+    return () => window.clearInterval(interval);
+  }, [radioStationUrl]);
+
+  useEffect(() => {
+    if (!isRadioPlaying) return;
+    const interval = window.setInterval(() => setRadioElapsed((value) => value + 1), 1000);
+    return () => window.clearInterval(interval);
+  }, [isRadioPlaying]);
+
+  useEffect(() => {
+    setRadioElapsed(0);
+  }, [radioNowPlaying?.title, radioNowPlaying?.artist]);
+
+  useEffect(() => {
+    if (!currentTrack) return;
+    setLastPlayedTrack(currentTrack);
+    localStorage.setItem(LAST_PLAYED_TRACK_KEY, JSON.stringify(currentTrack));
+  }, [currentTrack]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!currentStreamUrl) {
+      audio.removeAttribute("src");
+      resetPlaybackPosition();
+      setPlayerDuration(0);
+      return;
+    }
+
+    audio.src = currentStreamUrl;
+    audio.load();
+    setPosition(pendingResumePositionRef.current || 0);
+    setPlayerDuration(currentTrack?.duration ?? 0);
+    setPlayerError("");
+
+    if (isPlaying) {
+      void audio.play().catch(() => {
+        setIsPlaying(false);
+        setPlayerError("Playback was blocked by the browser.");
+      });
+    }
+  }, [currentStreamUrl]);
+
+  useEffect(() => {
+    if (!queue.length) {
+      localStorage.removeItem(PLAYBACK_STATE_KEY);
+      return;
+    }
+
+    const now = Date.now();
+    const trackKey = queue[currentIndex]?.id ?? "";
+    const trackChanged = trackKey !== lastPlaybackPersistTrackRef.current;
+
+    if (!trackChanged && now - lastPlaybackPersistRef.current < 2000) return;
+
+    lastPlaybackPersistRef.current = now;
+    lastPlaybackPersistTrackRef.current = trackKey;
+    persistPlaybackSnapshot(position);
+  }, [currentIndex, position, queue]);
+
+  useEffect(() => {
+    function persistBeforeUnload() {
+      persistPlaybackSnapshot(audioRef.current?.currentTime ?? position);
+    }
+
+    window.addEventListener("beforeunload", persistBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", persistBeforeUnload);
+    };
+  }, [currentIndex, position, queue]);
+
+  useEffect(() => {
+    if (!config || !currentTrack || !isPlaying) return;
+
+    const duration = playerDuration || currentTrack.duration || 0;
+    const listenThreshold = duration > 0 ? Math.min(240, Math.max(5, duration * 0.5)) : 30;
+    const playKey = `${currentTrack.id}:${currentStreamUrl ?? ""}`;
+
+    if (position < listenThreshold || scrobbledPlayRef.current === playKey) return;
+
+    scrobbledPlayRef.current = playKey;
+    void scrobbleSong(config, currentTrack)
+      .then(() => fetchLibrary(config))
+      .then((nextLibrary) => setLibraryData(nextLibrary))
+      .catch(() => {
+        scrobbledPlayRef.current = "";
+      });
+  }, [config, currentStreamUrl, currentTrack, isPlaying, playerDuration, position]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentStreamUrl) return;
+
+    if (isPlaying) {
+      void audio.play().catch(() => {
+        setIsPlaying(false);
+        setPlayerError("Playback was blocked by the browser.");
+      });
+    } else {
+      audio.pause();
+    }
+  }, [isPlaying, currentStreamUrl]);
+
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null) {
+      if (!(target instanceof HTMLElement)) return false;
+      return Boolean(target.closest("input, textarea, select, button, a, [contenteditable='true']"));
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isTypingTarget(event.target)) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchFocused(true);
+        document.querySelector<HTMLInputElement>(".global-search input")?.focus();
+        return;
+      }
+
+      if (event.key === " ") {
+        event.preventDefault();
+        togglePlayback();
+        return;
+      }
+
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        seekTo(Math.min((playerDuration || currentTrack?.duration || 0), position + 10));
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        seekTo(Math.max(0, position - 10));
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentTrack?.duration, playerDuration, position, queue.length, isPlaying, currentStreamUrl]);
+
+  useEffect(() => {
+    function closeContextMenus(event: PointerEvent) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest(".song-context-menu, .library-context-menu")) return;
+      setSongContextMenu(null);
+      setLibraryContextMenu(null);
+      setPlaylistAddStatus("idle");
+      setPlaylistAddMessage("");
+    }
+
+    function closeContextMenusWithEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setSongContextMenu(null);
+      setLibraryContextMenu(null);
+      setPlaylistAddStatus("idle");
+      setPlaylistAddMessage("");
+    }
+
+    window.addEventListener("pointerdown", closeContextMenus);
+    window.addEventListener("keydown", closeContextMenusWithEscape);
+
+    return () => {
+      window.removeEventListener("pointerdown", closeContextMenus);
+      window.removeEventListener("keydown", closeContextMenusWithEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+
+    if (currentTrack) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.title,
+        artist: currentTrack.artist ?? "Unknown artist",
+        album: currentTrack.album ?? "",
+        artwork: currentTrackCoverUrl ? [{ src: currentTrackCoverUrl, sizes: "160x160", type: "image/jpeg" }] : [],
+      });
+    } else {
+      navigator.mediaSession.metadata = null;
+    }
+
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+    navigator.mediaSession.setActionHandler("play", () => setIsPlaying(true));
+    navigator.mediaSession.setActionHandler("pause", () => {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+    });
+    navigator.mediaSession.setActionHandler("previoustrack", playPrevious);
+    navigator.mediaSession.setActionHandler("nexttrack", () => playNext(false));
+    navigator.mediaSession.setActionHandler("seekbackward", () => seekTo(Math.max(0, position - 10)));
+    navigator.mediaSession.setActionHandler("seekforward", () => seekTo(Math.min((playerDuration || currentTrack?.duration || 0), position + 10)));
+
+    return () => {
+      navigator.mediaSession.setActionHandler("play", null);
+      navigator.mediaSession.setActionHandler("pause", null);
+      navigator.mediaSession.setActionHandler("previoustrack", null);
+      navigator.mediaSession.setActionHandler("nexttrack", null);
+      navigator.mediaSession.setActionHandler("seekbackward", null);
+      navigator.mediaSession.setActionHandler("seekforward", null);
+    };
+  }, [currentTrack, currentTrackCoverUrl, isPlaying, playerDuration, position]);
 
   useEffect(() => {
     const trimmedQuery = searchQuery.trim();
@@ -568,17 +2381,30 @@ export function App() {
     return () => window.clearTimeout(timeout);
   }, [config, searchQuery]);
 
-  const statusTone = status === "connected" ? "good" : status === "error" ? "bad" : "neutral";
-  const activeTitle =
-    activeView === "overview"
-      ? "Library"
-      : activeView === "settings"
-        ? "Settings"
-        : activeView.charAt(0).toUpperCase() + activeView.slice(1);
-
   return (
-    <main className="app-shell">
-      <aside className="sidebar" aria-label="Primary navigation">
+    <main
+      className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
+        sidebarCollapsed ? "sidebar-collapsed" : ""
+      } ${coverWashUrl ? "with-cover-wash" : ""}`}
+      onContextMenu={openLibraryContextMenu}
+    >
+      {coverWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${coverWashUrl})` }} aria-hidden="true" /> : null}
+
+      {sidebarCollapsed ? (
+        <div className="sidebar-rail sidebar-rail-left" aria-label="Collapsed sidebar">
+          <button
+            className="sidebar-edge-button sidebar-edge-button-left"
+            type="button"
+            aria-label="Show sidebar"
+            title="Show sidebar"
+            onClick={() => setSidebarCollapsedState(false)}
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      ) : null}
+
+      {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <div className="brand-mark" aria-hidden="true" />
           <div>
@@ -586,40 +2412,39 @@ export function App() {
             <h1>Player</h1>
           </div>
         </div>
-
-        <SearchBox
-          query={searchQuery}
-          setQuery={setSearchQuery}
-          status={searchStatus}
-          results={searchResults}
-          hasConfig={hasConfig}
-          isFocused={searchFocused}
-          setFocused={setSearchFocused}
-          onSubmit={openSearchView}
-          onOpenAlbum={(album) => void openAlbum(album)}
-          onOpenArtist={(artist) => void openArtist(artist)}
-          onPlaySong={playSong}
-        />
+        <button
+          className="sidebar-edge-button sidebar-edge-button-left"
+          type="button"
+          aria-label="Hide sidebar"
+          title="Hide sidebar"
+          onClick={() => setSidebarCollapsedState(true)}
+        >
+          <ChevronLeft size={16} />
+        </button>
 
         <nav className="nav-list">
           <button
-            className={`nav-item ${activeView === "overview" ? "active" : ""}`}
+            className={`nav-item nav-home ${activeView === "overview" ? "active" : ""}`}
             type="button"
             onClick={() => selectView("overview")}
           >
-            <Library size={18} />
-            Library
+            <Home size={18} />
+            Home
           </button>
           <button
-            className={`nav-item ${activeView === "albums" ? "active" : ""}`}
+            className={`nav-item nav-home ${activeView === "radio" ? "active" : ""}`}
             type="button"
-            onClick={() => selectView("albums")}
+            onClick={() => selectView("radio")}
           >
-            <Disc3 size={18} />
-            Albums
+            <RadioTower size={18} />
+            Radio
           </button>
+          <div className="nav-section-label">
+            <Library size={16} />
+            Your Library
+          </div>
           <button
-            className={`nav-item ${activeView === "artists" ? "active" : ""}`}
+            className={`nav-item nav-child ${activeView === "artists" ? "active" : ""}`}
             type="button"
             onClick={() => selectView("artists")}
           >
@@ -627,62 +2452,117 @@ export function App() {
             Artists
           </button>
           <button
-            className={`nav-item ${activeView === "playlists" ? "active" : ""}`}
+            className={`nav-item nav-child ${activeView === "albums" ? "active" : ""}`}
             type="button"
-            onClick={() => selectView("playlists")}
+            onClick={() => selectView("albums")}
           >
-            <ListMusic size={18} />
-            Playlists
+            <Disc3 size={18} />
+            Albums
+          </button>
+          <div className="nav-parent-row">
+            <button
+              className={`nav-item nav-child nav-parent ${activeView === "playlists" ? "active" : ""}`}
+              type="button"
+              onClick={() => selectView("playlists")}
+            >
+              <ListMusic size={18} />
+              <span>Playlists</span>
+            </button>
+            <button
+              className={`nav-toggle ${sidebarPlaylistsOpen ? "open" : ""}`}
+              type="button"
+              onClick={() => setSidebarPlaylistsOpen((value) => !value)}
+              aria-label={`${sidebarPlaylistsOpen ? "Collapse" : "Expand"} playlists`}
+              aria-expanded={sidebarPlaylistsOpen}
+            >
+              {sidebarPlaylistsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+            </button>
+          </div>
+          {appSettings.showSidebarPlaylists && sidebarPlaylistsOpen && libraryData.playlists.length ? (
+            <div className="nav-playlist-list" aria-label="Playlist shortcuts">
+              {libraryData.playlists.slice(0, appSettings.sidebarPlaylistLimit).map((playlist) => (
+                <button
+                  className={`nav-item nav-child nav-playlist ${
+                    detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""
+                  }`}
+                  type="button"
+                  key={playlist.id}
+                  data-context-kind="playlist"
+                  data-context-id={playlist.id}
+                  onClick={() => void openPlaylist(playlist)}
+                >
+                  <span>{playlist.name}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <button
+            className={`nav-item nav-child ${activeView === "recentlyAdded" ? "active" : ""}`}
+            type="button"
+            onClick={() => selectView("recentlyAdded")}
+          >
+            <Plus size={18} />
+            Recently Added
           </button>
           <button
-            className={`nav-item ${activeView === "radio" ? "active" : ""}`}
+            className={`nav-item nav-child ${activeView === "recentlyPlayed" ? "active" : ""}`}
             type="button"
-            onClick={() => selectView("radio")}
+            onClick={() => selectView("recentlyPlayed")}
           >
-            <Radio size={18} />
-            Radio
+            <History size={18} />
+            Recently Played
           </button>
           <button
-            className={`nav-item ${activeView === "search" ? "active" : ""}`}
+            className={`nav-item nav-child ${activeView === "favorites" ? "active" : ""}`}
             type="button"
-            onClick={openSearchView}
+            onClick={() => selectView("favorites")}
           >
-            <Search size={18} />
-            Search
+            <Star size={18} />
+            Favorites
           </button>
+        </nav>
+
+        <div className="sidebar-actions">
           <button
-            className={`nav-item ${activeView === "settings" ? "active" : ""}`}
+            className={`nav-item sidebar-settings ${activeView === "settings" ? "active" : ""}`}
             type="button"
             onClick={() => setActiveView("settings")}
           >
             <Settings size={18} />
             Settings
           </button>
-        </nav>
-
-        <div className={`connection-pill ${statusTone}`}>
-          {status === "checking" ? <Loader2 size={16} className="spin" /> : null}
-          {status === "connected" ? <CheckCircle2 size={16} /> : null}
-          {status === "error" ? <AlertCircle size={16} /> : null}
-          {status === "idle" ? <Settings size={16} /> : null}
-          <span>{status === "connected" ? "Server online" : status === "checking" ? "Checking" : "Setup needed"}</span>
         </div>
-      </aside>
+      </aside> : null}
 
       <section className="workspace" aria-label="Music workspace">
         <header className="topbar">
-          <div className="topbar-title">
-            <BrowserNavigation
-              canNavigateBack={backStack.length > 0}
-              canNavigateForward={forwardStack.length > 0}
-              backTarget={backStack[backStack.length - 1] ?? null}
-              forwardTarget={forwardStack[0] ?? null}
-              onNavigateBack={navigateBack}
-              onNavigateForward={navigateForward}
-            />
-            <h2>{activeTitle}</h2>
-          </div>
+          <BrowserNavigation
+            canNavigateBack={backStack.length > 0}
+            canNavigateForward={forwardStack.length > 0}
+            backTarget={backStack[backStack.length - 1] ?? null}
+            forwardTarget={forwardStack[0] ?? null}
+            onNavigateBack={navigateBack}
+            onNavigateForward={navigateForward}
+          />
+          <SearchBox
+            query={searchQuery}
+            setQuery={setSearchQuery}
+            status={searchStatus}
+            results={searchResults}
+            hasConfig={hasConfig}
+            isFocused={searchFocused}
+            setFocused={setSearchFocused}
+            onSubmit={openSearchView}
+            onOpenAlbum={(album) => void openAlbum(album)}
+            onOpenArtist={(artist) => void openArtist(artist)}
+            onOpenPlaylist={openPlaylist}
+            onPlaySong={playSong}
+          />
         </header>
+
+        {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
+          <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
+        ) : null}
 
         {activeView === "settings" ? (
           <SettingsView
@@ -690,6 +2570,12 @@ export function App() {
             setForm={setForm}
             status={status}
             statusMessage={statusMessage}
+            appSettings={appSettings}
+            updateAppSettings={updateAppSettings}
+            setAnalyticsConsent={setAnalyticsConsent}
+            resetAppSettings={resetAppSettings}
+            setAlbumViewMode={setAlbumViewMode}
+            setArtistViewMode={setArtistViewMode}
             onSave={saveConnection}
             onReset={resetConnection}
           />
@@ -697,21 +2583,71 @@ export function App() {
           <LibraryView
             activeView={activeView}
             config={config}
+            libraryStatus={libraryStatus}
+            statusMessage={statusMessage}
+            appSettings={appSettings}
+            updateAppSettings={updateAppSettings}
+            radioStationInput={radioStationInput}
+            setRadioStationInput={setRadioStationInput}
+            radioStationState={radioStationState}
+            radioStatus={radioStatus}
+            radioMessage={radioMessage}
+            radioVolume={radioVolume}
+            radioElapsed={radioElapsed}
+            refreshRadio={refreshRadio}
+            tuneInRadio={tuneInRadio}
+            tuneOutRadio={tuneOutRadio}
+            setRadioPlaybackVolume={setRadioPlaybackVolume}
             libraryItems={libraryItems}
             albums={libraryData.albums}
+            recentAlbums={libraryData.recentAlbums}
+            recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
+            favorites={libraryData.favorites}
+            playlists={libraryData.playlists}
+            albumViewMode={albumViewMode}
+            setAlbumViewMode={setAlbumViewMode}
+            artistViewMode={artistViewMode}
+            setArtistViewMode={setArtistViewMode}
             artists={libraryData.artists}
             searchQuery={searchQuery}
             searchResults={searchResults}
             searchStatus={searchStatus}
+            queue={queue}
+            playlistCreatorOpen={playlistCreatorOpen}
+            setPlaylistCreatorOpen={setPlaylistCreatorOpen}
+            playlistName={playlistName}
+            setPlaylistName={setPlaylistName}
+            playlistDescription={playlistDescription}
+            setPlaylistDescription={setPlaylistDescription}
+            playlistPublic={playlistPublic}
+            setPlaylistPublic={setPlaylistPublic}
+            playlistFromQueue={playlistFromQueue}
+            setPlaylistFromQueue={setPlaylistFromQueue}
+            playlistCreateStatus={playlistCreateStatus}
+            playlistCreateMessage={playlistCreateMessage}
+            onCreatePlaylist={savePlaylist}
+            onSongContextMenu={openSongContextMenu}
+            onRetryLibrary={() => void refreshLibrary()}
             onSelectLibraryView={selectView}
             detailSelection={detailSelection}
             detailStatus={detailStatus}
             detailMessage={detailMessage}
             currentTrack={currentTrack}
+            isPlaying={isPlaying}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={toggleFavorite}
             onOpenAlbum={(album) => void openAlbum(album)}
             onOpenArtist={(artist) => void openArtist(artist)}
+            onOpenPlaylist={openPlaylist}
             onPlayAlbum={(album) => void playAlbum(album)}
             onPlayArtist={(artist) => void playArtist(artist)}
+            onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
+            onSavePlaylistDetails={savePlaylistDetails}
+            onDeletePlaylist={deletePlaylistAndReturn}
+            playlistEditRequestKey={playlistEditRequestKey}
+            onRemovePlaylistSong={removeSongFromPlaylistAndRefresh}
+            onReorderPlaylist={reorderPlaylistAndRefresh}
             onReplaceQueue={replaceQueue}
             onPlaySong={playSong}
             onQueueSong={appendToQueue}
@@ -720,33 +2656,216 @@ export function App() {
       </section>
 
       <footer className="player-bar" aria-label="Playback controls">
-        <div>
-          <p className="track-title">{currentTrack?.title ?? "Prism Player"}</p>
-          <p className="track-meta">
-            {currentTrack ? `${currentTrack.artist ?? "Unknown artist"} - ${currentTrack.album ?? "Unknown album"}` : hasConfig ? "Queue ready" : "Connect Navidrome"}
-          </p>
+        <audio
+          ref={audioRef}
+          preload="auto"
+          onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
+          onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget.duration)}
+          onEnded={() => playNext(true)}
+          onError={() => {
+            if (currentTrack) {
+              setIsPlaying(false);
+              setPlayerError("Track stream failed.");
+            }
+          }}
+        />
+        <audio
+          ref={radioAudioRef}
+          preload="none"
+          onPlay={() => setRadioStatus("playing")}
+          onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
+          onError={() => {
+            setRadioStatus("error");
+            setRadioMessage("The radio stream failed.");
+          }}
+        />
+
+        <div className={`now-playing ${footerTrack || isRadioPlaying ? "" : "empty"}`}>
+          {isRadioPlaying ? (
+            radioCoverUrl ? (
+              <CoverArt src={radioCoverUrl} label={radioNowPlaying?.title ?? "Radio"} className="player-cover" fallbackIcon={<RadioTower size={20} />} />
+            ) : (
+              <CoverArt src={null} label="Radio" className="player-cover" fallbackIcon={<RadioTower size={20} />} />
+            )
+          ) : footerTrack ? (
+            <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
+          ) : null}
+          <div className="now-playing-copy">
+            {isRadioPlaying ? (
+              <>
+                <span className="track-title radio-footer-title">{radioNowPlaying?.title ?? "Live radio"}</span>
+                <p className="track-meta">
+                  <span>{radioNowPlaying?.artist ?? radioStationName(radioStationState, radioStationUrl)}</span>
+                  {radioNowPlaying?.album ? (
+                    <>
+                      <span aria-hidden="true"> - </span>
+                      <span>{radioNowPlaying.album}</span>
+                    </>
+                  ) : null}
+                </p>
+              </>
+            ) : footerTrack ? (
+              <>
+                <button
+                  className="track-title track-link"
+                  type="button"
+                  onClick={() => footerTrack.albumId && void openAlbumById(footerTrack.albumId, footerTrack.album ?? footerTrack.title)}
+                  disabled={!footerTrack.albumId}
+                >
+                  {footerTrack.title}
+                </button>
+                <p className="track-meta">
+                  <button
+                    className="track-link"
+                    type="button"
+                    onClick={() => footerTrack.artistId && void openArtistById(footerTrack.artistId, footerTrack.artist ?? "artist")}
+                    disabled={!footerTrack.artistId}
+                  >
+                    {footerTrack.artist ?? "Unknown artist"}
+                  </button>
+                  <span aria-hidden="true"> - </span>
+                  <button
+                    className="track-link"
+                    type="button"
+                    onClick={() => footerTrack.albumId && void openAlbumById(footerTrack.albumId, footerTrack.album ?? "album")}
+                    disabled={!footerTrack.albumId}
+                  >
+                    {footerTrack.album ?? "Unknown album"}
+                  </button>
+                </p>
+              </>
+            ) : null}
+          </div>
         </div>
-        <div className="transport">
-          <button type="button" aria-label="Previous" onClick={playPrevious} disabled={!queue.length || currentIndex === 0}>
-            <SkipBack size={18} />
-          </button>
+
+        <div className="player-center">
+          <div className="transport">
+            <button
+              className={shuffleEnabled ? "active" : ""}
+              type="button"
+              aria-label={shuffleEnabled ? "Disable shuffle" : "Enable shuffle"}
+              aria-pressed={shuffleEnabled}
+              onClick={() => setShuffleEnabled((enabled) => !enabled)}
+              disabled={isRadioPlaying || queue.length < 2}
+              title="Shuffle"
+            >
+              <Shuffle size={15} />
+            </button>
+            <button type="button" aria-label="Previous" onClick={playPrevious} disabled={isRadioPlaying || !queue.length || currentIndex === 0}>
+              <SkipBack size={16} />
+            </button>
+            <button
+              className="play-button"
+              type="button"
+              aria-label={isRadioPlaying || isPlaying ? "Pause" : "Play"}
+              onClick={isRadioPlaying ? () => tuneOutRadio() : togglePlayback}
+              disabled={!isRadioPlaying && !queue.length}
+            >
+              {isRadioPlaying || isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Next"
+              onClick={() => playNext(false)}
+              disabled={isRadioPlaying || !queue.length || (!config && !shuffleEnabled && repeatMode !== "all" && currentIndex >= queue.length - 1)}
+            >
+              <SkipForward size={16} />
+            </button>
+            <button
+              className={repeatMode !== "off" ? "active" : ""}
+              type="button"
+              aria-label={`Repeat ${repeatMode}`}
+              aria-pressed={repeatMode !== "off"}
+              onClick={cycleRepeatMode}
+              disabled={isRadioPlaying || !queue.length}
+              title={repeatMode === "off" ? "Repeat off" : repeatMode === "all" ? "Repeat all" : "Repeat one"}
+            >
+              {repeatMode === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+            </button>
+          </div>
+          <div className="seek-row">
+            <span>{formatDuration(isRadioPlaying ? radioElapsed : position)}</span>
+            <input
+              className="seek-slider"
+              type="range"
+              min="0"
+              max={Math.max(isRadioPlaying ? radioNowPlaying?.duration ?? 0 : playerDuration, currentTrack?.duration ?? 0, 1)}
+              step="1"
+              value={Math.min(isRadioPlaying ? radioElapsed : position, Math.max(isRadioPlaying ? radioNowPlaying?.duration ?? 0 : playerDuration, currentTrack?.duration ?? 0, 1))}
+              onChange={(event) => seekTo(Number(event.target.value))}
+              disabled={isRadioPlaying || !currentTrack}
+              aria-label="Seek"
+            />
+            <span>{isRadioPlaying ? formatDuration(radioNowPlaying?.duration) : formatDuration(playerDuration || currentTrack?.duration)}</span>
+          </div>
+          {isRadioPlaying ? <p className="player-error">{radioMessage}</p> : playerError ? <p className="player-error">{playerError}</p> : null}
+        </div>
+
+        <div className="player-actions">
+          <div className="volume-control">
+            <Volume2 size={16} />
+            <input
+              className="volume-slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={isRadioPlaying ? radioVolume : volume}
+              onChange={(event) => (isRadioPlaying ? setRadioPlaybackVolume(Number(event.target.value)) : setPlayerVolume(Number(event.target.value)))}
+              aria-label="Volume"
+            />
+          </div>
           <button
-            className="play-button"
+            className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
             type="button"
-            aria-label={isPlaying ? "Pause" : "Play"}
-            onClick={() => queue.length && setIsPlaying((playing) => !playing)}
-            disabled={!queue.length}
+            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
+            aria-pressed={rightPanelOpen}
+            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
+            onClick={() => setRightPanelState(!rightPanelOpen)}
           >
-            {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
           </button>
-          <button type="button" aria-label="Next" onClick={playNext} disabled={!queue.length || currentIndex >= queue.length - 1}>
-            <SkipForward size={18} />
-          </button>
-        </div>
-        <div className="progress">
-          <span style={{ width: queue.length ? `${((currentIndex + 1) / queue.length) * 100}%` : "0%" }} />
         </div>
       </footer>
+
+      {rightPanelOpen ? (
+        <RightSidebar
+          tab={rightPanelTab}
+          setTab={selectRightPanelTab}
+          config={config}
+          queue={queue}
+          displayedQueue={displayedQueue}
+          currentIndex={currentIndex}
+          currentTrack={currentTrack}
+          radioStationState={radioStationState}
+          radioNowPlaying={radioNowPlaying}
+          radioUpcoming={radioUpcoming}
+          radioCoverUrl={radioCoverUrl}
+          radioStationUrl={radioStationUrl}
+          radioStatus={radioStatus}
+          radioElapsed={radioElapsed}
+          isRadioPlaying={isRadioPlaying}
+          playerDuration={playerDuration}
+          position={position}
+          isPlaying={isPlaying}
+          lyricsStatus={lyricsStatus}
+          lyricsLines={lyricsLines}
+          lyricsMessage={lyricsMessage}
+          favoriteIds={favoriteIds}
+          favoriteBusyKey={favoriteBusyKey}
+          draggedQueueIndex={draggedQueueIndex}
+          dragOverQueueIndex={dragOverQueueIndex}
+          setDraggedQueueIndex={setDraggedQueueIndex}
+          setDragOverQueueIndex={setDragOverQueueIndex}
+          onDropQueueItem={dropQueueItem}
+          onSelectQueueTrack={selectQueueTrack}
+          onRemoveQueueItem={removeQueueItem}
+          onClearQueue={clearQueue}
+          onToggleFavorite={toggleFavorite}
+          onOpenAlbumById={(albumId, label) => void openAlbumById(albumId, label)}
+          onOpenArtistById={(artistId, label) => void openArtistById(artistId, label)}
+        />
+      ) : null}
 
       {setupOpen ? (
         <FirstRunWizard
@@ -758,7 +2877,488 @@ export function App() {
           onClose={() => setSetupOpen(false)}
         />
       ) : null}
+      {playlistCreatorOpen ? (
+        <div className="modal-backdrop">
+          <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-create-title">
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Playlist</p>
+                <h3 id="playlist-create-title">New Playlist</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={closePlaylistCreator} aria-label="Close new playlist">
+                <X size={16} />
+              </button>
+            </div>
+            <PlaylistCreateForm
+              queueLength={queue.length}
+              name={playlistName}
+              setName={setPlaylistName}
+              description={playlistDescription}
+              setDescription={setPlaylistDescription}
+              isPublic={playlistPublic}
+              setIsPublic={setPlaylistPublic}
+              fromQueue={playlistFromQueue}
+              setFromQueue={setPlaylistFromQueue}
+              status={playlistCreateStatus}
+              message={playlistCreateMessage}
+              onSubmit={savePlaylist}
+              onCancel={closePlaylistCreator}
+            />
+          </section>
+        </div>
+      ) : null}
+      {songContextMenu ? (
+        <SongPlaylistMenu
+          menu={songContextMenu}
+          playlists={libraryData.playlists}
+          status={playlistAddStatus}
+          message={playlistAddMessage}
+          onAdd={(playlist) => void addSongToPlaylist(playlist, songContextMenu.song)}
+          onPlayNow={(song) => {
+            playSong(song);
+            setSongContextMenu(null);
+          }}
+          onPlayNext={(song) => {
+            insertNextInQueue(song);
+            setSongContextMenu(null);
+          }}
+          onQueueSong={(song) => {
+            appendToQueue(song);
+            setSongContextMenu(null);
+          }}
+          onOpenAlbum={(song) => {
+            if (song.albumId) void openAlbumById(song.albumId, song.album ?? song.title);
+            setSongContextMenu(null);
+          }}
+          onOpenArtist={(song) => {
+            if (song.artistId) void openArtistById(song.artistId, song.artist ?? "artist");
+            setSongContextMenu(null);
+          }}
+          isFavorite={favoriteIds.songs.has(songContextMenu.song.id)}
+          favoriteBusy={favoriteBusyKey === `song:${songContextMenu.song.id}`}
+          onToggleFavorite={(favorite) => void toggleFavorite("song", songContextMenu.song.id, favorite)}
+        />
+      ) : null}
+      {libraryContextMenu ? (
+        <LibraryContextMenu
+          menu={libraryContextMenu}
+          favoriteIds={favoriteIds}
+          favoriteBusyKey={favoriteBusyKey}
+          onOpenAlbum={(album) => {
+            void openAlbum(album);
+            setLibraryContextMenu(null);
+          }}
+          onPlayAlbum={(album) => {
+            void playAlbum(album);
+            setLibraryContextMenu(null);
+          }}
+          onOpenArtist={(artist) => {
+            void openArtist(artist);
+            setLibraryContextMenu(null);
+          }}
+          onPlayArtist={(artist) => {
+            void playArtist(artist);
+            setLibraryContextMenu(null);
+          }}
+          onOpenPlaylist={(playlist) => {
+            void openPlaylist(playlist);
+            setLibraryContextMenu(null);
+          }}
+          onPlayPlaylist={(playlist) => {
+            void playPlaylist(playlist);
+            setLibraryContextMenu(null);
+          }}
+          onEditPlaylist={(playlist) => {
+            void openPlaylistForEdit(playlist);
+            setLibraryContextMenu(null);
+          }}
+          onDeletePlaylist={(playlist) => {
+            setPlaylistDeleteTarget(playlist);
+            setPlaylistDeleteStatus("idle");
+            setPlaylistDeleteMessage("");
+            setLibraryContextMenu(null);
+          }}
+          onToggleFavorite={(kind, id, favorite) => {
+            void toggleFavorite(kind, id, favorite);
+            setLibraryContextMenu(null);
+          }}
+        />
+      ) : null}
+      {playlistDeleteTarget ? (
+        <div className="modal-backdrop confirm-backdrop">
+          <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="context-playlist-delete-title">
+            <div className="confirm-icon" aria-hidden="true">
+              <Trash2 size={22} />
+            </div>
+            <div className="confirm-copy">
+              <p className="eyebrow">Delete Playlist</p>
+              <h3 id="context-playlist-delete-title">{playlistDeleteTarget.name}</h3>
+              <p>This removes the playlist from Navidrome. The songs stay in your library.</p>
+            </div>
+            <div className="confirm-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={playlistDeleteStatus === "saving"}
+                onClick={() => setPlaylistDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="connect-button confirm-delete-button"
+                type="button"
+                disabled={playlistDeleteStatus === "saving"}
+                onClick={() => void confirmContextPlaylistDelete()}
+              >
+                {playlistDeleteStatus === "saving" ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                Delete Playlist
+              </button>
+            </div>
+            {playlistDeleteMessage ? (
+              <p className={`confirm-status ${playlistDeleteStatus === "error" ? "bad" : ""}`}>{playlistDeleteMessage}</p>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </main>
+  );
+}
+
+function RightSidebar({
+  tab,
+  setTab,
+  config,
+  queue,
+  displayedQueue,
+  currentIndex,
+  currentTrack,
+  radioStationState,
+  radioNowPlaying,
+  radioUpcoming,
+  radioCoverUrl,
+  radioStationUrl,
+  radioStatus,
+  radioElapsed,
+  isRadioPlaying,
+  playerDuration,
+  position,
+  isPlaying,
+  lyricsStatus,
+  lyricsLines,
+  lyricsMessage,
+  favoriteIds,
+  favoriteBusyKey,
+  draggedQueueIndex,
+  dragOverQueueIndex,
+  setDraggedQueueIndex,
+  setDragOverQueueIndex,
+  onDropQueueItem,
+  onSelectQueueTrack,
+  onRemoveQueueItem,
+  onClearQueue,
+  onToggleFavorite,
+  onOpenAlbumById,
+  onOpenArtistById,
+}: {
+  tab: RightPanelTab;
+  setTab: (tab: RightPanelTab) => void;
+  config: NavidromeConfig | null;
+  queue: Song[];
+  displayedQueue: Array<{ song: Song; index: number }>;
+  currentIndex: number;
+  currentTrack: Song | null;
+  radioStationState: RadioStationState | null;
+  radioNowPlaying: RadioTrack | null;
+  radioUpcoming: RadioTrack[];
+  radioCoverUrl: string | null;
+  radioStationUrl: string;
+  radioStatus: RadioStatus;
+  radioElapsed: number;
+  isRadioPlaying: boolean;
+  playerDuration: number;
+  position: number;
+  isPlaying: boolean;
+  lyricsStatus: LyricsStatus;
+  lyricsLines: LyricLine[];
+  lyricsMessage: string;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  draggedQueueIndex: number | null;
+  dragOverQueueIndex: number | null;
+  setDraggedQueueIndex: (index: number | null) => void;
+  setDragOverQueueIndex: (index: number | null) => void;
+  onDropQueueItem: (index: number) => void;
+  onSelectQueueTrack: (index: number) => void;
+  onRemoveQueueItem: (index: number) => void;
+  onClearQueue: () => void;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbumById: (albumId: string, label: string) => void;
+  onOpenArtistById: (artistId: string, label: string) => void;
+}) {
+  const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
+  const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
+  const upcomingCount = Math.max(displayedQueue.length - 1, 0);
+  const radioStationLabel = radioStationName(radioStationState, radioStationUrl);
+  const radioDuration = radioNowPlaying?.duration ?? 0;
+  const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
+  const activeLyricIndex = useMemo(() => {
+    const elapsedMs = Math.max(0, position * 1000);
+    let active = -1;
+
+    for (let index = 0; index < lyricsLines.length; index += 1) {
+      const startMs = lyricsLines[index]?.startMs;
+      if (startMs == null) continue;
+      if (startMs > elapsedMs) break;
+      active = index;
+    }
+
+    return active;
+  }, [lyricsLines, position]);
+
+  useEffect(() => {
+    if (tab !== "lyrics" || activeLyricIndex < 0) return;
+    activeLyricRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeLyricIndex, tab]);
+
+  const progressLabel =
+    isRadioPlaying && radioNowPlaying
+      ? radioDuration
+        ? `${formatDuration(radioElapsed)} / ${formatDuration(radioDuration)}`
+        : "Live radio"
+      : currentTrack && (playerDuration || currentTrack.duration)
+      ? `${formatDuration(position)} / ${formatDuration(playerDuration || currentTrack.duration)}`
+      : "Nothing playing";
+  const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
+  const headingLabel = tab === "queue" ? "Queue" : tab === "lyrics" ? "Lyrics" : "Now Playing";
+
+  return (
+    <aside className="right-sidebar" aria-label="Now playing and queue">
+      <div className="right-sidebar-heading">
+        <div>
+          <p className="eyebrow">Player</p>
+          <h3>{headingLabel}</h3>
+        </div>
+      </div>
+
+      <div className="right-tabs" role="tablist" aria-label="Right panel">
+        <button className={tab === "queue" ? "active" : ""} type="button" onClick={() => setTab("queue")}>
+          <ListMusic size={15} />
+          Queue
+        </button>
+        <button className={tab === "nowPlaying" ? "active" : ""} type="button" onClick={() => setTab("nowPlaying")}>
+          <Music2 size={15} />
+          Now Playing
+        </button>
+        <button className={tab === "lyrics" ? "active" : ""} type="button" onClick={() => setTab("lyrics")}>
+          <Music2 size={15} />
+          Lyrics
+        </button>
+      </div>
+
+      {tab === "queue" ? (
+        <div className="right-panel-section queue-panel-section">
+          <div className="queue-heading">
+            <p className="eyebrow">{isRadioPlaying ? "Radio Up Next" : "Now + Next"}</p>
+            <div className="queue-heading-actions">
+              <span>
+                {isRadioPlaying
+                  ? radioUpcoming.length
+                    ? `${radioUpcoming.length} tracks`
+                    : "Live"
+                  : displayedQueue.length
+                    ? `${displayedQueue.length} tracks`
+                    : "Empty"}
+              </span>
+              <button type="button" onClick={onClearQueue} disabled={!queue.length}>
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="queue-list right-queue-list">
+            {isRadioPlaying ? (
+              radioUpcoming.length ? (
+                radioUpcoming.slice(0, 8).map((track, index) => (
+                  <div className="queue-row radio-queue-row" key={`${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`}>
+                    <small>{index + 1}</small>
+                    <div className="queue-track">
+                      <strong>{track.title ?? "Unknown track"}</strong>
+                      <small>{track.artist ?? track.album ?? "Subwave"}</small>
+                    </div>
+                    {track.duration ? <small>{formatDuration(track.duration)}</small> : null}
+                  </div>
+                ))
+              ) : (
+                <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
+              )
+            ) : queue.length ? (
+              displayedQueue.map(({ song, index }) => (
+                <div
+                  className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""}`}
+                  key={`${song.id}-${index}`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDragOverQueueIndex(index);
+                  }}
+                  onDrop={() => onDropQueueItem(dragOverQueueIndex ?? index)}
+                >
+                  <button
+                    className="queue-drag-handle"
+                    type="button"
+                    aria-label={`Drag ${song.title} to reorder`}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", String(index));
+                      setDraggedQueueIndex(index);
+                      setDragOverQueueIndex(index);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedQueueIndex(null);
+                      setDragOverQueueIndex(null);
+                    }}
+                  >
+                    <Menu size={14} />
+                  </button>
+                  <button className="queue-track" type="button" onClick={() => onSelectQueueTrack(index)}>
+                    <strong>{song.title}</strong>
+                    <small>{song.artist ?? "Unknown artist"}</small>
+                  </button>
+                  <small>{formatDuration(song.duration)}</small>
+                  <div className="queue-row-actions">
+                    <button type="button" aria-label={`Remove ${song.title}`} onClick={() => onRemoveQueueItem(index)}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="queue-empty">Play an album or song to build a queue.</p>
+            )}
+          </div>
+          {queue.length ? (
+            <p className="right-panel-footnote">
+              {formatDuration(visibleQueueDuration)} showing
+              {displayedQueue.length < queue.length ? ` · ${formatDuration(queueDuration)} total` : ""}
+              {upcomingCount ? ` · ${upcomingCount} up next` : ""}
+            </p>
+          ) : null}
+        </div>
+      ) : tab === "nowPlaying" ? (
+        <div className="right-panel-section now-playing-panel">
+          {isRadioPlaying ? (
+            <>
+              <CoverArt
+                src={radioCoverUrl}
+                label={radioNowPlaying?.title ?? radioStationLabel}
+                className="right-now-cover"
+                fallbackIcon={<RadioTower size={42} />}
+              />
+              <div className="right-now-copy">
+                <p className="eyebrow">{radioStatus === "playing" ? "On Air" : "Radio"}</p>
+                <h3>{radioNowPlaying?.title ?? "Live radio"}</h3>
+                <span className="track-link">{radioNowPlaying?.artist ?? radioStationLabel}</span>
+                {radioNowPlaying?.album ? <span className="track-link">{radioNowPlaying.album}</span> : null}
+              </div>
+              <div className="right-now-stats">
+                <span>{progressLabel}</span>
+                <span>{radioStationLabel}</span>
+              </div>
+            </>
+          ) : currentTrack ? (
+            <>
+              <CoverArt
+                src={nowPlayingCoverUrl}
+                label={currentTrack.title}
+                className="right-now-cover"
+                fallbackIcon={<Music2 size={42} />}
+              />
+              <div className="right-now-copy">
+                <p className="eyebrow">{isPlaying ? "Playing" : "Paused"}</p>
+                <h3>{currentTrack.title}</h3>
+                <button
+                  className="track-link"
+                  type="button"
+                  onClick={() => currentTrack.artistId && onOpenArtistById(currentTrack.artistId, currentTrack.artist ?? "artist")}
+                  disabled={!currentTrack.artistId}
+                >
+                  {currentTrack.artist ?? "Unknown artist"}
+                </button>
+                <button
+                  className="track-link"
+                  type="button"
+                  onClick={() => currentTrack.albumId && onOpenAlbumById(currentTrack.albumId, currentTrack.album ?? currentTrack.title)}
+                  disabled={!currentTrack.albumId}
+                >
+                  {currentTrack.album ?? "Unknown album"}
+                </button>
+              </div>
+              <div className="right-now-stats">
+                <span>{progressLabel}</span>
+                <span>{queue.length ? `${currentIndex + 1} of ${queue.length}` : "Queue empty"}</span>
+              </div>
+              <div className="right-now-actions">
+                <FavoriteButton
+                  active={favoriteIds.songs.has(currentTrack.id)}
+                  busy={favoriteBusyKey === `song:${currentTrack.id}`}
+                  label={currentTrack.title}
+                  onToggle={(favorite) => onToggleFavorite("song", currentTrack.id, favorite)}
+                />
+                <button
+                  className="secondary-button compact-button"
+                  type="button"
+                  disabled={!currentTrack.albumId}
+                  onClick={() => currentTrack.albumId && onOpenAlbumById(currentTrack.albumId, currentTrack.album ?? currentTrack.title)}
+                >
+                  <Disc3 size={15} />
+                  Album
+                </button>
+                <button
+                  className="secondary-button compact-button"
+                  type="button"
+                  disabled={!currentTrack.artistId}
+                  onClick={() => currentTrack.artistId && onOpenArtistById(currentTrack.artistId, currentTrack.artist ?? "artist")}
+                >
+                  <UserRound size={15} />
+                  Artist
+                </button>
+              </div>
+            </>
+          ) : (
+            <EmptyPanel icon={<Music2 size={20} />} text="Nothing playing yet." />
+          )}
+        </div>
+      ) : (
+        <div className="right-panel-section lyrics-panel">
+          {currentTrack ? (
+            <>
+              <div className="lyrics-track">
+                <p className="eyebrow">{currentTrack.artist ?? "Unknown artist"}</p>
+                <h3>{currentTrack.title}</h3>
+              </div>
+              {lyricsStatus === "loading" ? (
+                <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />
+              ) : lyricsLines.length ? (
+                <div className="lyrics-lines">
+                  {lyricsLines.map((line, index) => (
+                    <p
+                      className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
+                      key={`${line.text}-${line.startMs ?? "plain"}-${index}`}
+                      ref={index === activeLyricIndex ? activeLyricRef : undefined}
+                    >
+                      {line.text}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <EmptyPanel icon={<Music2 size={20} />} text={lyricsMessage || "No lyrics loaded yet."} />
+              )}
+            </>
+          ) : (
+            <EmptyPanel icon={<Music2 size={20} />} text="Play a track to load lyrics." />
+          )}
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -817,6 +3417,7 @@ function SearchBox({
   onSubmit,
   onOpenAlbum,
   onOpenArtist,
+  onOpenPlaylist,
   onPlaySong,
 }: {
   query: string;
@@ -829,10 +3430,11 @@ function SearchBox({
   onSubmit: () => void;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
+  onOpenPlaylist: (playlist: Playlist) => void;
   onPlaySong: (song: Song) => void;
 }) {
   const trimmedQuery = query.trim();
-  const totalResults = results.artists.length + results.albums.length + results.songs.length;
+  const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
   const showSuggestions = isFocused && trimmedQuery.length >= 2 && (status !== "idle" || totalResults > 0);
 
   return (
@@ -859,27 +3461,59 @@ function SearchBox({
         <div className="search-suggestions">
           {status === "error" ? <p className="suggestion-note">Search unavailable</p> : null}
           {status === "searching" && !totalResults ? <p className="suggestion-note">Searching</p> : null}
-          {results.artists.slice(0, 3).map((artist) => (
-            <button className="suggestion-row" type="button" key={`artist-${artist.id}`} onMouseDown={() => onOpenArtist(artist)}>
-              <UserRound size={15} />
-              <span>{artist.name}</span>
-              <small>Artist</small>
-            </button>
-          ))}
-          {results.albums.slice(0, 3).map((album) => (
-            <button className="suggestion-row" type="button" key={`album-${album.id}`} onMouseDown={() => onOpenAlbum(album)}>
-              <Disc3 size={15} />
-              <span>{album.name}</span>
-              <small>{album.artist || "Album"}</small>
-            </button>
-          ))}
-          {results.songs.slice(0, 4).map((song) => (
-            <button className="suggestion-row" type="button" key={`song-${song.id}`} onMouseDown={() => onPlaySong(song)}>
-              <Music2 size={15} />
-              <span>{song.title}</span>
-              <small>{song.artist ?? "Song"}</small>
-            </button>
-          ))}
+          {results.artists.length ? (
+            <div className="suggestion-section">
+              <p>Artists</p>
+              {results.artists.slice(0, 2).map((artist) => (
+                <button className="suggestion-row" type="button" key={`artist-${artist.id}`} onMouseDown={() => onOpenArtist(artist)}>
+                  <UserRound size={15} />
+                  <span>{artist.name}</span>
+                  <small>{artist.albumCount ? `${artist.albumCount} albums` : "Artist"}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {results.albums.length ? (
+            <div className="suggestion-section">
+              <p>Albums</p>
+              {results.albums.slice(0, 3).map((album) => (
+                <button className="suggestion-row" type="button" key={`album-${album.id}`} onMouseDown={() => onOpenAlbum(album)}>
+                  <Disc3 size={15} />
+                  <span>{album.name}</span>
+                  <small>{album.artist || "Album"}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {results.playlists.length ? (
+            <div className="suggestion-section">
+              <p>Playlists</p>
+              {results.playlists.slice(0, 3).map((playlist) => (
+                <button
+                  className="suggestion-row"
+                  type="button"
+                  key={`playlist-${playlist.id}`}
+                  onMouseDown={() => onOpenPlaylist(playlist)}
+                >
+                  <ListMusic size={15} />
+                  <span>{playlist.name}</span>
+                  <small>{playlist.songCount ? `${playlist.songCount} songs` : "Playlist"}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {results.songs.length ? (
+            <div className="suggestion-section">
+              <p>Songs</p>
+              {results.songs.slice(0, 5).map((song) => (
+                <button className="suggestion-row" type="button" key={`song-${song.id}`} onMouseDown={() => onPlaySong(song)}>
+                  <Music2 size={15} />
+                  <span>{song.title}</span>
+                  <small>{song.artist ?? song.album ?? "Song"}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {totalResults > 4 ? (
             <button className="suggestion-row view-all" type="button" onMouseDown={onSubmit}>
               <Search size={15} />
@@ -893,11 +3527,45 @@ function SearchBox({
   );
 }
 
+function AnalyticsBanner({
+  onEnable,
+  onDismiss,
+}: {
+  onEnable: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <section className="analytics-banner" aria-label="Anonymous analytics">
+      <div className="analytics-banner-icon" aria-hidden="true">
+        <CheckCircle2 size={18} />
+      </div>
+      <div>
+        <strong>Help improve Prism</strong>
+        <p>Share anonymous install analytics through Beacon. No library, account, or playback data is sent.</p>
+      </div>
+      <div className="analytics-banner-actions">
+        <button className="secondary-button compact-button" type="button" onClick={onDismiss}>
+          Not Now
+        </button>
+        <button className="connect-button compact-button" type="button" onClick={onEnable}>
+          Enable
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({
   form,
   setForm,
   status,
   statusMessage,
+  appSettings,
+  updateAppSettings,
+  setAnalyticsConsent,
+  resetAppSettings,
+  setAlbumViewMode,
+  setArtistViewMode,
   onSave,
   onReset,
 }: {
@@ -905,9 +3573,25 @@ function SettingsView({
   setForm: (config: NavidromeConfig) => void;
   status: ConnectionStatus;
   statusMessage: string;
+  appSettings: AppSettings;
+  updateAppSettings: (settings: AppSettings) => void;
+  setAnalyticsConsent: (enabled: boolean) => void;
+  resetAppSettings: () => void;
+  setAlbumViewMode: (mode: AlbumViewMode) => void;
+  setArtistViewMode: (mode: ArtistViewMode) => void;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
+  function setDefaultAlbumView(mode: AlbumViewMode) {
+    updateAppSettings({ ...appSettings, defaultAlbumView: mode });
+    setAlbumViewMode(mode);
+  }
+
+  function setDefaultArtistView(mode: ArtistViewMode) {
+    updateAppSettings({ ...appSettings, defaultArtistView: mode });
+    setArtistViewMode(mode);
+  }
+
   return (
     <section className="settings-layout">
       <form className="settings-form" onSubmit={onSave}>
@@ -917,6 +3601,17 @@ function SettingsView({
             <h3>Server connection</h3>
           </div>
           <ConnectionStatusBadge status={status} />
+        </div>
+
+        <div className={`connection-status-row ${status === "error" ? "bad" : ""}`}>
+          <div className="status-icon" aria-hidden="true">
+            {status === "connected" ? <CheckCircle2 size={22} /> : <AlertCircle size={22} />}
+          </div>
+          <div>
+            <p className="eyebrow">Connection state</p>
+            <h3>{status === "connected" ? "Server verified" : "Waiting for a valid server"}</h3>
+            <p>{statusMessage}</p>
+          </div>
         </div>
 
         <label>
@@ -956,19 +3651,136 @@ function SettingsView({
             Save and Test
           </button>
           <button className="secondary-button" type="button" onClick={onReset}>
-            Reset
+            Reset Connection
           </button>
         </div>
       </form>
 
-      <section className={`status-panel ${status === "error" ? "bad" : ""}`}>
-        <div className="status-icon" aria-hidden="true">
-          {status === "connected" ? <CheckCircle2 size={24} /> : <AlertCircle size={24} />}
+      <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Library</p>
+            <h3>Browsing defaults</h3>
+          </div>
+          <Library size={18} />
         </div>
-        <div>
-          <p className="eyebrow">Connection state</p>
-          <h3>{status === "connected" ? "Server verified" : "Waiting for a valid server"}</h3>
-          <p>{statusMessage}</p>
+        <label>
+          Albums
+          <select value={appSettings.defaultAlbumView} onChange={(event) => setDefaultAlbumView(event.target.value as AlbumViewMode)}>
+            <option value="art">Art</option>
+            <option value="list">List</option>
+          </select>
+        </label>
+        <label>
+          Artists
+          <select value={appSettings.defaultArtistView} onChange={(event) => setDefaultArtistView(event.target.value as ArtistViewMode)}>
+            <option value="list">List</option>
+            <option value="art">Art</option>
+          </select>
+        </label>
+      </section>
+
+      <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Sidebar</p>
+            <h3>Playlist shortcuts</h3>
+          </div>
+          <ListMusic size={18} />
+        </div>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.showSidebarPlaylists}
+            onChange={(event) => updateAppSettings({ ...appSettings, showSidebarPlaylists: event.target.checked })}
+          />
+          <span>Show playlists</span>
+        </label>
+        <label>
+          Playlist count
+          <input
+            type="number"
+            min="3"
+            max="20"
+            value={appSettings.sidebarPlaylistLimit}
+            disabled={!appSettings.showSidebarPlaylists}
+            onChange={(event) => updateAppSettings({ ...appSettings, sidebarPlaylistLimit: Number(event.target.value) })}
+          />
+        </label>
+      </section>
+
+      <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Appearance</p>
+            <h3>Album cover wash</h3>
+          </div>
+          <Waves size={18} />
+        </div>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.coverWashEnabled}
+            onChange={(event) => updateAppSettings({ ...appSettings, coverWashEnabled: event.target.checked })}
+          />
+          <span>Use current album art as the background wash</span>
+        </label>
+      </section>
+
+      <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Radio</p>
+            <h3>Subwave station</h3>
+          </div>
+          <RadioTower size={18} />
+        </div>
+        <label>
+          Station URL
+          <input
+            value={appSettings.radioStationUrl}
+            onChange={(event) => updateAppSettings({ ...appSettings, radioStationUrl: event.target.value })}
+            placeholder="https://radio.example.com"
+            autoComplete="url"
+            inputMode="url"
+          />
+        </label>
+        <p className="settings-note">Prism validates this against `/api/state` and plays the station stream from `/stream.mp3`.</p>
+      </section>
+
+      <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Analytics</p>
+            <h3>Anonymous install stats</h3>
+          </div>
+          <CheckCircle2 size={18} />
+        </div>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.analyticsEnabled}
+            onChange={(event) => setAnalyticsConsent(event.target.checked)}
+          />
+          <span>Share anonymous install analytics</span>
+        </label>
+        <p className="settings-note">
+          Sends a periodic Beacon ping with app version, install id, platform, channel, and dev/release flag. No library, account, or playback data is sent.
+        </p>
+      </section>
+
+      <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Advanced</p>
+            <h3>Local preferences</h3>
+          </div>
+          <Settings size={18} />
+        </div>
+        <div className="form-actions">
+          <button className="secondary-button" type="button" onClick={resetAppSettings}>
+            Reset App Settings
+          </button>
         </div>
       </section>
     </section>
@@ -1039,63 +3851,360 @@ function FirstRunWizard({
   );
 }
 
+function RadioView({
+  config,
+  appSettings,
+  stationInput,
+  setStationInput,
+  stationState,
+  status,
+  message,
+  radioVolume,
+  elapsed,
+  refreshRadio,
+  tuneIn,
+  tuneOut,
+  setVolume,
+}: {
+  config: NavidromeConfig | null;
+  appSettings: AppSettings;
+  stationInput: string;
+  setStationInput: (value: string) => void;
+  stationState: RadioStationState | null;
+  status: RadioStatus;
+  message: string;
+  radioVolume: number;
+  elapsed: number;
+  refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
+  tuneIn: () => Promise<void>;
+  tuneOut: () => void;
+  setVolume: (nextVolume: number) => void;
+}) {
+  const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
+  const streamUrl = stationUrl ? buildRadioStreamUrl(stationUrl) : "";
+  const nowPlaying = firstRadioTrack(stationState);
+  const upcoming = upcomingRadioTracks(stationState).slice(0, 5);
+  const listenerCount = radioListenerCount(stationState);
+  const stationName = radioStationName(stationState, stationUrl);
+  const showName = stationState?.activeShow?.name;
+  const djName = stationState?.dj?.name;
+  const coverUrl =
+    nowPlaying?.coverUrl ||
+    (config && nowPlaying?.coverArt ? buildCoverArtUrl(config, nowPlaying.coverArt, "720") : null) ||
+    (config && nowPlaying?.subsonic_id ? buildCoverArtUrl(config, nowPlaying.subsonic_id, "720") : null);
+  const radioDuration = nowPlaying?.duration ?? 0;
+  const progressPercent = radioDuration > 0 ? `${Math.min(100, (elapsed / radioDuration) * 100)}%` : "100%";
+  const isPlaying = status === "playing";
+
+  return (
+    <section className="radio-view">
+      <div className="radio-hero">
+        {coverUrl ? <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" /> : null}
+        <div className="radio-cover-card">
+          {coverUrl ? (
+            <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />
+          ) : (
+            <div className="radio-cover-fallback">
+              <RadioTower size={42} />
+            </div>
+          )}
+        </div>
+
+        <div className="radio-copy">
+          <p className="eyebrow">{listenerCount == null ? "Radio" : `${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
+          <h3>{nowPlaying?.title ?? "Tune into Subwave"}</h3>
+          <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
+          {nowPlaying?.album ? <p className="radio-album">{nowPlaying.album}{nowPlaying.year ? ` / ${nowPlaying.year}` : ""}</p> : null}
+
+          <div className="radio-tags">
+            <span>{status === "playing" ? "On air" : status === "checking" ? "Connecting" : "Ready"}</span>
+            {showName ? <span>{showName}</span> : null}
+            {djName ? <span>{djName}</span> : null}
+          </div>
+
+          <div className="radio-progress" aria-hidden="true">
+            <span style={{ width: progressPercent }} />
+          </div>
+
+          <div className="radio-controls">
+            <button className="connect-button compact-button" type="button" onClick={isPlaying ? tuneOut : () => void tuneIn()}>
+              {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+              {isPlaying ? "Tune Out" : "Tune In"}
+            </button>
+            <button className="secondary-button compact-button" type="button" onClick={() => void refreshRadio()}>
+              <RadioTower size={15} />
+              Refresh
+            </button>
+            <div className="radio-volume">
+              <Volume2 size={15} />
+              <input
+                className="volume-slider"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={radioVolume}
+                onChange={(event) => setVolume(Number(event.target.value))}
+                aria-label="Radio volume"
+              />
+            </div>
+          </div>
+          <p className={`radio-status ${status === "error" ? "bad" : ""}`}>{message}</p>
+        </div>
+      </div>
+
+      <div className="radio-tuner-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Station</p>
+            <h3>{stationName}</h3>
+          </div>
+          <RadioTower size={18} />
+        </div>
+        <div className="radio-station-form">
+          <input
+            value={stationInput}
+            onChange={(event) => setStationInput(event.target.value)}
+            placeholder="https://radio.example.com"
+            inputMode="url"
+            autoComplete="url"
+          />
+          <button className="secondary-button compact-button" type="button" onClick={() => void refreshRadio()}>
+            Save Station
+          </button>
+        </div>
+      </div>
+
+      <div className="radio-side-grid">
+        <section className="radio-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Up Next</p>
+              <h3>Live queue</h3>
+            </div>
+            <ListMusic size={18} />
+          </div>
+          <div className="radio-track-list">
+            {upcoming.length ? (
+              upcoming.map((track, index) => (
+                <div className="radio-track-row" key={`${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`}>
+                  <span>{index + 1}</span>
+                  <div>
+                    <strong>{track.title ?? "Unknown track"}</strong>
+                    <small>{track.artist ?? track.album ?? "Subwave"}</small>
+                  </div>
+                  {track.requestedBy ? <em>{track.requestedBy}</em> : null}
+                </div>
+              ))
+            ) : (
+              <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="radio-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Signal</p>
+              <h3>Station state</h3>
+            </div>
+            <Waves size={18} />
+          </div>
+          <div className="radio-stats">
+            <div>
+              <span>Status</span>
+              <strong>{stationState?.status ?? stationState?.state ?? status}</strong>
+            </div>
+            <div>
+              <span>Stream</span>
+              <strong>{streamUrl ? "/stream.mp3" : "Unset"}</strong>
+            </div>
+            <div>
+              <span>Metadata</span>
+              <strong>{stationState ? "Live" : "Waiting"}</strong>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function LibraryView({
   activeView,
   config,
+  libraryStatus,
+  statusMessage,
+  appSettings,
+  updateAppSettings,
+  radioStationInput,
+  setRadioStationInput,
+  radioStationState,
+  radioStatus,
+  radioMessage,
+  radioVolume,
+  radioElapsed,
+  refreshRadio,
+  tuneInRadio,
+  tuneOutRadio,
+  setRadioPlaybackVolume,
   libraryItems,
   albums,
+  recentAlbums,
+  recentlyPlayedAlbums,
+  favorites,
+  playlists,
+  albumViewMode,
+  setAlbumViewMode,
+  artistViewMode,
+  setArtistViewMode,
   artists,
   searchQuery,
   searchResults,
   searchStatus,
+  queue,
+  playlistCreatorOpen,
+  setPlaylistCreatorOpen,
+  playlistName,
+  setPlaylistName,
+  playlistDescription,
+  setPlaylistDescription,
+  playlistPublic,
+  setPlaylistPublic,
+  playlistFromQueue,
+  setPlaylistFromQueue,
+  playlistCreateStatus,
+  playlistCreateMessage,
+  onCreatePlaylist,
+  onSongContextMenu,
   onSelectLibraryView,
   detailSelection,
   detailStatus,
   detailMessage,
   currentTrack,
+  isPlaying,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
   onOpenAlbum,
   onOpenArtist,
+  onOpenPlaylist,
   onPlayAlbum,
   onPlayArtist,
+  onPlayPlaylist,
+  onSavePlaylistDetails,
+  onDeletePlaylist,
+  playlistEditRequestKey,
+  onRemovePlaylistSong,
+  onReorderPlaylist,
   onReplaceQueue,
   onPlaySong,
   onQueueSong,
+  onRetryLibrary,
 }: {
   activeView: View;
   config: NavidromeConfig | null;
+  libraryStatus: LibraryStatus;
+  statusMessage: string;
+  appSettings: AppSettings;
+  updateAppSettings: (settings: AppSettings) => void;
+  radioStationInput: string;
+  setRadioStationInput: (value: string) => void;
+  radioStationState: RadioStationState | null;
+  radioStatus: RadioStatus;
+  radioMessage: string;
+  radioVolume: number;
+  radioElapsed: number;
+  refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
+  tuneInRadio: () => Promise<void>;
+  tuneOutRadio: () => void;
+  setRadioPlaybackVolume: (nextVolume: number) => void;
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
+  recentAlbums: Album[];
+  recentlyPlayedAlbums: Album[];
+  favorites: LibraryData["favorites"];
+  playlists: Playlist[];
+  albumViewMode: AlbumViewMode;
+  setAlbumViewMode: (mode: AlbumViewMode) => void;
+  artistViewMode: ArtistViewMode;
+  setArtistViewMode: (mode: ArtistViewMode) => void;
   artists: Artist[];
   searchQuery: string;
   searchResults: SearchResults;
   searchStatus: "idle" | "searching" | "error";
+  queue: Song[];
+  playlistCreatorOpen: boolean;
+  setPlaylistCreatorOpen: (open: boolean) => void;
+  playlistName: string;
+  setPlaylistName: (name: string) => void;
+  playlistDescription: string;
+  setPlaylistDescription: (description: string) => void;
+  playlistPublic: boolean;
+  setPlaylistPublic: (isPublic: boolean) => void;
+  playlistFromQueue: boolean;
+  setPlaylistFromQueue: (fromQueue: boolean) => void;
+  playlistCreateStatus: "idle" | "saving" | "error";
+  playlistCreateMessage: string;
+  onCreatePlaylist: (event?: FormEvent<HTMLFormElement>) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
   onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
   currentTrack: Song | null;
+  isPlaying: boolean;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
+  onOpenPlaylist: (playlist: Playlist) => void;
   onPlayAlbum: (album: Album) => void;
   onPlayArtist: (artist: Artist | ArtistDetail) => void;
+  onPlayPlaylist: (playlist: Playlist) => void;
+  onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
+  onDeletePlaylist: (playlist: Playlist) => Promise<void>;
+  playlistEditRequestKey: number;
+  onRemovePlaylistSong: (playlist: PlaylistDetail, index: number) => Promise<void>;
+  onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
+  onRetryLibrary: () => void;
 }) {
   if (activeView === "radio") {
     return (
-      <section className="empty-view">
-        <p className="eyebrow">{activeView}</p>
-        <h3>Radio comes after library sync.</h3>
-        <p>Navidrome connection and library browsing are the active lap.</p>
-      </section>
+      <RadioView
+        config={config}
+        appSettings={appSettings}
+        stationInput={radioStationInput}
+        setStationInput={setRadioStationInput}
+        stationState={radioStationState}
+        status={radioStatus}
+        message={radioMessage}
+        radioVolume={radioVolume}
+        elapsed={radioElapsed}
+        refreshRadio={refreshRadio}
+        tuneIn={tuneInRadio}
+        tuneOut={tuneOutRadio}
+        setVolume={setRadioPlaybackVolume}
+      />
     );
   }
 
-  const panelTitle =
-    activeView === "overview"
-      ? "Library"
-      : activeView.charAt(0).toUpperCase() + activeView.slice(1);
+  const panelTitle = getViewLabel(activeView);
+  const loadedItemCount =
+    albums.length +
+    recentAlbums.length +
+    recentlyPlayedAlbums.length +
+    artists.length +
+    playlists.length +
+    favorites.artists.length +
+    favorites.albums.length +
+    favorites.songs.length;
+  const showInitialLoader = libraryStatus === "loading" && loadedItemCount === 0 && activeView !== "search";
+  const showLibraryError = libraryStatus === "error" && activeView !== "search";
 
   return (
     <section className="browser-panel">
@@ -1106,51 +4215,159 @@ function LibraryView({
           detailStatus={detailStatus}
           detailMessage={detailMessage}
           currentTrack={currentTrack}
+          favoriteIds={favoriteIds}
+          favoriteBusyKey={favoriteBusyKey}
+          onToggleFavorite={onToggleFavorite}
+          albumViewMode={albumViewMode}
+          setAlbumViewMode={setAlbumViewMode}
           onOpenAlbum={onOpenAlbum}
+          onOpenArtist={onOpenArtist}
           onPlayAlbum={onPlayAlbum}
           onPlayArtist={onPlayArtist}
+          onPlayPlaylist={onPlayPlaylist}
+          onSavePlaylistDetails={onSavePlaylistDetails}
+          onDeletePlaylist={onDeletePlaylist}
+          playlistEditRequestKey={playlistEditRequestKey}
+          onRemovePlaylistSong={onRemovePlaylistSong}
+          onReorderPlaylist={onReorderPlaylist}
           onReplaceQueue={onReplaceQueue}
           onPlaySong={onPlaySong}
           onQueueSong={onQueueSong}
+          onSongContextMenu={onSongContextMenu}
         />
       ) : (
         <>
           <div className="panel-heading browser-heading">
             <h3>{panelTitle}</h3>
-            {activeView !== "overview" ? (
-              <button className="detail-back" type="button" onClick={() => onSelectLibraryView("overview")}>
-                <ChevronLeft size={16} />
-                Overview
-              </button>
-            ) : null}
-          </div>
-          {activeView === "overview" ? (
-            <div className="list">
-              {libraryItems.map((item) => (
-                <button
-                  className="list-row"
-                  type="button"
-                  key={item.label}
-                  onClick={() => {
-                    if (item.label === "Albums") onSelectLibraryView("albums");
-                    if (item.label === "Artists") onSelectLibraryView("artists");
-                    if (item.label === "Playlists") onSelectLibraryView("playlists");
-                  }}
-                >
-                  <span>{item.label}</span>
-                  <span>{item.value}</span>
+            <div className="heading-actions">
+              {activeView === "albums" ? (
+                <div className="view-toggle" aria-label="Album view">
+                  <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
+                    Art
+                  </button>
+                  <button className={albumViewMode === "list" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("list")}>
+                    List
+                  </button>
+                </div>
+              ) : null}
+              {activeView === "artists" ? (
+                <div className="view-toggle" aria-label="Artist view">
+                  <button className={artistViewMode === "art" ? "active" : ""} type="button" onClick={() => setArtistViewMode("art")}>
+                    Art
+                  </button>
+                  <button className={artistViewMode === "list" ? "active" : ""} type="button" onClick={() => setArtistViewMode("list")}>
+                    List
+                  </button>
+                </div>
+              ) : null}
+              {activeView === "playlists" ? (
+                <button className="secondary-button compact-button" type="button" onClick={() => setPlaylistCreatorOpen(true)}>
+                  <Plus size={15} />
+                  New Playlist
                 </button>
-              ))}
+              ) : null}
             </div>
+          </div>
+          {showLibraryError ? (
+            <StateNotice
+              tone="bad"
+              icon={<AlertCircle size={16} />}
+              title="Library sync failed"
+              text={statusMessage}
+              actionLabel="Retry"
+              onAction={onRetryLibrary}
+            />
+          ) : null}
+          {showInitialLoader ? (
+            <LibraryLoadingSkeleton view={activeView} />
+          ) : null}
+          {!showInitialLoader ? (
+            <>
+          {activeView === "overview" ? (
+            <OverviewHome
+              config={config}
+              libraryItems={libraryItems}
+              recentAlbums={recentAlbums}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onSelectLibraryView={onSelectLibraryView}
+              onOpenAlbum={onOpenAlbum}
+              onPlayAlbum={onPlayAlbum}
+            />
           ) : null}
           {activeView === "albums" ? (
-            <AlbumGrid config={config} albums={albums} onOpenAlbum={onOpenAlbum} onPlayAlbum={onPlayAlbum} />
+            <AlbumBrowser
+              viewMode={albumViewMode}
+              config={config}
+              albums={albums}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenAlbum={onOpenAlbum}
+              onPlayAlbum={onPlayAlbum}
+            />
           ) : null}
           {activeView === "artists" ? (
-            <ArtistList artists={artists} onOpenArtist={onOpenArtist} onPlayArtist={onPlayArtist} />
+            <ArtistBrowser
+              viewMode={artistViewMode}
+              artists={artists}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenArtist={onOpenArtist}
+              onPlayArtist={onPlayArtist}
+            />
           ) : null}
           {activeView === "playlists" ? (
-            <EmptyPanel icon={<ListMusic size={20} />} text="Playlists come next after album and artist browsing." />
+            <PlaylistBrowser playlists={playlists} onOpenPlaylist={onOpenPlaylist} onPlayPlaylist={onPlayPlaylist} />
+          ) : null}
+          {activeView === "recentlyAdded" ? (
+            <AlbumBrowser
+              viewMode="list"
+              config={config}
+              albums={recentAlbums}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenAlbum={onOpenAlbum}
+              onPlayAlbum={onPlayAlbum}
+              withAlphabetRail={false}
+              emptyText="No recently added albums yet."
+            />
+          ) : null}
+          {activeView === "recentlyPlayed" ? (
+            <AlbumBrowser
+              viewMode="list"
+              config={config}
+              albums={recentlyPlayedAlbums}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenAlbum={onOpenAlbum}
+              onPlayAlbum={onPlayAlbum}
+              withAlphabetRail={false}
+              emptyText="No listening history yet."
+            />
+          ) : null}
+          {activeView === "favorites" ? (
+            <FavoritesView
+              favorites={favorites}
+              config={config}
+              currentTrack={currentTrack}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenAlbum={onOpenAlbum}
+              onOpenArtist={onOpenArtist}
+              onPlayAlbum={onPlayAlbum}
+              onPlayArtist={onPlayArtist}
+              onPlaySong={onPlaySong}
+              onQueueSong={onQueueSong}
+              onSongContextMenu={onSongContextMenu}
+            />
           ) : null}
           {activeView === "search" ? (
             <SearchResultsView
@@ -1159,17 +4376,254 @@ function LibraryView({
               results={searchResults}
               config={config}
               currentTrack={currentTrack}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
               onOpenAlbum={onOpenAlbum}
               onOpenArtist={onOpenArtist}
+              onOpenPlaylist={onOpenPlaylist}
               onPlayAlbum={onPlayAlbum}
               onPlayArtist={onPlayArtist}
               onPlaySong={onPlaySong}
               onQueueSong={onQueueSong}
+              onSongContextMenu={onSongContextMenu}
             />
+          ) : null}
+            </>
           ) : null}
         </>
       )}
     </section>
+  );
+}
+
+function OverviewHome({
+  config,
+  libraryItems,
+  recentAlbums,
+  currentTrack,
+  isPlaying,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onSelectLibraryView,
+  onOpenAlbum,
+  onPlayAlbum,
+}: {
+  config: NavidromeConfig | null;
+  libraryItems: Array<{ label: string; value: string }>;
+  recentAlbums: Album[];
+  currentTrack: Song | null;
+  isPlaying: boolean;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onSelectLibraryView: (view: View) => void;
+  onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
+}) {
+  const shortcutItems = libraryItems;
+  const visualAlbums = recentAlbums.slice(0, 5);
+  const featuredAlbum = visualAlbums[0] ?? null;
+  const featuredCoverUrl = config && featuredAlbum ? buildCoverArtUrl(config, featuredAlbum.coverArt, "520") : null;
+  const greeting = `Good ${getGreetingPeriod()}, ${formatDisplayName(config?.username)}`;
+  const librarySummary = libraryItems
+    .slice(0, 3)
+    .map((item) => `${item.value.replace(" loaded", "")} ${item.label.toLowerCase()}`)
+    .join(" · ");
+  const currentTrackSummary = currentTrack ? `${currentTrack.title} - ${currentTrack.artist ?? "Unknown artist"}` : "";
+  const shortcutMeta: Record<string, ReactNode> = {
+    Artists: <UserRound size={18} />,
+    Albums: <Disc3 size={18} />,
+    Playlists: <ListMusic size={18} />,
+    "Recently Added": <Plus size={18} />,
+    "Recently Played": <History size={18} />,
+    Favorites: <Star size={18} />,
+  };
+
+  return (
+    <div className="home-view">
+      <section className="home-hero">
+        <div className="home-hero-copy">
+          <p className="eyebrow">Home</p>
+          <h3>{greeting}</h3>
+          <p className="home-library-state">{config ? librarySummary : "Connect Navidrome to load your library."}</p>
+          {isPlaying && currentTrackSummary ? <p className="home-now-playing">Now playing: {currentTrackSummary}</p> : null}
+        </div>
+        <div className="home-cover-stage">
+          {visualAlbums.map((album, index) => {
+            const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, index === 0 ? "520" : "260") : null;
+
+            return (
+              <button
+                className={`home-cover-peek peek-${index + 1}`}
+                type="button"
+                key={album.id}
+                onClick={() => onOpenAlbum(album)}
+                aria-label={`Open ${album.name}`}
+              >
+                <CoverArt src={coverUrl} label={album.name} className="home-cover-art" />
+              </button>
+            );
+          })}
+          {!visualAlbums.length ? <CoverArt src={featuredCoverUrl} label="Prism library" className="home-cover-art home-cover-empty" /> : null}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-label">
+          <h4>Library</h4>
+        </div>
+        <div className="home-shortcuts">
+          {shortcutItems.map((item) => (
+            <button
+              className="home-shortcut"
+              type="button"
+              key={item.label}
+              onClick={() => {
+                if (item.label === "Albums") onSelectLibraryView("albums");
+                if (item.label === "Artists") onSelectLibraryView("artists");
+                if (item.label === "Playlists") onSelectLibraryView("playlists");
+                if (item.label === "Recently Added") onSelectLibraryView("recentlyAdded");
+                if (item.label === "Recently Played") onSelectLibraryView("recentlyPlayed");
+                if (item.label === "Favorites") onSelectLibraryView("favorites");
+              }}
+            >
+              <span className="home-shortcut-icon">{shortcutMeta[item.label]}</span>
+              <span className="home-shortcut-copy">
+                <strong>{item.label}</strong>
+                <small>{item.value}</small>
+              </span>
+              <ChevronRight size={16} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-label">
+          <h4>Recently added</h4>
+          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("albums")}>
+            View albums
+          </button>
+        </div>
+        <AlbumGrid
+          config={config}
+          albums={recentAlbums}
+          favoriteIds={favoriteIds}
+          favoriteBusyKey={favoriteBusyKey}
+          onToggleFavorite={onToggleFavorite}
+          onOpenAlbum={onOpenAlbum}
+          onPlayAlbum={onPlayAlbum}
+          withAlphabetRail={false}
+        />
+      </section>
+    </div>
+  );
+}
+
+function FavoritesView({
+  favorites,
+  config,
+  currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onOpenAlbum,
+  onOpenArtist,
+  onPlayAlbum,
+  onPlayArtist,
+  onPlaySong,
+  onQueueSong,
+  onSongContextMenu,
+}: {
+  favorites: LibraryData["favorites"];
+  config: NavidromeConfig | null;
+  currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onPlayAlbum: (album: Album) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail) => void;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+}) {
+  const totalFavorites = favorites.artists.length + favorites.albums.length + favorites.songs.length;
+
+  if (!totalFavorites) {
+    return <EmptyPanel icon={<Star size={20} />} text="No favorites yet." />;
+  }
+
+  return (
+    <div className="search-results">
+      <section className="search-summary">
+        <div>
+          <p className="eyebrow">Favorites</p>
+          <h4>Starred library</h4>
+        </div>
+        <div className="search-counts" aria-label="Favorite counts">
+          <span>{favorites.songs.length} songs</span>
+          <span>{favorites.albums.length} albums</span>
+          <span>{favorites.artists.length} artists</span>
+        </div>
+      </section>
+      {favorites.artists.length ? (
+        <section className="search-section">
+          <div className="section-label">
+            <h4>Artists</h4>
+            <small>{favorites.artists.length}</small>
+          </div>
+          <ArtistList
+            artists={favorites.artists}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onOpenArtist={onOpenArtist}
+            onPlayArtist={onPlayArtist}
+            withAlphabetRail={false}
+          />
+        </section>
+      ) : null}
+      {favorites.albums.length ? (
+        <section className="search-section">
+          <div className="section-label">
+            <h4>Albums</h4>
+            <small>{favorites.albums.length}</small>
+          </div>
+          <AlbumList
+            config={config}
+            albums={favorites.albums}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onOpenAlbum={onOpenAlbum}
+            onPlayAlbum={onPlayAlbum}
+            withAlphabetRail={false}
+          />
+        </section>
+      ) : null}
+      {favorites.songs.length ? (
+        <section className="search-section">
+          <div className="section-label">
+            <h4>Songs</h4>
+            <small>{favorites.songs.length}</small>
+          </div>
+          <SearchSongList
+            songs={favorites.songs}
+            currentTrack={currentTrack}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onPlaySong={onPlaySong}
+            onQueueSong={onQueueSong}
+            onSongContextMenu={onSongContextMenu}
+          />
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -1179,38 +4633,48 @@ function SearchResultsView({
   results,
   config,
   currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
   onOpenAlbum,
   onOpenArtist,
+  onOpenPlaylist,
   onPlayAlbum,
   onPlayArtist,
   onPlaySong,
   onQueueSong,
+  onSongContextMenu,
 }: {
   query: string;
   status: "idle" | "searching" | "error";
   results: SearchResults;
   config: NavidromeConfig | null;
   currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
+  onOpenPlaylist: (playlist: Playlist) => void;
   onPlayAlbum: (album: Album) => void;
   onPlayArtist: (artist: Artist | ArtistDetail) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
 }) {
   const trimmedQuery = query.trim();
-  const totalResults = results.artists.length + results.albums.length + results.songs.length;
+  const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
 
   if (trimmedQuery.length < 2) {
-    return <EmptyPanel icon={<Search size={20} />} text="Start typing in the sidebar search." />;
+    return <EmptyPanel icon={<Search size={20} />} text="Start typing in the top search." />;
   }
 
   if (status === "searching" && !totalResults) {
-    return <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Searching library." />;
+    return <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Searching your library..." />;
   }
 
   if (status === "error") {
-    return <EmptyPanel icon={<AlertCircle size={20} />} text="Search failed." />;
+    return <EmptyPanel icon={<AlertCircle size={20} />} text="Search could not load." />;
   }
 
   if (!totalResults) {
@@ -1219,64 +4683,442 @@ function SearchResultsView({
 
   return (
     <div className="search-results">
+      <section className="search-summary">
+        <div>
+          <p className="eyebrow">Search results</p>
+          <h4>{trimmedQuery}</h4>
+        </div>
+        <div className="search-counts" aria-label="Result counts">
+          <span>{results.songs.length} songs</span>
+          <span>{results.albums.length} albums</span>
+          <span>{results.artists.length} artists</span>
+          <span>{results.playlists.length} playlists</span>
+        </div>
+      </section>
       {results.artists.length ? (
-        <section>
+        <section className="search-section">
           <div className="section-label">
             <h4>Artists</h4>
+            <small>{results.artists.length}</small>
           </div>
-          <ArtistList artists={results.artists} onOpenArtist={onOpenArtist} onPlayArtist={onPlayArtist} />
+          <ArtistList
+            artists={results.artists}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onOpenArtist={onOpenArtist}
+            onPlayArtist={onPlayArtist}
+            withAlphabetRail={false}
+          />
         </section>
       ) : null}
       {results.albums.length ? (
-        <section>
+        <section className="search-section">
           <div className="section-label">
             <h4>Albums</h4>
+            <small>{results.albums.length}</small>
           </div>
-          <AlbumGrid config={config} albums={results.albums} onOpenAlbum={onOpenAlbum} onPlayAlbum={onPlayAlbum} />
+          <AlbumList
+            config={config}
+            albums={results.albums}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onOpenAlbum={onOpenAlbum}
+            onPlayAlbum={onPlayAlbum}
+            withAlphabetRail={false}
+          />
+        </section>
+      ) : null}
+      {results.playlists.length ? (
+        <section className="search-section">
+          <div className="section-label">
+            <h4>Playlists</h4>
+            <small>{results.playlists.length}</small>
+          </div>
+          <SearchPlaylistList playlists={results.playlists} onOpenPlaylist={onOpenPlaylist} />
         </section>
       ) : null}
       {results.songs.length ? (
-        <section>
+        <section className="search-section">
           <div className="section-label">
             <h4>Songs</h4>
+            <small>{results.songs.length}</small>
           </div>
-          <TrackList songs={results.songs} currentTrack={currentTrack} onPlaySong={onPlaySong} onQueueSong={onQueueSong} />
+          <SearchSongList
+            songs={results.songs}
+            currentTrack={currentTrack}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onPlaySong={onPlaySong}
+            onQueueSong={onQueueSong}
+            onSongContextMenu={onSongContextMenu}
+          />
         </section>
       ) : null}
     </div>
   );
 }
 
-function AlbumGrid({
+function SearchPlaylistList({
+  playlists,
+  onOpenPlaylist,
+}: {
+  playlists: Playlist[];
+  onOpenPlaylist: (playlist: Playlist) => void;
+}) {
+  return (
+    <div className="search-playlist-list">
+      {playlists.map((playlist) => (
+        <button
+          className="search-playlist-row"
+          type="button"
+          key={playlist.id}
+          data-context-kind="playlist"
+          data-context-id={playlist.id}
+          onClick={() => onOpenPlaylist(playlist)}
+        >
+          <ListMusic size={18} />
+          <span>
+            <strong>{playlist.name}</strong>
+            <small>
+              {[playlist.songCount ? `${playlist.songCount} songs` : "Playlist", playlist.duration ? formatDuration(playlist.duration) : null]
+                .filter(Boolean)
+                .join(" - ")}
+            </small>
+          </span>
+          <ChevronRight size={15} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SearchSongList({
+  songs,
+  currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onPlaySong,
+  onQueueSong,
+  onSongContextMenu,
+}: {
+  songs: Song[];
+  currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+}) {
+  return (
+    <div className="search-song-list">
+      {songs.map((song) => (
+        <div
+          className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""}`}
+          key={song.id}
+          onContextMenu={(event) => onSongContextMenu(event, song)}
+        >
+          <button className="track-play" type="button" onClick={() => onPlaySong(song)} aria-label={`Play ${song.title}`}>
+            <Play size={14} fill="currentColor" />
+          </button>
+          <button className="search-song-main" type="button" onClick={() => onPlaySong(song)}>
+            <strong>{song.title}</strong>
+            <small>{[song.artist, song.album].filter(Boolean).join(" - ") || "Song"}</small>
+          </button>
+          <small>{formatDuration(song.duration)}</small>
+          <FavoriteButton
+            active={favoriteIds.songs.has(song.id)}
+            busy={favoriteBusyKey === `song:${song.id}`}
+            label={song.title}
+            onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
+          />
+          <button className="track-queue" type="button" onClick={() => onQueueSong(song)} aria-label={`Queue ${song.title}`}>
+            <Plus size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }) {
+  const available = new Set(letters);
+
+  return (
+    <div className="alphabet-rail" aria-label="Alphabet jump">
+      {ALPHABET.map((letter) => (
+        <button
+          type="button"
+          key={letter}
+          disabled={!available.has(letter)}
+          onClick={() => document.getElementById(alphaSectionId(prefix, letter))?.scrollIntoView({ block: "start", behavior: "smooth" })}
+          aria-label={`Jump to ${letter}`}
+        >
+          {letter}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AlbumBrowser({
+  viewMode,
   config,
   albums,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
   onOpenAlbum,
   onPlayAlbum,
+  withAlphabetRail = true,
+  emptyText,
 }: {
+  viewMode: AlbumViewMode;
   config: NavidromeConfig | null;
   albums: Album[];
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onOpenAlbum: (album: Album) => void;
   onPlayAlbum: (album: Album) => void;
+  withAlphabetRail?: boolean;
+  emptyText?: string;
 }) {
-  if (!albums.length) {
-    return <EmptyPanel icon={<Disc3 size={20} />} text="Albums load after a successful Navidrome sync." />;
+  if (viewMode === "list") {
+    return (
+      <AlbumList
+        config={config}
+        albums={albums}
+        favoriteIds={favoriteIds}
+        favoriteBusyKey={favoriteBusyKey}
+        onToggleFavorite={onToggleFavorite}
+        onOpenAlbum={onOpenAlbum}
+        onPlayAlbum={onPlayAlbum}
+        withAlphabetRail={withAlphabetRail}
+        emptyText={emptyText}
+      />
+    );
   }
 
   return (
-    <div className="album-grid">
-      {albums.slice(0, 24).map((album) => {
-        const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "360") : null;
+    <AlbumGrid
+      config={config}
+      albums={albums}
+      favoriteIds={favoriteIds}
+      favoriteBusyKey={favoriteBusyKey}
+      onToggleFavorite={onToggleFavorite}
+      onOpenAlbum={onOpenAlbum}
+      onPlayAlbum={onPlayAlbum}
+      withAlphabetRail={withAlphabetRail}
+      emptyText={emptyText}
+    />
+  );
+}
 
-        return (
-          <div className="album-tile" key={album.id}>
-            <PlayableCover src={coverUrl} label={album.name} className="album-cover" onPlay={() => onPlayAlbum(album)} />
-            <button className="album-title-button" type="button" onClick={() => onOpenAlbum(album)}>
-              {album.name}
-            </button>
-            <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
-          </div>
-        );
-      })}
+function AlbumGrid({
+  config,
+  albums,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onOpenAlbum,
+  onPlayAlbum,
+  withAlphabetRail = true,
+  emptyText = "No albums loaded yet.",
+}: {
+  config: NavidromeConfig | null;
+  albums: Album[];
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
+  withAlphabetRail?: boolean;
+  emptyText?: string;
+}) {
+  if (!albums.length) {
+    return <EmptyPanel icon={<Disc3 size={20} />} text={emptyText} />;
+  }
+
+  const groups = groupByAlpha(albums, (album) => album.name);
+
+  if (!withAlphabetRail) {
+    return (
+      <div className="album-grid">
+        {albums.map((album) => {
+          const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "360") : null;
+
+          return (
+            <div className="album-tile" key={album.id} data-context-kind="album" data-context-id={album.id}>
+              <PlayableCover
+                src={coverUrl}
+                label={album.name}
+                className="album-cover"
+                onOpen={() => onOpenAlbum(album)}
+                onPlay={() => onPlayAlbum(album)}
+              />
+              <button className="album-title-button" type="button" onClick={() => onOpenAlbum(album)}>
+                {album.name}
+              </button>
+              <div className="tile-meta-row">
+                <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+                <FavoriteButton
+                  active={favoriteIds.albums.has(album.id)}
+                  busy={favoriteBusyKey === `album:${album.id}`}
+                  label={album.name}
+                  onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="alpha-layout">
+      <div className="alpha-sections">
+        {groups.map((group) => (
+          <section className="alpha-section" id={alphaSectionId("albums-art", group.letter)} key={group.letter}>
+            <p className="alpha-heading">{group.letter}</p>
+            <div className="album-grid">
+              {group.items.map((album) => {
+                const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "360") : null;
+
+                return (
+                  <div className="album-tile" key={album.id} data-context-kind="album" data-context-id={album.id}>
+                    <PlayableCover
+                      src={coverUrl}
+                      label={album.name}
+                      className="album-cover"
+                      onOpen={() => onOpenAlbum(album)}
+                      onPlay={() => onPlayAlbum(album)}
+                    />
+                    <button className="album-title-button" type="button" onClick={() => onOpenAlbum(album)}>
+                      {album.name}
+                    </button>
+                    <div className="tile-meta-row">
+                      <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+                      <FavoriteButton
+                        active={favoriteIds.albums.has(album.id)}
+                        busy={favoriteBusyKey === `album:${album.id}`}
+                        label={album.name}
+                        onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+      <AlphabetRail letters={groups.map((group) => group.letter)} prefix="albums-art" />
+    </div>
+  );
+}
+
+function AlbumList({
+  config,
+  albums,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onOpenAlbum,
+  onPlayAlbum,
+  withAlphabetRail = true,
+  emptyText = "No albums loaded yet.",
+}: {
+  config: NavidromeConfig | null;
+  albums: Album[];
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
+  withAlphabetRail?: boolean;
+  emptyText?: string;
+}) {
+  if (!albums.length) {
+    return <EmptyPanel icon={<Disc3 size={20} />} text={emptyText} />;
+  }
+
+  const groups = groupByAlpha(albums, (album) => album.name);
+
+  if (!withAlphabetRail) {
+    return (
+      <div className="album-list">
+        {albums.map((album) => {
+          const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+          const detailParts = [album.year, album.songCount ? `${album.songCount} tracks` : null].filter(Boolean);
+
+          return (
+            <div className="album-list-row" key={album.id} data-context-kind="album" data-context-id={album.id}>
+              <button className="album-list-main" type="button" onClick={() => onOpenAlbum(album)}>
+                <CoverArt src={coverUrl} label={album.name} className="album-list-cover" />
+                <span>
+                  <strong>{album.name}</strong>
+                  <small>{detailParts.join(" - ") || "Album"}</small>
+                </span>
+              </button>
+              <button className="track-play" type="button" onClick={() => onPlayAlbum(album)} aria-label={`Play ${album.name}`}>
+                <Play size={14} fill="currentColor" />
+              </button>
+              <FavoriteButton
+                active={favoriteIds.albums.has(album.id)}
+                busy={favoriteBusyKey === `album:${album.id}`}
+                label={album.name}
+                onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="alpha-layout">
+      <div className="alpha-sections">
+        {groups.map((group) => (
+          <section className="alpha-section" id={alphaSectionId("albums-list", group.letter)} key={group.letter}>
+            <p className="alpha-heading">{group.letter}</p>
+            <div className="album-list">
+              {group.items.map((album) => {
+                const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+                const detailParts = [album.artist, album.year, album.songCount ? `${album.songCount} tracks` : null].filter(Boolean);
+
+                return (
+                  <div className="album-list-row" key={album.id} data-context-kind="album" data-context-id={album.id}>
+                    <button className="album-list-main" type="button" onClick={() => onOpenAlbum(album)}>
+                      <CoverArt src={coverUrl} label={album.name} className="album-list-cover" />
+                      <span>
+                        <strong>{album.name}</strong>
+                        <small>{detailParts.join(" - ") || "Album"}</small>
+                      </span>
+                    </button>
+                    <button className="track-play" type="button" onClick={() => onPlayAlbum(album)} aria-label={`Play ${album.name}`}>
+                      <Play size={14} fill="currentColor" />
+                    </button>
+                    <FavoriteButton
+                      active={favoriteIds.albums.has(album.id)}
+                      busy={favoriteBusyKey === `album:${album.id}`}
+                      label={album.name}
+                      onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+      <AlphabetRail letters={groups.map((group) => group.letter)} prefix="albums-list" />
     </div>
   );
 }
@@ -1287,6 +5129,8 @@ function PlayableCover({
   className,
   rounded = false,
   disabled = false,
+  fallbackIcon,
+  onOpen,
   onPlay,
 }: {
   src: string | null;
@@ -1294,11 +5138,21 @@ function PlayableCover({
   className: string;
   rounded?: boolean;
   disabled?: boolean;
+  fallbackIcon?: ReactNode;
+  onOpen?: () => void;
   onPlay: () => void;
 }) {
+  const cover = <CoverArt src={src} label={label} className={className} fallbackIcon={fallbackIcon} />;
+
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
-      <CoverArt src={src} label={label} className={className} />
+      {onOpen ? (
+        <button className="cover-open-button" type="button" onClick={onOpen} aria-label={`Open ${label}`}>
+          {cover}
+        </button>
+      ) : (
+        cover
+      )}
       <button className="cover-play-button" type="button" onClick={onPlay} disabled={disabled} aria-label={`Play ${label}`}>
         <Play size={18} fill="currentColor" />
       </button>
@@ -1306,46 +5160,652 @@ function PlayableCover({
   );
 }
 
-function CoverArt({ src, label, className }: { src: string | null; label: string; className: string }) {
-  if (!src) {
+function CoverArt({
+  src,
+  label,
+  className,
+  fallbackIcon = <Disc3 size={28} />,
+}: {
+  src: string | null;
+  label: string;
+  className: string;
+  fallbackIcon?: ReactNode;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [src]);
+
+  if (!src || imageFailed) {
     return (
       <div className={`${className} cover-fallback`} aria-hidden="true">
-        <Disc3 size={28} />
+        {fallbackIcon}
       </div>
     );
   }
 
-  return <img className={className} src={src} alt={`${label} cover`} loading="lazy" />;
+  return <img className={className} src={src} alt={`${label} cover`} loading="lazy" onError={() => setImageFailed(true)} />;
 }
 
-function ArtistList({
+function ArtistBrowser({
+  viewMode,
   artists,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onOpenArtist,
+  onPlayArtist,
+}: {
+  viewMode: ArtistViewMode;
+  artists: Artist[];
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onPlayArtist: (artist: Artist) => void;
+}) {
+  if (viewMode === "art") {
+    return (
+      <ArtistGrid
+        artists={artists}
+        favoriteIds={favoriteIds}
+        favoriteBusyKey={favoriteBusyKey}
+        onToggleFavorite={onToggleFavorite}
+        onOpenArtist={onOpenArtist}
+        onPlayArtist={onPlayArtist}
+      />
+    );
+  }
+
+  return (
+    <ArtistList
+      artists={artists}
+      favoriteIds={favoriteIds}
+      favoriteBusyKey={favoriteBusyKey}
+      onToggleFavorite={onToggleFavorite}
+      onOpenArtist={onOpenArtist}
+      onPlayArtist={onPlayArtist}
+    />
+  );
+}
+
+function ArtistGrid({
+  artists,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
   onOpenArtist,
   onPlayArtist,
 }: {
   artists: Artist[];
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayArtist: (artist: Artist) => void;
 }) {
   if (!artists.length) {
-    return <EmptyPanel icon={<UserRound size={20} />} text="Artists load after a successful Navidrome sync." />;
+    return <EmptyPanel icon={<UserRound size={20} />} text="No artists loaded yet." />;
   }
 
+  const groups = groupByAlpha(artists, (artist) => artist.name);
+
   return (
-    <div className="artist-list">
-      {artists.slice(0, 18).map((artist) => (
-        <div className="artist-row" key={artist.id}>
-          <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
-            <UserRound size={18} />
-            <span>{artist.name}</span>
-            <small>{artist.albumCount ?? 0} albums</small>
+    <div className="alpha-layout">
+      <div className="alpha-sections">
+        {groups.map((group) => (
+          <section className="alpha-section" id={alphaSectionId("artists-art", group.letter)} key={group.letter}>
+            <p className="alpha-heading">{group.letter}</p>
+            <div className="artist-grid">
+              {group.items.map((artist) => (
+                <div className="artist-tile" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
+                  <PlayableCover
+                    src={null}
+                    label={artist.name}
+                    className="artist-grid-cover"
+                    rounded
+                    fallbackIcon={<UserRound size={30} />}
+                    onOpen={() => onOpenArtist(artist)}
+                    onPlay={() => onPlayArtist(artist)}
+                  />
+                  <button className="album-title-button" type="button" onClick={() => onOpenArtist(artist)}>
+                    {artist.name}
+                  </button>
+                  <div className="tile-meta-row">
+                    <small>{artist.albumCount ?? 0} albums</small>
+                    <FavoriteButton
+                      active={favoriteIds.artists.has(artist.id)}
+                      busy={favoriteBusyKey === `artist:${artist.id}`}
+                      label={artist.name}
+                      onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      <AlphabetRail letters={groups.map((group) => group.letter)} prefix="artists-art" />
+    </div>
+  );
+}
+
+function ArtistList({
+  artists,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onOpenArtist,
+  onPlayArtist,
+  withAlphabetRail = true,
+}: {
+  artists: Artist[];
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onPlayArtist: (artist: Artist) => void;
+  withAlphabetRail?: boolean;
+}) {
+  if (!artists.length) {
+    return <EmptyPanel icon={<UserRound size={20} />} text="No artists loaded yet." />;
+  }
+
+  if (!withAlphabetRail) {
+    return (
+      <div className="artist-list">
+        {artists.map((artist) => (
+          <div className="artist-row" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
+            <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
+              <UserRound size={18} />
+              <span>{artist.name}</span>
+              <small>{artist.albumCount ?? 0} albums</small>
+            </button>
+            <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
+              <Play size={14} fill="currentColor" />
+            </button>
+            <FavoriteButton
+              active={favoriteIds.artists.has(artist.id)}
+              busy={favoriteBusyKey === `artist:${artist.id}`}
+              label={artist.name}
+              onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const groups = groupByAlpha(artists, (artist) => artist.name);
+
+  return (
+    <div className="alpha-layout">
+      <div className="alpha-sections">
+        {groups.map((group) => (
+          <section className="alpha-section" id={alphaSectionId("artists-list", group.letter)} key={group.letter}>
+            <p className="alpha-heading">{group.letter}</p>
+            <div className="artist-list">
+              {group.items.map((artist) => (
+                <div className="artist-row" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
+                  <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
+                    <UserRound size={18} />
+                    <span>{artist.name}</span>
+                    <small>{artist.albumCount ?? 0} albums</small>
+                  </button>
+                  <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
+                    <Play size={14} fill="currentColor" />
+                  </button>
+                  <FavoriteButton
+                    active={favoriteIds.artists.has(artist.id)}
+                    busy={favoriteBusyKey === `artist:${artist.id}`}
+                    label={artist.name}
+                    onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+      <AlphabetRail letters={groups.map((group) => group.letter)} prefix="artists-list" />
+    </div>
+  );
+}
+
+function PlaylistCreateForm({
+  queueLength,
+  name,
+  setName,
+  description,
+  setDescription,
+  isPublic,
+  setIsPublic,
+  fromQueue,
+  setFromQueue,
+  status,
+  message,
+  onSubmit,
+  onCancel,
+}: {
+  queueLength: number;
+  name: string;
+  setName: (name: string) => void;
+  description: string;
+  setDescription: (description: string) => void;
+  isPublic: boolean;
+  setIsPublic: (isPublic: boolean) => void;
+  fromQueue: boolean;
+  setFromQueue: (fromQueue: boolean) => void;
+  status: "idle" | "saving" | "error";
+  message: string;
+  onSubmit: (event?: FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+}) {
+  const canUseQueue = queueLength > 0;
+
+  return (
+    <form className="playlist-create-form" onSubmit={onSubmit}>
+      <div className="playlist-create-fields">
+        <label>
+          Name
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="New playlist"
+            disabled={status === "saving"}
+            autoFocus
+          />
+        </label>
+        <label>
+          Description
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Optional playlist description"
+            disabled={status === "saving"}
+          />
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={isPublic}
+            disabled={status === "saving"}
+            onChange={(event) => setIsPublic(event.target.checked)}
+          />
+          <span>Public playlist</span>
+          <small>Visible to other Navidrome users</small>
+        </label>
+        <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
+          <input
+            type="checkbox"
+            checked={fromQueue && canUseQueue}
+            disabled={!canUseQueue || status === "saving"}
+            onChange={(event) => setFromQueue(event.target.checked)}
+          />
+          <span>Start with current queue</span>
+          <small>{canUseQueue ? `${queueLength} tracks` : "Queue empty"}</small>
+        </label>
+      </div>
+      <div className="playlist-create-actions">
+        {message ? <p className={status === "error" ? "bad" : ""}>{message}</p> : null}
+        <button className="secondary-button" type="button" onClick={onCancel} disabled={status === "saving"}>
+          Cancel
+        </button>
+        <button className="connect-button" type="submit" disabled={status === "saving"}>
+          {status === "saving" ? <Loader2 size={15} className="spin" /> : <Plus size={15} />}
+          Create
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function PlaylistBrowser({
+  playlists,
+  onOpenPlaylist,
+  onPlayPlaylist,
+}: {
+  playlists: Playlist[];
+  onOpenPlaylist: (playlist: Playlist) => void;
+  onPlayPlaylist: (playlist: Playlist) => void;
+}) {
+  if (!playlists.length) {
+    return <EmptyPanel icon={<ListMusic size={20} />} text="No playlists yet." />;
+  }
+
+  const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div className="playlist-list">
+      {sortedPlaylists.map((playlist) => (
+        <div className="playlist-row" key={playlist.id} data-context-kind="playlist" data-context-id={playlist.id}>
+          <button className="playlist-main" type="button" onClick={() => onOpenPlaylist(playlist)}>
+            <span className="playlist-icon" aria-hidden="true">
+              <ListMusic size={18} />
+            </span>
+            <span>
+              <strong>{playlist.name}</strong>
+              <small>{getPlaylistMeta(playlist)}</small>
+            </span>
           </button>
-          <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
+          <button className="track-play" type="button" onClick={() => onPlayPlaylist(playlist)} aria-label={`Play ${playlist.name}`}>
             <Play size={14} fill="currentColor" />
           </button>
         </div>
       ))}
     </div>
+  );
+}
+
+function getPlaylistMeta(playlist: Playlist) {
+  const parts = [
+    playlist.songCount != null ? `${playlist.songCount} songs` : null,
+    playlist.duration ? formatDuration(playlist.duration) : null,
+    playlist.owner ? `by ${playlist.owner}` : null,
+  ].filter(Boolean);
+
+  return parts.join(" - ") || "Playlist";
+}
+
+function PlaylistDetailPanel({
+  config,
+  playlist,
+  currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onPlayPlaylist,
+  onSavePlaylistDetails,
+  onDeletePlaylist,
+  playlistEditRequestKey,
+  onRemovePlaylistSong,
+  onReorderPlaylist,
+  onReplaceQueue,
+  onQueueSong,
+  onSongContextMenu,
+}: {
+  config: NavidromeConfig | null;
+  playlist: PlaylistDetail;
+  currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onPlayPlaylist: (playlist: Playlist) => void;
+  onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
+  onDeletePlaylist: (playlist: Playlist) => Promise<void>;
+  playlistEditRequestKey: number;
+  onRemovePlaylistSong: (playlist: PlaylistDetail, index: number) => Promise<void>;
+  onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
+  onReplaceQueue: (songs: Song[], startIndex?: number) => void;
+  onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+}) {
+  const songs = playlist.entry ?? [];
+  const playlistCover =
+    config && songs.length ? buildCoverArtUrl(config, songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+  const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [name, setName] = useState(playlist.name);
+  const [comment, setComment] = useState(playlist.comment ?? "");
+  const [isPublic, setIsPublic] = useState(Boolean(playlist.public));
+  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const [trackStatus, setTrackStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [trackMessage, setTrackMessage] = useState("");
+  const [draftSongs, setDraftSongs] = useState(songs);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    setName(playlist.name);
+    setComment(playlist.comment ?? "");
+    setIsPublic(Boolean(playlist.public));
+    setEditing(false);
+    setConfirmingDelete(false);
+    setStatus("idle");
+    setMessage("");
+    setTrackStatus("idle");
+    setTrackMessage("");
+    setDraftSongs(playlist.entry ?? []);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  }, [playlist.id, playlist.name, playlist.comment, playlist.public]);
+
+  useEffect(() => {
+    setDraftSongs(songs);
+  }, [playlist.id, playlist.entry]);
+
+  useEffect(() => {
+    if (playlistEditRequestKey > 0) {
+      setEditing(true);
+    }
+  }, [playlistEditRequestKey]);
+
+  async function saveDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      setStatus("error");
+      setMessage("Playlist name is required.");
+      return;
+    }
+
+    setStatus("saving");
+    setMessage("Saving playlist details...");
+
+    try {
+      await onSavePlaylistDetails(playlist, {
+        name: trimmedName,
+        comment: comment.trim(),
+        public: isPublic,
+      });
+      setStatus("idle");
+      setMessage("");
+      setEditing(false);
+    } catch (error) {
+      setStatus("error");
+      setMessage(getErrorMessage(error));
+    }
+  }
+
+  async function deleteCurrentPlaylist() {
+    setStatus("saving");
+    setMessage("Deleting playlist...");
+
+    try {
+      await onDeletePlaylist(playlist);
+    } catch (error) {
+      setStatus("error");
+      setMessage(getErrorMessage(error));
+    }
+  }
+
+  async function removeTrack(index: number) {
+    setTrackStatus("saving");
+    setTrackMessage("Removing track...");
+
+    try {
+      await onRemovePlaylistSong(playlist, index);
+      setTrackStatus("idle");
+      setTrackMessage("");
+    } catch (error) {
+      setTrackStatus("error");
+      setTrackMessage(getErrorMessage(error));
+    }
+  }
+
+  async function dropTrack(toIndex: number) {
+    if (draggedIndex == null || draggedIndex === toIndex) {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const nextSongs = [...draftSongs];
+    const [movedSong] = nextSongs.splice(draggedIndex, 1);
+    nextSongs.splice(toIndex, 0, movedSong);
+    setDraftSongs(nextSongs);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+    setTrackStatus("saving");
+    setTrackMessage("Saving playlist order...");
+
+    try {
+      await onReorderPlaylist(playlist, nextSongs);
+      setTrackStatus("idle");
+      setTrackMessage("");
+    } catch (error) {
+      setDraftSongs(songs);
+      setTrackStatus("error");
+      setTrackMessage(getErrorMessage(error));
+    }
+  }
+
+  return (
+    <section className="detail-panel">
+      <div className="panel-heading">
+        <h3>{playlist.name}</h3>
+        <span>{songs.length} tracks</span>
+      </div>
+      <div className="playlist-hero">
+        <PlayableCover
+          src={playlistCover}
+          label={playlist.name}
+          className="detail-cover"
+          fallbackIcon={<ListMusic size={30} />}
+          disabled={!songs.length}
+          onPlay={() => onPlayPlaylist(playlist)}
+        />
+        <div>
+          <div className="detail-title">
+            <p className="eyebrow">Playlist</p>
+            <h3>{playlist.name}</h3>
+          </div>
+          <div className="detail-stats">
+            <span>{songs.length} tracks</span>
+            {playlist.duration ? <span>{formatDuration(playlist.duration)}</span> : null}
+            {playlist.owner ? <span>{playlist.owner}</span> : null}
+            {playlist.public != null ? <span>{playlist.public ? "Public" : "Private"}</span> : null}
+          </div>
+          {playlist.comment ? <p className="playlist-comment">{playlist.comment}</p> : null}
+          <div className="detail-actions">
+            <button className="connect-button" type="button" onClick={() => onReplaceQueue(songs)} disabled={!songs.length}>
+              <Play size={16} fill="currentColor" />
+              Play Playlist
+            </button>
+            <button className="secondary-button" type="button" onClick={() => songs.forEach(onQueueSong)} disabled={!songs.length}>
+              <ListMusic size={16} />
+              Queue Playlist
+            </button>
+            <button className="secondary-button" type="button" onClick={() => setEditing((value) => !value)}>
+              <Settings size={16} />
+              Edit Details
+            </button>
+          </div>
+        </div>
+      </div>
+      {editing ? (
+        <div className="modal-backdrop">
+          <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-edit-title">
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Playlist</p>
+                <h3 id="playlist-edit-title">Edit Details</h3>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setEditing(false)} aria-label="Close playlist details">
+                <X size={16} />
+              </button>
+            </div>
+            <form className="playlist-detail-form" onSubmit={saveDetails}>
+              <div className="playlist-detail-fields">
+                <label>
+                  Name
+                  <input value={name} onChange={(event) => setName(event.target.value)} disabled={status === "saving"} autoFocus />
+                </label>
+                <label>
+                  Description
+                  <textarea
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    disabled={status === "saving"}
+                    placeholder="Add a short playlist description"
+                  />
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={isPublic}
+                    disabled={status === "saving"}
+                    onChange={(event) => setIsPublic(event.target.checked)}
+                  />
+                  <span>Public playlist</span>
+                  <small>Visible to other Navidrome users</small>
+                </label>
+              </div>
+              <div className="playlist-create-actions">
+                {message ? <p className={status === "error" ? "bad" : ""}>{message}</p> : null}
+                <button className="secondary-button" type="button" disabled={status === "saving"} onClick={() => setEditing(false)}>
+                  Cancel
+                </button>
+                <button className="secondary-button danger-button" type="button" disabled={status === "saving"} onClick={() => setConfirmingDelete(true)}>
+                  <Trash2 size={15} />
+                  Delete
+                </button>
+                <button className="connect-button" type="submit" disabled={status === "saving"}>
+                  {status === "saving" ? <Loader2 size={15} className="spin" /> : <CheckCircle2 size={15} />}
+                  Save
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+      {confirmingDelete ? (
+        <div className="modal-backdrop confirm-backdrop">
+          <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title">
+            <div className="confirm-icon" aria-hidden="true">
+              <Trash2 size={22} />
+            </div>
+            <div className="confirm-copy">
+              <p className="eyebrow">Delete Playlist</p>
+              <h3 id="playlist-delete-title">{playlist.name}</h3>
+              <p>This removes the playlist from Navidrome. The songs stay in your library.</p>
+            </div>
+            <div className="confirm-actions">
+              <button className="secondary-button" type="button" disabled={status === "saving"} onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </button>
+              <button className="connect-button confirm-delete-button" type="button" disabled={status === "saving"} onClick={deleteCurrentPlaylist}>
+                {status === "saving" ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                Delete Playlist
+              </button>
+            </div>
+            {message ? <p className={`confirm-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
+          </section>
+        </div>
+      ) : null}
+      <EditablePlaylistTrackList
+        songs={draftSongs}
+        busy={trackStatus === "saving"}
+        message={trackMessage}
+        draggedIndex={draggedIndex}
+        dragOverIndex={dragOverIndex}
+        setDraggedIndex={setDraggedIndex}
+        setDragOverIndex={setDragOverIndex}
+        onDropTrack={dropTrack}
+        onRemoveTrack={removeTrack}
+        currentTrack={currentTrack}
+        favoriteIds={favoriteIds}
+        favoriteBusyKey={favoriteBusyKey}
+        onToggleFavorite={onToggleFavorite}
+        onPlaySong={(song) => onReplaceQueue(draftSongs, Math.max(0, draftSongs.findIndex((playlistSong) => playlistSong.id === song.id)))}
+        onQueueSong={onQueueSong}
+        onSongContextMenu={onSongContextMenu}
+      />
+    </section>
   );
 }
 
@@ -1355,24 +5815,50 @@ function DetailPanel({
   detailStatus,
   detailMessage,
   currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  albumViewMode,
+  setAlbumViewMode,
   onOpenAlbum,
+  onOpenArtist,
   onPlayAlbum,
   onPlayArtist,
+  onPlayPlaylist,
+  onSavePlaylistDetails,
+  onDeletePlaylist,
+  playlistEditRequestKey,
+  onRemovePlaylistSong,
+  onReorderPlaylist,
   onReplaceQueue,
   onPlaySong,
   onQueueSong,
+  onSongContextMenu,
 }: {
   config: NavidromeConfig | null;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
   currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  albumViewMode: AlbumViewMode;
+  setAlbumViewMode: (mode: AlbumViewMode) => void;
   onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
   onPlayAlbum: (album: Album) => void;
   onPlayArtist: (artist: ArtistDetail) => void;
+  onPlayPlaylist: (playlist: Playlist) => void;
+  onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
+  onDeletePlaylist: (playlist: Playlist) => Promise<void>;
+  playlistEditRequestKey: number;
+  onRemovePlaylistSong: (playlist: PlaylistDetail, index: number) => Promise<void>;
+  onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
 }) {
   if (detailStatus === "loading" || detailStatus === "error") {
     return (
@@ -1392,8 +5878,12 @@ function DetailPanel({
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
-    const artistAlbums = artist.album ?? [];
-    const firstCover = config ? buildCoverArtUrl(config, artistAlbums.find((album) => album.coverArt)?.coverArt, "420") : null;
+    const artistAlbums = sortAlbumsChronologically(artist.album ?? []);
+    const artistInfo = artist.info;
+    const artistImage = getArtistImageUrl(artistInfo);
+    const firstCover = artistImage || (config ? buildCoverArtUrl(config, artistAlbums.find((album) => album.coverArt)?.coverArt, "420") : null);
+    const biography = cleanBiography(artistInfo?.biography);
+    const similarArtists = artistInfo?.similarArtist?.slice(0, 8) ?? [];
     const activeYears = artistAlbums.map((album) => album.year).filter(Boolean) as number[];
     const yearRange = activeYears.length
       ? `${Math.min(...activeYears)}${Math.min(...activeYears) === Math.max(...activeYears) ? "" : `-${Math.max(...activeYears)}`}`
@@ -1410,38 +5900,104 @@ function DetailPanel({
           <div>
             <p className="eyebrow">Artist</p>
             <h3>{artist.name}</h3>
+            <FavoriteButton
+              active={favoriteIds.artists.has(artist.id)}
+              busy={favoriteBusyKey === `artist:${artist.id}`}
+              label={artist.name}
+              onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+            />
             <div className="detail-stats">
               <span>{artist.albumCount ?? artistAlbums.length} albums</span>
               <span>{yearRange}</span>
+              {artistInfo?.musicBrainzId ? <span>MusicBrainz</span> : null}
             </div>
           </div>
         </div>
+        {biography || similarArtists.length || artistInfo?.lastFmUrl ? (
+          <div className="artist-info-panel">
+            {biography ? (
+              <div className="artist-bio">
+                <p className="eyebrow">About</p>
+                <p>{biography}</p>
+              </div>
+            ) : null}
+            {similarArtists.length ? (
+              <div className="similar-artists">
+                <p className="eyebrow">Similar artists</p>
+                <div className="similar-list">
+                  {similarArtists.map((similar) =>
+                    similar.id ? (
+                      <button className="similar-chip" type="button" key={similar.id} onClick={() => onOpenArtist(similar)}>
+                        {similar.name}
+                      </button>
+                    ) : (
+                      <span className="similar-chip" key={similar.name}>
+                        {similar.name}
+                      </span>
+                    ),
+                  )}
+                </div>
+              </div>
+            ) : null}
+            {artistInfo?.lastFmUrl ? (
+              <a className="artist-source-link" href={artistInfo.lastFmUrl} target="_blank" rel="noreferrer">
+                Last.fm
+              </a>
+            ) : null}
+          </div>
+        ) : null}
         <div className="section-label">
           <h4>Albums</h4>
+          <div className="view-toggle" aria-label="Artist album view">
+            <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
+              Art
+            </button>
+            <button className={albumViewMode === "list" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("list")}>
+              List
+            </button>
+          </div>
         </div>
-        <div className="album-grid artist-albums">
-          {artistAlbums.map((album) => {
-            const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "320") : null;
-
-            return (
-              <div className="album-tile" key={album.id}>
-                <PlayableCover src={coverUrl} label={album.name} className="album-cover" onPlay={() => onPlayAlbum(album)} />
-                <button className="album-title-button" type="button" onClick={() => onOpenAlbum(album)}>
-                  {album.name}
-                </button>
-                <small>{album.year ?? `${album.songCount ?? 0} tracks`}</small>
-              </div>
-            );
-          })}
-          {!artistAlbums.length ? <EmptyPanel icon={<Disc3 size={20} />} text="No albums returned for this artist." /> : null}
-        </div>
+        <AlbumBrowser
+          viewMode={albumViewMode}
+          config={config}
+          albums={artistAlbums}
+          favoriteIds={favoriteIds}
+          favoriteBusyKey={favoriteBusyKey}
+          onToggleFavorite={onToggleFavorite}
+          onOpenAlbum={onOpenAlbum}
+          onPlayAlbum={onPlayAlbum}
+          withAlphabetRail={false}
+        />
       </section>
     );
   }
 
+  if (detailSelection.type === "playlist") {
+    return (
+      <PlaylistDetailPanel
+        config={config}
+        playlist={detailSelection.data}
+        currentTrack={currentTrack}
+        favoriteIds={favoriteIds}
+        favoriteBusyKey={favoriteBusyKey}
+        onToggleFavorite={onToggleFavorite}
+        onPlayPlaylist={onPlayPlaylist}
+        onSavePlaylistDetails={onSavePlaylistDetails}
+        onDeletePlaylist={onDeletePlaylist}
+        playlistEditRequestKey={playlistEditRequestKey}
+        onRemovePlaylistSong={onRemovePlaylistSong}
+        onReorderPlaylist={onReorderPlaylist}
+        onReplaceQueue={onReplaceQueue}
+        onQueueSong={onQueueSong}
+        onSongContextMenu={onSongContextMenu}
+      />
+    );
+  }
+
   const album = detailSelection.data;
-  const songs = album.song ?? [];
+  const songs = sortAlbumSongs(album.song ?? []);
   const albumCover = config ? buildCoverArtUrl(config, album.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+  const discCount = new Set(songs.map((song) => song.discNumber).filter((discNumber) => discNumber != null)).size;
 
   return (
     <section className="detail-panel">
@@ -1456,9 +6012,16 @@ function DetailPanel({
             <p className="eyebrow">{album.artist}</p>
             <h3>{album.name}</h3>
           </div>
+          <FavoriteButton
+            active={favoriteIds.albums.has(album.id)}
+            busy={favoriteBusyKey === `album:${album.id}`}
+            label={album.name}
+            onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+          />
           <div className="detail-stats">
             <span>{album.year ?? "Year unavailable"}</span>
             <span>{songs.length} tracks</span>
+            {discCount > 1 ? <span>{discCount} discs</span> : null}
           </div>
           <div className="detail-actions">
             <button className="connect-button" type="button" onClick={() => onReplaceQueue(songs)} disabled={!songs.length}>
@@ -1472,7 +6035,16 @@ function DetailPanel({
           </div>
         </div>
       </div>
-      <TrackList songs={songs} currentTrack={currentTrack} onPlaySong={onPlaySong} onQueueSong={onQueueSong} />
+      <TrackList
+        songs={songs}
+        currentTrack={currentTrack}
+        favoriteIds={favoriteIds}
+        favoriteBusyKey={favoriteBusyKey}
+        onToggleFavorite={onToggleFavorite}
+        onPlaySong={(song) => onReplaceQueue(songs, Math.max(0, songs.findIndex((albumSong) => albumSong.id === song.id)))}
+        onQueueSong={onQueueSong}
+        onSongContextMenu={onSongContextMenu}
+      />
     </section>
   );
 }
@@ -1480,56 +6052,529 @@ function DetailPanel({
 function TrackList({
   songs,
   currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  emptyText = "No tracks available for this album.",
   onPlaySong,
   onQueueSong,
+  onSongContextMenu,
 }: {
   songs: Song[];
   currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  emptyText?: string;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
 }) {
   if (!songs.length) {
-    return <EmptyPanel icon={<Music2 size={20} />} text="No tracks returned for this album." />;
+    return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
   }
+
+  const discGroups = groupSongsByDisc(songs);
+  const showDiscHeaders = discGroups.length > 1;
 
   return (
     <div className="track-list">
-      {songs.map((song, index) => (
-        <div
-          className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`}
-          key={song.id}
-          onDoubleClick={() => onPlaySong(song)}
-        >
-          <button
-            className="track-play"
-            type="button"
-            aria-label={`Play ${song.title}`}
-            onClick={() => onPlaySong(song)}
-            onDoubleClick={(event) => event.stopPropagation()}
-          >
-            <Play size={14} fill="currentColor" />
-          </button>
-          <span className="track-number">{song.track ?? index + 1}</span>
-          <button
-            className="track-name"
-            type="button"
-            onClick={() => onPlaySong(song)}
-            onDoubleClick={(event) => event.stopPropagation()}
-          >
-            {song.title}
-          </button>
-          <span className="track-duration">{formatDuration(song.duration)}</span>
-          <button
-            className="track-queue"
-            type="button"
-            aria-label={`Queue ${song.title}`}
-            onClick={() => onQueueSong(song)}
-            onDoubleClick={(event) => event.stopPropagation()}
-          >
-            <Plus size={14} />
-          </button>
+      {discGroups.map((group) => (
+        <div className="disc-group" key={group.discNumber ?? "unknown-disc"}>
+          {showDiscHeaders ? (
+            <div className="disc-heading">
+              <span>{group.discNumber != null ? `Disc ${group.discNumber}` : "Disc"}</span>
+              <small>{group.songs.length} tracks</small>
+            </div>
+          ) : null}
+          {group.songs.map((song, index) => (
+            <div
+              className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`}
+              key={song.id}
+              onContextMenu={(event) => onSongContextMenu(event, song)}
+              onDoubleClick={() => onPlaySong(song)}
+            >
+              <button
+                className="track-play"
+                type="button"
+                aria-label={`Play ${song.title}`}
+                onClick={() => onPlaySong(song)}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                <Play size={14} fill="currentColor" />
+              </button>
+              <span className="track-number">{song.track ?? index + 1}</span>
+              <button
+                className="track-name"
+                type="button"
+                onClick={() => onPlaySong(song)}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                {song.title}
+              </button>
+              <span className="track-duration">{formatDuration(song.duration)}</span>
+              <FavoriteButton
+                active={favoriteIds.songs.has(song.id)}
+                busy={favoriteBusyKey === `song:${song.id}`}
+                label={song.title}
+                onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
+                onDoubleClick={(event) => event.stopPropagation()}
+              />
+              <button
+                className="track-queue"
+                type="button"
+                aria-label={`Queue ${song.title}`}
+                onClick={() => onQueueSong(song)}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+function EditablePlaylistTrackList({
+  songs,
+  busy,
+  message,
+  draggedIndex,
+  dragOverIndex,
+  setDraggedIndex,
+  setDragOverIndex,
+  onDropTrack,
+  onRemoveTrack,
+  currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onPlaySong,
+  onQueueSong,
+  onSongContextMenu,
+}: {
+  songs: Song[];
+  busy: boolean;
+  message: string;
+  draggedIndex: number | null;
+  dragOverIndex: number | null;
+  setDraggedIndex: (index: number | null) => void;
+  setDragOverIndex: (index: number | null) => void;
+  onDropTrack: (index: number) => void;
+  onRemoveTrack: (index: number) => void;
+  currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onPlaySong: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+}) {
+  const displayedSongs = useMemo(() => {
+    if (draggedIndex == null || dragOverIndex == null || draggedIndex === dragOverIndex) {
+      return songs.map((song, index) => ({ song, index }));
+    }
+
+    const nextSongs = songs.map((song, index) => ({ song, index }));
+    const [movedSong] = nextSongs.splice(draggedIndex, 1);
+    nextSongs.splice(dragOverIndex, 0, movedSong);
+    return nextSongs;
+  }, [dragOverIndex, draggedIndex, songs]);
+
+  if (!songs.length) {
+    return <EmptyPanel icon={<Music2 size={20} />} text="No tracks in this playlist yet." />;
+  }
+
+  return (
+    <div className="playlist-track-editor">
+      <div className="playlist-track-editor-heading">
+        <p className="eyebrow">Tracks</p>
+        {message ? <span className={busy ? "" : "bad"}>{message}</span> : null}
+      </div>
+      <div className="track-list">
+        {displayedSongs.map(({ song, index }, displayIndex) => (
+          <div
+            className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${index === draggedIndex ? "dragging" : ""}`}
+            key={`${song.id}-${index}`}
+            onContextMenu={(event) => onSongContextMenu(event, song)}
+            onDoubleClick={() => onPlaySong(song)}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOverIndex(displayIndex);
+            }}
+            onDrop={() => onDropTrack(dragOverIndex ?? displayIndex)}
+          >
+            <button
+              className="queue-drag-handle"
+              type="button"
+              aria-label={`Drag ${song.title} to reorder`}
+              draggable
+              disabled={busy}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", String(index));
+                setDraggedIndex(index);
+                setDragOverIndex(index);
+              }}
+              onDragEnd={() => {
+                setDraggedIndex(null);
+                setDragOverIndex(null);
+              }}
+            >
+              <Menu size={14} />
+            </button>
+            <span className="track-number">{displayIndex + 1}</span>
+            <button
+              className="track-name"
+              type="button"
+              onClick={() => onPlaySong(song)}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              {song.title}
+            </button>
+            <span className="track-duration">{formatDuration(song.duration)}</span>
+            <FavoriteButton
+              active={favoriteIds.songs.has(song.id)}
+              busy={favoriteBusyKey === `song:${song.id}`}
+              label={song.title}
+              onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
+              onDoubleClick={(event) => event.stopPropagation()}
+            />
+            <button
+              className="track-queue"
+              type="button"
+              aria-label={`Queue ${song.title}`}
+              onClick={() => onQueueSong(song)}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              className="track-queue"
+              type="button"
+              aria-label={`Remove ${song.title} from playlist`}
+              disabled={busy}
+              onClick={() => onRemoveTrack(index)}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FavoriteButton({
+  active,
+  busy,
+  label,
+  onToggle,
+  onDoubleClick,
+}: {
+  active: boolean;
+  busy: boolean;
+  label: string;
+  onToggle: (favorite: boolean) => void;
+  onDoubleClick?: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <button
+      className={`favorite-button ${active ? "active" : ""}`}
+      type="button"
+      disabled={busy}
+      aria-label={`${active ? "Remove favorite" : "Favorite"} ${label}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle(!active);
+      }}
+      onDoubleClick={onDoubleClick}
+    >
+      {busy ? <Loader2 size={14} className="spin" /> : <Star size={14} fill={active ? "currentColor" : "none"} />}
+    </button>
+  );
+}
+
+function LibraryContextMenu({
+  menu,
+  favoriteIds,
+  favoriteBusyKey,
+  onOpenAlbum,
+  onPlayAlbum,
+  onOpenArtist,
+  onPlayArtist,
+  onOpenPlaylist,
+  onPlayPlaylist,
+  onEditPlaylist,
+  onDeletePlaylist,
+  onToggleFavorite,
+}: {
+  menu: Exclude<LibraryContextMenuState, null>;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
+  onPlayArtist: (artist: Artist) => void;
+  onOpenPlaylist: (playlist: Playlist) => void;
+  onPlayPlaylist: (playlist: Playlist) => void;
+  onEditPlaylist: (playlist: Playlist) => void;
+  onDeletePlaylist: (playlist: Playlist) => void;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+}) {
+  const title = menu.item.name;
+  const menuLabel = menu.type === "album" ? "Album" : menu.type === "artist" ? "Artist" : "Playlist";
+
+  return (
+    <div
+      className="song-context-menu library-context-menu"
+      style={{
+        left: Math.min(menu.x, window.innerWidth - 280),
+        top: Math.min(menu.y, window.innerHeight - 360),
+      }}
+      role="menu"
+      aria-label={`${menuLabel} actions for ${title}`}
+    >
+      <div className="song-context-heading">
+        <div>
+          <p className="eyebrow">{menuLabel}</p>
+          <strong>{title}</strong>
+        </div>
+      </div>
+      <div className="song-context-section">
+        {menu.type === "album" ? (
+          <>
+            <button className="song-context-action" type="button" onClick={() => onOpenAlbum(menu.item)}>
+              <Disc3 size={15} />
+              Open Album
+            </button>
+            <button className="song-context-action" type="button" onClick={() => onPlayAlbum(menu.item)}>
+              <Play size={15} fill="currentColor" />
+              Play Album
+            </button>
+            <button
+              className="song-context-action"
+              type="button"
+              disabled={favoriteBusyKey === `album:${menu.item.id}`}
+              onClick={() => onToggleFavorite("album", menu.item.id, !favoriteIds.albums.has(menu.item.id))}
+            >
+              {favoriteBusyKey === `album:${menu.item.id}` ? (
+                <Loader2 size={15} className="spin" />
+              ) : (
+                <Star size={15} fill={favoriteIds.albums.has(menu.item.id) ? "currentColor" : "none"} />
+              )}
+              {favoriteIds.albums.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
+            </button>
+          </>
+        ) : null}
+        {menu.type === "artist" ? (
+          <>
+            <button className="song-context-action" type="button" onClick={() => onOpenArtist(menu.item)}>
+              <UserRound size={15} />
+              Open Artist
+            </button>
+            <button className="song-context-action" type="button" onClick={() => onPlayArtist(menu.item)}>
+              <Play size={15} fill="currentColor" />
+              Play Artist
+            </button>
+            <button
+              className="song-context-action"
+              type="button"
+              disabled={favoriteBusyKey === `artist:${menu.item.id}`}
+              onClick={() => onToggleFavorite("artist", menu.item.id, !favoriteIds.artists.has(menu.item.id))}
+            >
+              {favoriteBusyKey === `artist:${menu.item.id}` ? (
+                <Loader2 size={15} className="spin" />
+              ) : (
+                <Star size={15} fill={favoriteIds.artists.has(menu.item.id) ? "currentColor" : "none"} />
+              )}
+              {favoriteIds.artists.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
+            </button>
+          </>
+        ) : null}
+        {menu.type === "playlist" ? (
+          <>
+            <button className="song-context-action" type="button" onClick={() => onOpenPlaylist(menu.item)}>
+              <ListMusic size={15} />
+              Open Playlist
+            </button>
+            <button className="song-context-action" type="button" onClick={() => onPlayPlaylist(menu.item)}>
+              <Play size={15} fill="currentColor" />
+              Play Playlist
+            </button>
+            <button className="song-context-action" type="button" onClick={() => onEditPlaylist(menu.item)}>
+              <Settings size={15} />
+              Edit Details
+            </button>
+            <button className="song-context-action danger-context-action" type="button" onClick={() => onDeletePlaylist(menu.item)}>
+              <Trash2 size={15} />
+              Delete Playlist
+            </button>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SongPlaylistMenu({
+  menu,
+  playlists,
+  status,
+  message,
+  onAdd,
+  onPlayNow,
+  onPlayNext,
+  onQueueSong,
+  onOpenAlbum,
+  onOpenArtist,
+  isFavorite,
+  favoriteBusy,
+  onToggleFavorite,
+}: {
+  menu: Exclude<SongContextMenuState, null>;
+  playlists: Playlist[];
+  status: "idle" | "saving" | "error";
+  message: string;
+  onAdd: (playlist: Playlist) => void;
+  onPlayNow: (song: Song) => void;
+  onPlayNext: (song: Song) => void;
+  onQueueSong: (song: Song) => void;
+  onOpenAlbum: (song: Song) => void;
+  onOpenArtist: (song: Song) => void;
+  isFavorite: boolean;
+  favoriteBusy: boolean;
+  onToggleFavorite: (favorite: boolean) => void;
+}) {
+  const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div
+      className="song-context-menu"
+      style={{
+        left: Math.min(menu.x, window.innerWidth - 280),
+        top: Math.min(menu.y, window.innerHeight - 440),
+      }}
+      role="menu"
+      aria-label={`Song actions for ${menu.song.title}`}
+    >
+      <div className="song-context-heading">
+        <div>
+          <p className="eyebrow">Song</p>
+          <strong>{menu.song.title}</strong>
+        </div>
+      </div>
+      {message ? <p className={`song-context-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
+      <div className="song-context-section">
+        <button className="song-context-action" type="button" onClick={() => onPlayNow(menu.song)}>
+          <Play size={15} fill="currentColor" />
+          Play Now
+        </button>
+        <button className="song-context-action" type="button" onClick={() => onPlayNext(menu.song)}>
+          <ListMusic size={15} />
+          Play Next
+        </button>
+        <button className="song-context-action" type="button" onClick={() => onQueueSong(menu.song)}>
+          <Plus size={15} />
+          Add to Queue
+        </button>
+      </div>
+      <div className="song-context-section">
+        <button className="song-context-action" type="button" onClick={() => onOpenAlbum(menu.song)} disabled={!menu.song.albumId}>
+          <Disc3 size={15} />
+          Go to Album
+        </button>
+        <button className="song-context-action" type="button" onClick={() => onOpenArtist(menu.song)} disabled={!menu.song.artistId}>
+          <UserRound size={15} />
+          Go to Artist
+        </button>
+        <button className="song-context-action" type="button" onClick={() => onToggleFavorite(!isFavorite)} disabled={favoriteBusy}>
+          {favoriteBusy ? <Loader2 size={15} className="spin" /> : <Star size={15} fill={isFavorite ? "currentColor" : "none"} />}
+          {isFavorite ? "Remove Favorite" : "Add Favorite"}
+        </button>
+      </div>
+      <div className="song-context-subheading">Add to playlist</div>
+      {sortedPlaylists.length ? (
+        <div className="song-context-list">
+          {sortedPlaylists.map((playlist) => (
+            <button
+              type="button"
+              role="menuitem"
+              key={playlist.id}
+              onClick={() => onAdd(playlist)}
+              disabled={status === "saving"}
+            >
+              <ListMusic size={15} />
+              <span>
+                <strong>{playlist.name}</strong>
+                <small>{getPlaylistMeta(playlist)}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="song-context-empty">Create a playlist first.</p>
+      )}
+    </div>
+  );
+}
+
+function StateNotice({
+  tone = "neutral",
+  icon,
+  title,
+  text,
+  actionLabel,
+  onAction,
+}: {
+  tone?: "neutral" | "bad";
+  icon: ReactNode;
+  title: string;
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <section className={`state-notice ${tone}`}>
+      <span className="state-notice-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span>
+        <strong>{title}</strong>
+        <small>{text}</small>
+      </span>
+      {actionLabel && onAction ? (
+        <button className="secondary-button compact-button" type="button" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function LibraryLoadingSkeleton({ view }: { view: View }) {
+  const rows = view === "overview" ? 6 : view === "albums" ? 12 : 10;
+
+  return (
+    <div className="loading-state" aria-label="Loading library">
+      {view === "overview" ? (
+        <div className="loading-hero">
+          <div>
+            <span className="skeleton-line short" />
+            <span className="skeleton-line title" />
+            <span className="skeleton-line medium" />
+          </div>
+          <span className="skeleton-cover-stack" />
+        </div>
+      ) : null}
+      <div className={view === "albums" || view === "overview" ? "skeleton-grid" : "skeleton-list"}>
+        {Array.from({ length: rows }, (_, index) => (
+          <span className="skeleton-card" key={index} />
+        ))}
+      </div>
     </div>
   );
 }
