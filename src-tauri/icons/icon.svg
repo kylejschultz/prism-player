@@ -5,14 +5,16 @@
       <stop offset="0.46" stop-color="#c8463c"/>
       <stop offset="1" stop-color="#2f8a80"/>
     </linearGradient>
-    <linearGradient id="shine" x1="300" y1="180" x2="760" y2="840" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fff8dc" stop-opacity="0.68"/>
+    <linearGradient id="shine" x1="232" y1="168" x2="792" y2="822" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff8dc" stop-opacity="0.72"/>
+      <stop offset="0.48" stop-color="#fff8dc" stop-opacity="0.18"/>
       <stop offset="1" stop-color="#fff8dc" stop-opacity="0"/>
     </linearGradient>
   </defs>
   <rect width="1024" height="1024" rx="184" fill="#111111"/>
   <rect x="112" y="112" width="800" height="800" rx="144" fill="url(#prism)"/>
-  <path d="M214 730L450 272c24-46 90-45 112 2l248 528c15 32-8 69-44 69H259c-37 0-61-39-45-72z" fill="#101010" opacity="0.78"/>
-  <path d="M344 736l152-295c7-14 27-14 34 0l139 295c6 13-3 28-17 28H361c-14 0-23-15-17-28z" fill="url(#shine)"/>
-  <circle cx="512" cy="512" r="78" fill="#f4f1ec" opacity="0.92"/>
+  <rect x="114" y="114" width="796" height="796" rx="142" fill="url(#shine)"/>
+  <path d="M342 760V278h222c112 0 188 70 188 170 0 104-76 176-188 176h-76v136H342zm146-256h58c38 0 62-22 62-56 0-33-24-55-62-55h-58v111z" fill="#111111" opacity="0.82"/>
+  <path d="M488 504h58c38 0 62-22 62-56 0-33-24-55-62-55h-58v111z" fill="#f4f1ec" opacity="0.24"/>
+  <path d="M622 724c54-24 102-60 144-108" fill="none" stroke="#111111" stroke-width="44" stroke-linecap="round" opacity="0.46"/>
 </svg>

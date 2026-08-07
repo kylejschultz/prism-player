@@ -159,6 +159,7 @@ type DetailSelection =
 type BrowserSnapshot = {
   activeView: View;
   detailSelection: DetailSelection;
+  settingsTab?: SettingsTab;
 };
 
 type SongContextMenuState = {
@@ -376,6 +377,19 @@ function getViewLabel(view: View) {
   };
 
   return labels[view];
+}
+
+function getSettingsTabLabel(tab: SettingsTab) {
+  const labels: Record<SettingsTab, string> = {
+    connection: "Connection",
+    library: "Library",
+    appearance: "Appearance",
+    radio: "Radio",
+    privacy: "Privacy",
+    advanced: "Advanced",
+  };
+
+  return labels[tab];
 }
 
 function getGreetingPeriod() {
@@ -1295,7 +1309,19 @@ function getSnapshotLabel(snapshot: BrowserSnapshot | null) {
   if (snapshot.detailSelection?.type === "artist") return snapshot.detailSelection.data.name;
   if (snapshot.detailSelection?.type === "album") return snapshot.detailSelection.data.name;
   if (snapshot.detailSelection?.type === "playlist") return snapshot.detailSelection.data.name;
+  if (snapshot.activeView === "settings") return `${getViewLabel(snapshot.activeView)} / ${getSettingsTabLabel(snapshot.settingsTab ?? "connection")}`;
   return getViewLabel(snapshot.activeView);
+}
+
+function snapshotEquals(left: BrowserSnapshot | null, right: BrowserSnapshot | null) {
+  if (!left || !right) return left === right;
+
+  return (
+    left.activeView === right.activeView &&
+    (left.settingsTab ?? "connection") === (right.settingsTab ?? "connection") &&
+    left.detailSelection?.type === right.detailSelection?.type &&
+    left.detailSelection?.data.id === right.detailSelection?.data.id
+  );
 }
 
 export function App() {
@@ -2072,45 +2098,53 @@ export function App() {
     setDetailMessage("");
   }
 
-  function selectView(view: View) {
-    if (
-      view === "overview" ||
-      view === "albums" ||
-      view === "artists" ||
-      view === "playlists" ||
-      view === "recentlyAdded" ||
-      view === "recentlyPlayed" ||
-      view === "favorites" ||
-      view === "search"
-    ) {
-      clearDetail();
-      setBackStack([]);
-      setForwardStack([]);
-    }
+  function currentSnapshot(): BrowserSnapshot {
+    return { activeView, detailSelection, settingsTab };
+  }
 
+  function pushBrowserHistory(origin = currentSnapshot()) {
+    setBackStack((currentStack) => {
+      if (snapshotEquals(currentStack[currentStack.length - 1] ?? null, origin)) return currentStack;
+      return [...currentStack, origin].slice(-40);
+    });
+    setForwardStack([]);
+  }
+
+  function selectView(view: View) {
+    const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null, settingsTab };
+    if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
+
+    pushBrowserHistory();
+    clearDetail();
     setActiveView(view);
   }
 
   function openSettings(tab: SettingsTab = "connection") {
+    const nextSnapshot: BrowserSnapshot = { activeView: "settings", detailSelection: null, settingsTab: tab };
+    if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
+
+    pushBrowserHistory();
     setSettingsTab(tab);
+    clearDetail();
     setActiveView("settings");
   }
 
-  function openSearchView() {
-    clearDetail();
-    setBackStack([]);
-    setForwardStack([]);
-    setActiveView("search");
-    setSearchFocused(false);
+  function selectSettingsTab(tab: SettingsTab) {
+    if (settingsTab === tab) return;
+
+    pushBrowserHistory();
+    setSettingsTab(tab);
   }
 
-  function currentSnapshot(): BrowserSnapshot {
-    return { activeView, detailSelection };
+  function openSearchView() {
+    selectView("search");
+    setSearchFocused(false);
   }
 
   function applySnapshot(snapshot: BrowserSnapshot) {
     setActiveView(snapshot.activeView);
     setDetailSelection(snapshot.detailSelection);
+    if (snapshot.settingsTab) setSettingsTab(snapshot.settingsTab);
     setDetailStatus("idle");
     setDetailMessage("");
   }
@@ -2905,7 +2939,7 @@ export function App() {
 
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true" />
+          <PrismMark className="brand-mark" />
           <div>
             <p className="eyebrow">Prism</p>
             <h1>Player</h1>
@@ -3071,7 +3105,7 @@ export function App() {
             statusMessage={statusMessage}
             appSettings={appSettings}
             activeTab={settingsTab}
-            setActiveTab={setSettingsTab}
+            setActiveTab={selectSettingsTab}
             updateAppSettings={updateAppSettings}
             onSelectRadioStation={selectRadioStation}
             onRemoveRadioStation={removeRadioStation}
@@ -3920,6 +3954,14 @@ function BrowserNavigation({
       >
         <ChevronRight size={17} />
       </button>
+    </div>
+  );
+}
+
+function PrismMark({ className = "" }: { className?: string }) {
+  return (
+    <div className={`prism-mark ${className}`} aria-hidden="true">
+      <span>P</span>
     </div>
   );
 }
