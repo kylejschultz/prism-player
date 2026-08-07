@@ -61,6 +61,7 @@ type AppSettings = {
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
   coverWashEnabled: boolean;
+  lowPerformanceMode: boolean;
   radioStationUrl: string;
   radioStationUrls: string[];
 };
@@ -290,6 +291,8 @@ const APP_VERSION = "0.1.0";
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
 const API_VERSION = "1.16.1";
+const RADIO_WAVEFORM_BAR_COUNT = 96;
+const idleRadioWaveformBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (_, index) => 18 + ((index * 17) % 56));
 
 const emptyConfig: NavidromeConfig = {
   serverUrl: "",
@@ -326,6 +329,7 @@ const defaultSettings: AppSettings = {
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
   coverWashEnabled: true,
+  lowPerformanceMode: false,
   radioStationUrl: "",
   radioStationUrls: [],
 };
@@ -457,6 +461,7 @@ function loadStoredSettings(): AppSettings {
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
+      lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
       radioStationUrls,
     };
@@ -1343,6 +1348,7 @@ export function App() {
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
   const [radioClockNow, setRadioClockNow] = useState(() => Date.now());
+  const [radioWaveformBars, setRadioWaveformBars] = useState<number[]>(idleRadioWaveformBars);
   const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
@@ -1365,6 +1371,9 @@ export function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const radioAudioRef = useRef<HTMLAudioElement | null>(null);
   const radioPromoteTimerRef = useRef<number | null>(null);
+  const radioAudioContextRef = useRef<AudioContext | null>(null);
+  const radioAnalyserRef = useRef<AnalyserNode | null>(null);
+  const radioAnalyserSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const scrobbledPlayRef = useRef("");
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
@@ -1383,11 +1392,12 @@ export function App() {
   const radioCoverUrl = buildRadioCoverUrl(radioStationUrl, radioNowPlaying);
   const footerTrack = isRadioPlaying || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
-  const coverWashUrl = appSettings.coverWashEnabled
+  const visualEffectsEnabled = !appSettings.lowPerformanceMode;
+  const coverWashUrl = appSettings.coverWashEnabled && visualEffectsEnabled
     ? isRadioPlaying
       ? radioCoverUrl
-      : config && footerTrack
-        ? buildCoverArtUrl(config, footerTrack.coverArt, "900")
+      : isPlaying && config && currentTrack
+        ? buildCoverArtUrl(config, currentTrack.coverArt, "900")
         : null
     : null;
   const currentStreamUrl = config && currentTrack ? buildStreamUrl(config, currentTrack.id) : null;
@@ -2581,6 +2591,70 @@ export function App() {
   }, [isRadioPlaying]);
 
   useEffect(() => {
+    if (!isRadioPlaying || appSettings.lowPerformanceMode) {
+      setRadioWaveformBars(idleRadioWaveformBars);
+      return;
+    }
+
+    const audio = radioAudioRef.current;
+    const AudioContextConstructor = window.AudioContext;
+    if (!audio || !AudioContextConstructor) {
+      setRadioWaveformBars(idleRadioWaveformBars);
+      return;
+    }
+
+    let frameId = 0;
+    let cancelled = false;
+
+    try {
+      const audioContext = radioAudioContextRef.current ?? new AudioContextConstructor();
+      radioAudioContextRef.current = audioContext;
+
+      if (!radioAnalyserSourceRef.current) {
+        radioAnalyserSourceRef.current = audioContext.createMediaElementSource(audio);
+      }
+
+      if (!radioAnalyserRef.current) {
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.82;
+        radioAnalyserSourceRef.current.connect(analyser);
+        analyser.connect(audioContext.destination);
+        radioAnalyserRef.current = analyser;
+      }
+
+      void audioContext.resume();
+
+      const analyser = radioAnalyserRef.current;
+      const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+
+      function drawWaveform() {
+        if (cancelled) return;
+        analyser.getByteFrequencyData(frequencyData);
+        const bucketSize = Math.max(1, Math.floor(frequencyData.length / RADIO_WAVEFORM_BAR_COUNT));
+        const nextBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (_, barIndex) => {
+          const start = barIndex * bucketSize;
+          const bucket = frequencyData.slice(start, start + bucketSize);
+          const peak = bucket.reduce((max, value) => Math.max(max, value), 0);
+          return Math.round(clampNumber((peak / 255) * 100, 8, 100));
+        });
+
+        setRadioWaveformBars(nextBars);
+        frameId = window.requestAnimationFrame(drawWaveform);
+      }
+
+      drawWaveform();
+    } catch {
+      setRadioWaveformBars(idleRadioWaveformBars);
+    }
+
+    return () => {
+      cancelled = true;
+      if (frameId) window.cancelAnimationFrame(frameId);
+    };
+  }, [appSettings.lowPerformanceMode, isRadioPlaying]);
+
+  useEffect(() => {
     if (!currentTrack) return;
     setLastPlayedTrack(currentTrack);
     localStorage.setItem(LAST_PLAYED_TRACK_KEY, JSON.stringify(currentTrack));
@@ -3022,6 +3096,7 @@ export function App() {
             radioSchedule={radioSchedule}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
+            radioWaveformBars={radioWaveformBars}
             refreshRadio={refreshRadio}
             tuneInRadio={tuneInRadio}
             tuneOutRadio={tuneOutRadio}
@@ -3085,6 +3160,7 @@ export function App() {
         />
         <audio
           ref={radioAudioRef}
+          crossOrigin="anonymous"
           preload="none"
           onPlay={() => setRadioStatus("playing")}
           onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
@@ -4205,9 +4281,18 @@ function SettingsView({
           <input
             type="checkbox"
             checked={appSettings.coverWashEnabled}
+            disabled={appSettings.lowPerformanceMode}
             onChange={(event) => updateAppSettings({ ...appSettings, coverWashEnabled: event.target.checked })}
           />
           <span>Use current album art as the background wash</span>
+        </label>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.lowPerformanceMode}
+            onChange={(event) => updateAppSettings({ ...appSettings, lowPerformanceMode: event.target.checked })}
+          />
+          <span>Low performance mode hides the art wash and live radio waveform</span>
         </label>
       </section> : null}
 
@@ -4369,6 +4454,7 @@ function RadioView({
   schedule,
   status,
   message,
+  waveformBars,
   refreshRadio,
   tuneIn,
   tuneOut,
@@ -4381,6 +4467,7 @@ function RadioView({
   schedule: RadioSchedulePayload | null;
   status: RadioStatus;
   message: string;
+  waveformBars: number[];
   refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneIn: () => Promise<void>;
   tuneOut: () => void;
@@ -4403,6 +4490,7 @@ function RadioView({
     : "No later show";
   const coverUrl = buildRadioCoverUrl(stationUrl, nowPlaying);
   const isPlaying = status === "playing";
+  const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
   const radioTitleParts = splitFeaturedTitle(radioTitle);
   const latestVoice = latestRadioVoiceLine(session, nowPlaying);
@@ -4411,7 +4499,9 @@ function RadioView({
   return (
     <section className="radio-view">
       <div className="radio-hero">
-        {coverUrl ? <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" /> : null}
+        {isPlaying && appSettings.coverWashEnabled && visualEffectsEnabled && coverUrl ? (
+          <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" />
+        ) : null}
         <div className="radio-cover-card">
           {coverUrl ? (
             <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />
@@ -4468,11 +4558,13 @@ function RadioView({
           {status === "error" ? <p className="radio-status bad">{message}</p> : null}
         </div>
 
-        <div className={`radio-waveform ${isPlaying ? "playing" : ""}`} aria-hidden="true">
-          {Array.from({ length: 42 }, (_, index) => (
-            <span key={index} style={{ "--bar": `${24 + ((index * 19) % 62)}%`, "--delay": `${(index % 11) * -110}ms` } as CSSProperties} />
-          ))}
-        </div>
+        {visualEffectsEnabled ? (
+          <div className={`radio-waveform ${isPlaying ? "playing" : ""}`} aria-hidden="true">
+            {waveformBars.map((bar, index) => (
+              <span key={index} style={{ "--bar": `${bar}%` } as CSSProperties} />
+            ))}
+          </div>
+        ) : null}
 
         <div className="radio-broadcast-details" aria-label="Station details">
           <div>
@@ -4504,6 +4596,7 @@ function LibraryView({
   radioSchedule,
   radioStatus,
   radioMessage,
+  radioWaveformBars,
   refreshRadio,
   tuneInRadio,
   tuneOutRadio,
@@ -4560,6 +4653,7 @@ function LibraryView({
   radioSchedule: RadioSchedulePayload | null;
   radioStatus: RadioStatus;
   radioMessage: string;
+  radioWaveformBars: number[];
   refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneInRadio: () => Promise<void>;
   tuneOutRadio: () => void;
@@ -4615,6 +4709,7 @@ function LibraryView({
         schedule={radioSchedule}
         status={radioStatus}
         message={radioMessage}
+        waveformBars={radioWaveformBars}
         refreshRadio={refreshRadio}
         tuneIn={tuneInRadio}
         tuneOut={tuneOutRadio}

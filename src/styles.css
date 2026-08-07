@@ -2230,42 +2230,32 @@ button.similar-chip:hover,
 .radio-waveform {
   position: relative;
   z-index: 1;
-  display: flex;
+  display: grid;
   grid-column: 1 / -1;
+  grid-template-columns: repeat(96, minmax(2px, 1fr));
   align-items: flex-end;
-  gap: 3px;
-  height: 52px;
+  gap: 2px;
+  width: 100%;
+  height: 54px;
   margin-top: auto;
   padding-top: 10px;
   overflow: hidden;
   border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  opacity: 0.82;
+  opacity: 0.86;
 }
 
 .radio-waveform span {
-  width: 5px;
+  width: 100%;
   height: var(--bar);
   min-height: 7px;
   border-radius: 5px 5px 0 0;
   background: linear-gradient(180deg, rgba(242, 217, 133, 0.94), rgba(242, 217, 133, 0.38));
   transform-origin: bottom;
+  transition: height 80ms linear, opacity 120ms ease;
 }
 
-.radio-waveform.playing span {
-  animation: radio-wave 1300ms ease-in-out infinite alternate;
-  animation-delay: var(--delay);
-}
-
-@keyframes radio-wave {
-  from {
-    transform: scaleY(0.56);
-    opacity: 0.58;
-  }
-
-  to {
-    transform: scaleY(1);
-    opacity: 1;
-  }
+.radio-waveform:not(.playing) span {
+  opacity: 0.42;
 }
 
 .radio-controls {
