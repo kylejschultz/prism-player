@@ -27,10 +27,12 @@ jobs:
         id: artifact
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "suffix=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            suffix="${{ github.event.release.tag_name }}"
           else
-            echo "suffix=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            suffix="${GITHUB_REF_NAME}"
           fi
+          suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         uses: actions/setup-node@v4
