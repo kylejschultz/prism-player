@@ -3022,7 +3022,6 @@ export function App() {
             radioSchedule={radioSchedule}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
-            radioElapsed={radioElapsed}
             refreshRadio={refreshRadio}
             tuneInRadio={tuneInRadio}
             tuneOutRadio={tuneOutRadio}
@@ -4370,7 +4369,6 @@ function RadioView({
   schedule,
   status,
   message,
-  elapsed,
   refreshRadio,
   tuneIn,
   tuneOut,
@@ -4383,7 +4381,6 @@ function RadioView({
   schedule: RadioSchedulePayload | null;
   status: RadioStatus;
   message: string;
-  elapsed: number;
   refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneIn: () => Promise<void>;
   tuneOut: () => void;
@@ -4507,7 +4504,6 @@ function LibraryView({
   radioSchedule,
   radioStatus,
   radioMessage,
-  radioElapsed,
   refreshRadio,
   tuneInRadio,
   tuneOutRadio,
@@ -4564,7 +4560,6 @@ function LibraryView({
   radioSchedule: RadioSchedulePayload | null;
   radioStatus: RadioStatus;
   radioMessage: string;
-  radioElapsed: number;
   refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneInRadio: () => Promise<void>;
   tuneOutRadio: () => void;
@@ -4620,7 +4615,6 @@ function LibraryView({
         schedule={radioSchedule}
         status={radioStatus}
         message={radioMessage}
-        elapsed={radioElapsed}
         refreshRadio={refreshRadio}
         tuneIn={tuneInRadio}
         tuneOut={tuneOutRadio}
