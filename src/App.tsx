@@ -241,6 +241,17 @@ type RadioStationState = {
   state?: string;
 };
 
+type RadioSessionTurn = {
+  t?: string | number;
+  role?: string;
+  kind?: string;
+  text?: string;
+};
+
+type RadioSessionPayload = {
+  messages?: RadioSessionTurn[];
+};
+
 type RadioStationLocale = "en-GB" | "en-US";
 
 type RadioSchedulePersona = { id?: string; name?: string; tagline?: string };
@@ -723,6 +734,44 @@ function radioStationName(state: RadioStationState | null, stationUrl: string) {
   );
 }
 
+function radioTurnTimeMs(turn: RadioSessionTurn | null) {
+  if (!turn?.t) return null;
+  const parsed = new Date(turn.t).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function relativeRadioTurnTime(turn: RadioSessionTurn | null) {
+  const turnMs = radioTurnTimeMs(turn);
+  if (turnMs == null) return "just now";
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - turnMs) / 1000));
+  if (diffSeconds < 1) return "now";
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
+
+function latestRadioVoiceLine(session: RadioSessionPayload | null, track: RadioTrack | null) {
+  const messages = session?.messages ?? [];
+  const trackStartMs = radioTrackStartedAtMs(track, null);
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const turn = messages[index];
+    if (turn?.role !== "segment") continue;
+    const text = turn.text?.trim();
+    if (!text) continue;
+
+    const turnMs = radioTurnTimeMs(turn);
+    const belongsToTrack = trackStartMs == null || turnMs == null || turnMs >= trackStartMs - 45_000;
+    const fresh = turnMs == null || Date.now() - turnMs <= 5 * 60 * 1000;
+    if (belongsToTrack && fresh) return turn;
+  }
+
+  return null;
+}
+
 function sameRadioTrack(first: RadioTrack | null | undefined, second: RadioTrack | null | undefined) {
   if (!first || !second) return false;
   if (first.subsonic_id && second.subsonic_id) return first.subsonic_id === second.subsonic_id;
@@ -901,6 +950,12 @@ async function fetchRadioSchedule(stationUrl: string): Promise<RadioSchedulePayl
   const origin = normalizeStationUrl(stationUrl);
   if (!origin) throw new Error("Enter a valid Subwave station URL.");
   return fetchRadioJson<RadioSchedulePayload>(origin, "schedule");
+}
+
+async function fetchRadioSession(stationUrl: string): Promise<RadioSessionPayload> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+  return fetchRadioJson<RadioSessionPayload>(origin, "session");
 }
 
 async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
@@ -1282,6 +1337,7 @@ export function App() {
   const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
   const [radioStationInput, setRadioStationInput] = useState(appSettings.radioStationUrl);
   const [radioStationState, setRadioStationState] = useState<RadioStationState | null>(null);
+  const [radioSession, setRadioSession] = useState<RadioSessionPayload | null>(null);
   const [radioSchedule, setRadioSchedule] = useState<RadioSchedulePayload | null>(null);
   const [radioStatus, setRadioStatus] = useState<RadioStatus>("idle");
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
@@ -1445,6 +1501,7 @@ export function App() {
 
     tuneOutRadio("Ready to tune in.");
     setRadioStationState(null);
+    setRadioSession(null);
     setRadioSchedule(null);
     saveRadioStation(origin);
     void refreshRadio(origin);
@@ -1460,6 +1517,7 @@ export function App() {
     if (radioStationUrl === origin) {
       tuneOutRadio(activeStation ? "Ready to tune in." : "Add a Subwave station URL to start.");
       setRadioStationState(null);
+      setRadioSession(null);
       setRadioSchedule(null);
     }
 
@@ -1501,8 +1559,12 @@ export function App() {
     setRadioMessage("Checking station...");
 
     try {
-      const nextState = await fetchRadioState(origin);
+      const [nextState, nextSession] = await Promise.all([
+        fetchRadioState(origin),
+        fetchRadioSession(origin).catch(() => null),
+      ]);
       applyRadioStationState(nextState);
+      if (nextSession) setRadioSession(nextSession);
       saveRadioStation(origin);
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
       setRadioMessage("Station connected.");
@@ -2487,12 +2549,18 @@ export function App() {
     void fetchRadioSchedule(radioStationUrl)
       .then(setRadioSchedule)
       .catch(() => setRadioSchedule(null));
+    void fetchRadioSession(radioStationUrl)
+      .then(setRadioSession)
+      .catch(() => setRadioSession(null));
     const interval = window.setInterval(() => {
       void fetchRadioState(radioStationUrl)
         .then(applyRadioStationState)
         .catch(() => undefined);
       void fetchRadioSchedule(radioStationUrl)
         .then(setRadioSchedule)
+        .catch(() => undefined);
+      void fetchRadioSession(radioStationUrl)
+        .then(setRadioSession)
         .catch(() => undefined);
     }, 12000);
 
@@ -2950,6 +3018,7 @@ export function App() {
             onSelectRadioStation={selectRadioStation}
             onOpenRadioSettings={() => openSettings("radio")}
             radioStationState={radioStationState}
+            radioSession={radioSession}
             radioSchedule={radioSchedule}
             radioStatus={radioStatus}
             radioMessage={radioMessage}
@@ -3044,6 +3113,7 @@ export function App() {
                 <p className="track-meta">
                   <span>{footerRadioMeta}</span>
                 </p>
+                {radioNowPlaying?.album ? <p className="track-album">{radioNowPlaying.album}</p> : null}
               </>
             ) : footerTrack ? (
               <>
@@ -3065,6 +3135,18 @@ export function App() {
                     {footerTrack.artist ?? "Unknown artist"}
                   </button>
                 </p>
+                {footerTrack.album ? (
+                  <p className="track-album">
+                    <button
+                      className="track-link"
+                      type="button"
+                      onClick={() => footerTrack.albumId && void openAlbumById(footerTrack.albumId, footerTrack.album ?? footerTrack.title)}
+                      disabled={!footerTrack.albumId}
+                    >
+                      {footerTrack.album}
+                    </button>
+                  </p>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -4284,6 +4366,7 @@ function RadioView({
   onSelectStation,
   onOpenSettings,
   stationState,
+  session,
   schedule,
   status,
   message,
@@ -4296,6 +4379,7 @@ function RadioView({
   onSelectStation: (stationUrl: string) => void;
   onOpenSettings: () => void;
   stationState: RadioStationState | null;
+  session: RadioSessionPayload | null;
   schedule: RadioSchedulePayload | null;
   status: RadioStatus;
   message: string;
@@ -4324,6 +4408,8 @@ function RadioView({
   const isPlaying = status === "playing";
   const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
   const radioTitleParts = splitFeaturedTitle(radioTitle);
+  const latestVoice = latestRadioVoiceLine(session, nowPlaying);
+  const latestVoiceAge = latestVoice ? relativeRadioTurnTime(latestVoice) : null;
 
   return (
     <section className="radio-view">
@@ -4361,10 +4447,12 @@ function RadioView({
             </label>
           ) : null}
 
-          <div className={`radio-waveform ${isPlaying ? "playing" : ""}`} aria-hidden="true">
-            {Array.from({ length: 34 }, (_, index) => (
-              <span key={index} style={{ "--bar": `${34 + ((index * 17) % 58)}%`, "--delay": `${(index % 9) * -140}ms` } as CSSProperties} />
-            ))}
+          <div className="radio-dj-callout">
+            <div>
+              <span>From the Booth</span>
+              {latestVoiceAge ? <small>{latestVoiceAge}</small> : null}
+            </div>
+            <p>{latestVoice?.text ?? "Quiet in the booth..."}</p>
           </div>
 
           <div className="radio-controls">
@@ -4381,6 +4469,12 @@ function RadioView({
             </button>
           </div>
           {status === "error" ? <p className="radio-status bad">{message}</p> : null}
+        </div>
+
+        <div className={`radio-waveform ${isPlaying ? "playing" : ""}`} aria-hidden="true">
+          {Array.from({ length: 42 }, (_, index) => (
+            <span key={index} style={{ "--bar": `${24 + ((index * 19) % 62)}%`, "--delay": `${(index % 11) * -110}ms` } as CSSProperties} />
+          ))}
         </div>
 
         <div className="radio-broadcast-details" aria-label="Station details">
@@ -4409,6 +4503,7 @@ function LibraryView({
   onSelectRadioStation,
   onOpenRadioSettings,
   radioStationState,
+  radioSession,
   radioSchedule,
   radioStatus,
   radioMessage,
@@ -4465,6 +4560,7 @@ function LibraryView({
   onSelectRadioStation: (stationUrl: string) => void;
   onOpenRadioSettings: () => void;
   radioStationState: RadioStationState | null;
+  radioSession: RadioSessionPayload | null;
   radioSchedule: RadioSchedulePayload | null;
   radioStatus: RadioStatus;
   radioMessage: string;
@@ -4520,6 +4616,7 @@ function LibraryView({
         onSelectStation={onSelectRadioStation}
         onOpenSettings={onOpenRadioSettings}
         stationState={radioStationState}
+        session={radioSession}
         schedule={radioSchedule}
         status={radioStatus}
         message={radioMessage}
