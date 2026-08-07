@@ -246,12 +246,36 @@ textarea {
 }
 
 .brand-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
   width: 36px;
   height: 36px;
+  overflow: hidden;
   border-radius: 8px;
   background:
     linear-gradient(135deg, #e7cc79, #cc493e 48%, #3f9185);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
+}
+
+.brand-mark::after {
+  position: absolute;
+  inset: 1px;
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 34%),
+    radial-gradient(circle at 76% 78%, rgba(13, 13, 12, 0.28), transparent 38%);
+  content: "";
+}
+
+.brand-mark span {
+  position: relative;
+  z-index: 1;
+  color: rgba(17, 17, 17, 0.84);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 16px rgba(244, 241, 236, 0.2);
 }
 
 .eyebrow,
@@ -1865,8 +1889,11 @@ button.similar-chip:hover,
 
 .settings-layout {
   display: grid;
+  grid-template-columns: minmax(160px, 188px) minmax(0, 760px);
   align-content: start;
-  gap: 0;
+  align-items: start;
+  column-gap: 26px;
+  row-gap: 0;
   max-height: calc(100vh - 166px);
   padding: 0 2px 24px;
   overflow-y: auto;
@@ -1876,22 +1903,27 @@ button.similar-chip:hover,
   position: sticky;
   top: 0;
   z-index: 4;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 0 12px;
-  background: rgba(14, 14, 13, 0.92);
-  backdrop-filter: blur(16px);
+  grid-column: 1;
+  grid-row: 1 / span 8;
+  display: grid;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(14, 14, 13, 0.48);
+  backdrop-filter: blur(18px);
 }
 
 .settings-tabs button {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 7px;
+  width: 100%;
   min-height: 34px;
   padding: 0 11px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.065);
+  background: transparent;
   color: rgba(244, 241, 236, 0.66);
   font-size: 12px;
   font-weight: 500;
@@ -1918,9 +1950,16 @@ button.similar-chip:hover,
 
 .settings-form,
 .settings-panel {
+  grid-column: 2;
   display: grid;
   gap: 14px;
-  padding: 18px 0;
+  min-width: 0;
+  padding: 0 0 18px;
+}
+
+.settings-form + .settings-panel,
+.settings-panel + .settings-panel {
+  padding-top: 18px;
 }
 
 .settings-form label,
@@ -3590,6 +3629,16 @@ button.similar-chip:hover,
     max-height: calc(100vh - 184px);
   }
 
+  .settings-layout {
+    grid-template-columns: minmax(138px, 158px) minmax(0, 1fr);
+    column-gap: 18px;
+  }
+
+  .settings-tabs button {
+    gap: 6px;
+    padding-inline: 9px;
+  }
+
   .player-bar {
     grid-template-columns: minmax(210px, 0.74fr) minmax(360px, 1.2fr) minmax(210px, 0.62fr);
     gap: 12px;
@@ -3682,6 +3731,30 @@ button.similar-chip:hover,
 
   .global-search {
     width: min(360px, 38vw);
+  }
+
+  .settings-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .settings-tabs {
+    grid-column: 1;
+    grid-row: auto;
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0 0 12px;
+    border: 0;
+    background: rgba(14, 14, 13, 0.92);
+  }
+
+  .settings-tabs button {
+    width: auto;
+  }
+
+  .settings-form,
+  .settings-panel {
+    grid-column: 1;
   }
 
   .analytics-banner {
