@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, MouseEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, MouseEvent, ReactNode } from "react";
 import {
   AlertCircle,
   ChevronDown,
@@ -758,6 +758,42 @@ function radioTrackElapsedSeconds(track: RadioTrack | null, state: RadioStationS
   return Math.max(0, duration > 0 ? Math.min(elapsed, duration) : elapsed);
 }
 
+function radioListenerBufferMs(state: RadioStationState | null) {
+  return clampNumber(Number(state?.stream?.bufferSeconds ?? 0), 0, 60) * 1000;
+}
+
+function radioTrackAudibleAtMs(track: RadioTrack | null, state: RadioStationState | null) {
+  const startedAt = radioTrackStartedAtMs(track, state);
+  return startedAt == null ? null : startedAt + radioListenerBufferMs(state);
+}
+
+function listenerAlignedRadioState(nextState: RadioStationState, previousState: RadioStationState | null, nowMs: number) {
+  const nextTrack = firstRadioTrack(nextState);
+  const previousTrack = firstRadioTrack(previousState);
+  const audibleAt = radioTrackAudibleAtMs(nextTrack, nextState);
+
+  if (!nextTrack || !previousTrack || sameRadioTrack(nextTrack, previousTrack) || audibleAt == null || audibleAt <= nowMs) {
+    return { state: nextState, promoteAt: null };
+  }
+
+  const upcoming = upcomingRadioTracks(nextState);
+  const heldUpcoming = upcoming.some((track) => sameRadioTrack(track, nextTrack)) ? upcoming : [nextTrack, ...upcoming];
+
+  return {
+    state: {
+      ...nextState,
+      nowPlaying: previousTrack,
+      nowPlayingKnown: true,
+      current: previousTrack,
+      track: previousTrack,
+      upcoming: heldUpcoming,
+      history: previousState?.history ?? nextState.history,
+      queue: Array.isArray(nextState.queue) ? heldUpcoming : { ...(typeof nextState.queue === "object" && nextState.queue ? nextState.queue : {}), current: previousTrack, upcoming: heldUpcoming },
+    },
+    promoteAt: audibleAt,
+  };
+}
+
 function padHour(value: number) {
   return value < 10 ? `0${value}` : String(value);
 }
@@ -1272,6 +1308,7 @@ export function App() {
   const [favoriteBusyKey, setFavoriteBusyKey] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const radioAudioRef = useRef<HTMLAudioElement | null>(null);
+  const radioPromoteTimerRef = useRef<number | null>(null);
   const scrobbledPlayRef = useRef("");
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
@@ -1434,6 +1471,24 @@ export function App() {
     setRadioStationInput(activeStation);
   }
 
+  function applyRadioStationState(nextState: RadioStationState) {
+    if (radioPromoteTimerRef.current != null) {
+      window.clearTimeout(radioPromoteTimerRef.current);
+      radioPromoteTimerRef.current = null;
+    }
+
+    setRadioStationState((previousState) => {
+      const aligned = listenerAlignedRadioState(nextState, previousState, Date.now());
+      if (aligned.promoteAt != null) {
+        radioPromoteTimerRef.current = window.setTimeout(() => {
+          radioPromoteTimerRef.current = null;
+          setRadioStationState(nextState);
+        }, Math.max(0, aligned.promoteAt - Date.now()));
+      }
+      return aligned.state;
+    });
+  }
+
   async function refreshRadio(nextUrl = radioStationInput) {
     const origin = normalizeStationUrl(nextUrl);
     if (!origin) {
@@ -1447,7 +1502,7 @@ export function App() {
 
     try {
       const nextState = await fetchRadioState(origin);
-      setRadioStationState(nextState);
+      applyRadioStationState(nextState);
       saveRadioStation(origin);
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
       setRadioMessage("Station connected.");
@@ -2434,14 +2489,20 @@ export function App() {
       .catch(() => setRadioSchedule(null));
     const interval = window.setInterval(() => {
       void fetchRadioState(radioStationUrl)
-        .then(setRadioStationState)
+        .then(applyRadioStationState)
         .catch(() => undefined);
       void fetchRadioSchedule(radioStationUrl)
         .then(setRadioSchedule)
         .catch(() => undefined);
     }, 12000);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      if (radioPromoteTimerRef.current != null) {
+        window.clearTimeout(radioPromoteTimerRef.current);
+        radioPromoteTimerRef.current = null;
+      }
+    };
   }, [radioStationUrl]);
 
   useEffect(() => {
@@ -2672,7 +2733,7 @@ export function App() {
   const radioHasTimedTrack = Boolean(isRadioPlaying && radioNowPlaying && radioDuration > 0);
   const footerRadioTitle = radioNowPlaying?.title ?? radioStationName(radioStationState, radioStationUrl);
   const footerRadioMeta = radioNowPlaying
-    ? [radioNowPlaying.artist, radioNowPlaying.album].filter(Boolean).join(" - ") || radioStationName(radioStationState, radioStationUrl)
+    ? radioNowPlaying.artist || radioStationName(radioStationState, radioStationUrl)
     : "Live broadcast";
   const seekDuration = isRadioPlaying ? (radioHasTimedTrack ? radioDuration : Math.max(radioElapsed, 1)) : playerDuration || currentTrack?.duration || 0;
   const seekPosition = isRadioPlaying ? (radioHasTimedTrack ? Math.min(radioElapsed, radioDuration) : 0) : position;
@@ -2886,8 +2947,6 @@ export function App() {
             libraryStatus={libraryStatus}
             statusMessage={statusMessage}
             appSettings={appSettings}
-            radioStationInput={radioStationInput}
-            setRadioStationInput={setRadioStationInput}
             onSelectRadioStation={selectRadioStation}
             onOpenRadioSettings={() => openSettings("radio")}
             radioStationState={radioStationState}
@@ -3004,15 +3063,6 @@ export function App() {
                     disabled={!footerTrack.artistId}
                   >
                     {footerTrack.artist ?? "Unknown artist"}
-                  </button>
-                  <span aria-hidden="true"> - </span>
-                  <button
-                    className="track-link"
-                    type="button"
-                    onClick={() => footerTrack.albumId && void openAlbumById(footerTrack.albumId, footerTrack.album ?? "album")}
-                    disabled={!footerTrack.albumId}
-                  >
-                    {footerTrack.album ?? "Unknown album"}
                   </button>
                 </p>
               </>
@@ -3387,6 +3437,7 @@ function RightSidebar({
   const radioDuration = radioNowPlaying?.duration ?? 0;
   const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
+  const recentRadioHistory = radioHistory.slice(0, 5).reverse();
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const activeLyricIndex = useMemo(() => {
     const elapsedMs = Math.max(0, position * 1000);
@@ -3446,20 +3497,14 @@ function RightSidebar({
         <div className="right-panel-section queue-panel-section">
           <div className="queue-heading">
             <p className="eyebrow">{isRadioSession ? "Radio Timeline" : "Now + Next"}</p>
-            <div className="queue-heading-actions">
-              <span>
-                {isRadioSession
-                  ? hasRadioQueuePayload
-                    ? `${radioHistory.length + (radioNowPlaying ? 1 : 0) + radioUpcoming.length} tracks`
-                    : "Live"
-                  : displayedQueue.length
-                    ? `${displayedQueue.length} tracks`
-                    : "Empty"}
-              </span>
-              <button type="button" onClick={onClearQueue} disabled={!queue.length}>
-                Clear
-              </button>
-            </div>
+            {!isRadioSession ? (
+              <div className="queue-heading-actions">
+                <span>{displayedQueue.length ? `${displayedQueue.length} tracks` : "Empty"}</span>
+                <button type="button" onClick={onClearQueue} disabled={!queue.length}>
+                  Clear
+                </button>
+              </div>
+            ) : null}
           </div>
           <div className="queue-list right-queue-list">
             {isRadioSession ? (
@@ -3468,8 +3513,8 @@ function RightSidebar({
                   {radioHistory.length ? (
                     <div className="radio-queue-section">
                       <p>Recently played</p>
-                      {radioHistory.slice(0, 6).map((track, index) => (
-                        <RadioQueueRow track={track} marker={`${radioHistory.length - index}`} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                      {recentRadioHistory.map((track, index) => (
+                        <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
                       ))}
                     </div>
                   ) : null}
@@ -3536,7 +3581,7 @@ function RightSidebar({
               <p className="queue-empty">Play an album or song to build a queue.</p>
             )}
           </div>
-          {queue.length ? (
+          {!isRadioSession && queue.length ? (
             <p className="right-panel-footnote">
               {formatDuration(visibleQueueDuration)} showing
               {displayedQueue.length < queue.length ? ` · ${formatDuration(queueDuration)} total` : ""}
@@ -3665,10 +3710,10 @@ function RightSidebar({
   );
 }
 
-function RadioQueueRow({ track, marker, tone = "next" }: { track: RadioTrack; marker: string; tone?: "previous" | "current" | "next" }) {
+function RadioQueueRow({ track, marker, tone = "next" }: { track: RadioTrack; marker?: string; tone?: "previous" | "current" | "next" }) {
   return (
-    <div className={`queue-row radio-queue-row ${tone}`}>
-      <small>{marker}</small>
+    <div className={`queue-row radio-queue-row ${tone} ${marker ? "" : "no-marker"}`}>
+      {marker ? <small>{marker}</small> : null}
       <div className="queue-track">
         <strong>{track.title ?? "Unknown track"}</strong>
         <small>{track.artist ?? track.album ?? "Subwave"}</small>
@@ -4235,7 +4280,6 @@ function FirstRunWizard({
 }
 
 function RadioView({
-  config,
   appSettings,
   onSelectStation,
   onOpenSettings,
@@ -4248,7 +4292,6 @@ function RadioView({
   tuneIn,
   tuneOut,
 }: {
-  config: NavidromeConfig | null;
   appSettings: AppSettings;
   onSelectStation: (stationUrl: string) => void;
   onOpenSettings: () => void;
@@ -4278,8 +4321,6 @@ function RadioView({
     ? `${showTiming.nextShow?.name ?? "Autonomous"}${nextDjName ? ` with ${nextDjName}` : ""}`
     : "No later show";
   const coverUrl = buildRadioCoverUrl(stationUrl, nowPlaying);
-  const radioDuration = nowPlaying?.duration ?? 0;
-  const progressPercent = radioDuration > 0 ? `${Math.min(100, (elapsed / radioDuration) * 100)}%` : "100%";
   const isPlaying = status === "playing";
   const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
   const radioTitleParts = splitFeaturedTitle(radioTitle);
@@ -4320,8 +4361,10 @@ function RadioView({
             </label>
           ) : null}
 
-          <div className="radio-progress" aria-hidden="true">
-            <span style={{ width: progressPercent }} />
+          <div className={`radio-waveform ${isPlaying ? "playing" : ""}`} aria-hidden="true">
+            {Array.from({ length: 34 }, (_, index) => (
+              <span key={index} style={{ "--bar": `${34 + ((index * 17) % 58)}%`, "--delay": `${(index % 9) * -140}ms` } as CSSProperties} />
+            ))}
           </div>
 
           <div className="radio-controls">
@@ -4337,7 +4380,7 @@ function RadioView({
               <Settings size={16} />
             </button>
           </div>
-          <p className={`radio-status ${status === "error" ? "bad" : ""}`}>{message}</p>
+          {status === "error" ? <p className="radio-status bad">{message}</p> : null}
         </div>
 
         <div className="radio-broadcast-details" aria-label="Station details">
@@ -4363,8 +4406,6 @@ function LibraryView({
   libraryStatus,
   statusMessage,
   appSettings,
-  radioStationInput,
-  setRadioStationInput,
   onSelectRadioStation,
   onOpenRadioSettings,
   radioStationState,
@@ -4421,8 +4462,6 @@ function LibraryView({
   libraryStatus: LibraryStatus;
   statusMessage: string;
   appSettings: AppSettings;
-  radioStationInput: string;
-  setRadioStationInput: (value: string) => void;
   onSelectRadioStation: (stationUrl: string) => void;
   onOpenRadioSettings: () => void;
   radioStationState: RadioStationState | null;
@@ -4477,7 +4516,6 @@ function LibraryView({
   if (activeView === "radio") {
     return (
       <RadioView
-        config={config}
         appSettings={appSettings}
         onSelectStation={onSelectRadioStation}
         onOpenSettings={onOpenRadioSettings}

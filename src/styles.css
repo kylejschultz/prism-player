@@ -2187,20 +2187,40 @@ button.similar-chip:hover,
   font-size: 13px;
 }
 
-.radio-progress {
-  height: 6px;
-  margin-top: 26px;
+.radio-waveform {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 42px;
+  margin-top: 24px;
   overflow: hidden;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  opacity: 0.72;
 }
 
-.radio-progress span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #f2d985, #3f9185);
-  transition: width 900ms linear;
+.radio-waveform span {
+  width: 4px;
+  height: var(--bar);
+  min-height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(242, 217, 133, 0.92), rgba(63, 145, 133, 0.74));
+  transform-origin: center;
+}
+
+.radio-waveform.playing span {
+  animation: radio-wave 1300ms ease-in-out infinite alternate;
+  animation-delay: var(--delay);
+}
+
+@keyframes radio-wave {
+  from {
+    transform: scaleY(0.56);
+    opacity: 0.58;
+  }
+
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 .radio-controls {
@@ -2928,7 +2948,7 @@ button.similar-chip:hover,
   position: relative;
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(240px, 0.72fr) minmax(500px, 1.35fr) minmax(260px, 0.68fr);
+  grid-template-columns: minmax(260px, 0.72fr) minmax(500px, 1.35fr) minmax(260px, 0.68fr);
   grid-template-areas: "now center actions";
   align-items: center;
   gap: 16px;
@@ -2948,9 +2968,9 @@ button.similar-chip:hover,
 .now-playing {
   grid-area: now;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -2960,8 +2980,8 @@ button.similar-chip:hover,
 
 .player-cover {
   display: block;
-  width: 38px;
-  height: 38px;
+  width: 48px;
+  height: 48px;
   border-radius: 8px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.06);
@@ -3222,6 +3242,10 @@ button.similar-chip:hover,
 
 .radio-queue-row {
   grid-template-columns: 28px minmax(0, 1fr) 42px;
+}
+
+.radio-queue-row.no-marker {
+  grid-template-columns: minmax(0, 1fr) 42px;
 }
 
 .radio-queue-section {
@@ -3530,12 +3554,12 @@ button.similar-chip:hover,
   }
 
   .now-playing {
-    grid-template-columns: 38px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
   }
 
   .player-cover {
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
   }
 
   .transport {
