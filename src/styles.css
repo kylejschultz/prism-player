@@ -2315,6 +2315,7 @@ button.similar-chip:hover,
   align-self: end;
   gap: 24px;
   padding-top: 4px;
+  opacity: 0.96;
 }
 
 .radio-broadcast-details div {
@@ -2332,22 +2333,22 @@ button.similar-chip:hover,
 }
 
 .radio-broadcast-details span {
-  color: rgba(242, 217, 133, 0.78);
+  color: rgba(242, 217, 133, 0.92);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
 .radio-broadcast-details strong {
   margin-top: 7px;
-  color: rgba(244, 241, 236, 0.9);
+  color: rgba(244, 241, 236, 0.96);
   font-size: 16px;
   font-weight: 600;
 }
 
 .radio-broadcast-details small {
   margin-top: 5px;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(244, 241, 236, 0.72);
   font-size: 13px;
   font-weight: 500;
 }
@@ -3012,9 +3013,9 @@ button.similar-chip:hover,
 .now-playing {
   grid-area: now;
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 66px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: 18px;
   min-width: 0;
 }
 
@@ -3024,8 +3025,8 @@ button.similar-chip:hover,
 
 .player-cover {
   display: block;
-  width: 58px;
-  height: 58px;
+  width: 66px;
+  height: 66px;
   border-radius: 8px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.06);
@@ -3058,7 +3059,7 @@ button.similar-chip:hover,
 
 .track-album {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.44);
+  color: rgba(244, 241, 236, 0.5);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;

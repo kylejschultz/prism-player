@@ -1611,7 +1611,7 @@ export function App() {
       await radioAudio.play();
       setSuppressLocalFooter(false);
       setRadioStatus("playing");
-      setRadioMessage("On air.");
+      setRadioMessage("");
     } catch {
       setRadioStatus("error");
       setRadioMessage("The stream could not start.");
@@ -3212,7 +3212,7 @@ export function App() {
             />
             <span>{isRadioPlaying ? (radioHasTimedTrack ? formatDuration(radioDuration) : "") : formatDuration(playerDuration || currentTrack?.duration)}</span>
           </div>
-          {isRadioPlaying ? <p className="player-error">{radioMessage}</p> : playerError ? <p className="player-error">{playerError}</p> : null}
+          {radioStatus === "error" ? <p className="player-error">{radioMessage}</p> : playerError ? <p className="player-error">{playerError}</p> : null}
         </div>
 
         <div className="player-actions">
