@@ -2,16 +2,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, MouseEvent, ReactNode } from "react";
 import {
   AlertCircle,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Disc3,
   History,
+  Heart,
   Home,
   Library,
   ListMusic,
   Loader2,
+  Mic2,
   Music2,
   Pause,
   PanelRightClose,
@@ -22,11 +25,13 @@ import {
   Repeat,
   Repeat1,
   Search,
+  Send,
   Settings,
   Shuffle,
   SkipBack,
   SkipForward,
   Star,
+  Square,
   Trash2,
   Menu,
   UserRound,
@@ -219,6 +224,16 @@ type RadioTrack = {
   timestamp?: number;
 };
 
+type RadioLikeStatus = {
+  enabled?: boolean;
+  songId?: string | null;
+  liked?: boolean;
+  count?: number;
+  ok?: boolean;
+  alreadyLiked?: boolean;
+  error?: string;
+};
+
 type RadioStationState = {
   nowPlaying?: RadioTrack | null;
   now_playing?: RadioTrack;
@@ -235,7 +250,7 @@ type RadioStationState = {
     station?: { name?: string };
   };
   station?: { name?: string };
-  stream?: { bufferSeconds?: number | null };
+  stream?: { bufferSeconds?: number | null; bitrate?: number | string | null; format?: string | null; mount?: string | null };
   streamOnline?: boolean | null;
   nowPlayingKnown?: boolean;
   status?: string;
@@ -276,6 +291,20 @@ type RadioNowPlayingResponse = {
   streamOnline?: boolean | null;
 };
 
+type RadioRequestStatus = "pending" | "resolved" | "failed" | "unknown";
+
+type RadioRequestResult = {
+  success: boolean;
+  pending?: boolean;
+  ack?: string;
+  track?: RadioTrack;
+  queuePosition?: number;
+  requestId?: string;
+  requestText?: string;
+  message?: string;
+  status?: RadioRequestStatus;
+};
+
 type RadioStatus = "idle" | "checking" | "ready" | "playing" | "error";
 
 const STORAGE_KEY = "prism-player.navidrome";
@@ -290,6 +319,11 @@ const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const APP_VERSION = "0.1.0";
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
+const HAVE_FUTURE_DATA = 3;
+const RADIO_RECONNECT_BASE_MS = 750;
+const RADIO_RECONNECT_MAX_MS = 30_000;
+const RADIO_REQUEST_POLL_INTERVAL_MS = 1500;
+const RADIO_REQUEST_POLL_DEADLINE_MS = 60_000;
 const API_VERSION = "1.16.1";
 const RADIO_WAVEFORM_BAR_COUNT = 96;
 const idleRadioWaveformBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (_, index) => 18 + ((index * 17) % 56));
@@ -730,6 +764,19 @@ function radioListenerCount(state: RadioStationState | null): number | null {
   return listeners.count ?? listeners.current ?? listeners.total ?? null;
 }
 
+function formatRadioStreamLabel(bitrate: number | string | null | undefined, format: string | null | undefined) {
+  const rawFormat = format?.trim().toLowerCase();
+  const normalizedFormat = !rawFormat || rawFormat === "audio/mpeg" || rawFormat === "mpeg" ? "MP3" : rawFormat.toUpperCase();
+  if (bitrate == null || bitrate === "") return normalizedFormat;
+
+  const parsedBitrate = typeof bitrate === "string" ? Number.parseFloat(bitrate) : bitrate;
+  const bitrateText =
+    Number.isFinite(parsedBitrate)
+      ? `${parsedBitrate > 1000 ? Math.round(parsedBitrate / 1000) : parsedBitrate} kbps`
+      : String(bitrate).replace(/\s*kbps$/i, " kbps");
+  return `${normalizedFormat} / ${bitrateText}`;
+}
+
 function radioStationName(state: RadioStationState | null, stationUrl: string) {
   return (
     state?.context?.stationName ||
@@ -775,6 +822,72 @@ function latestRadioVoiceLine(session: RadioSessionPayload | null, track: RadioT
   }
 
   return null;
+}
+
+function radioBoothTurnKey(turn: RadioSessionTurn) {
+  return `${turn.t ?? ""}:${turn.role ?? ""}:${turn.kind ?? ""}:${turn.text ?? ""}`;
+}
+
+function radioSpokenBoothLines(session: RadioSessionPayload | null) {
+  return (session?.messages ?? []).filter((turn) => turn.role === "segment" && Boolean(turn.text?.trim()));
+}
+
+function mergeRadioBoothHistory(previous: RadioSessionTurn[], session: RadioSessionPayload | null) {
+  const seen = new Set(previous.map(radioBoothTurnKey));
+  const next = [...previous];
+
+  for (const turn of radioSpokenBoothLines(session)) {
+    const key = radioBoothTurnKey(turn);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(turn);
+  }
+
+  return next.slice(-24);
+}
+
+function radioScheduleItems(schedule: RadioSchedulePayload | null, nowMs: number) {
+  if (!schedule?.schedule) return [];
+  const { day, hour } = zonedDayHour(new Date(nowMs), schedule.timezone);
+  const shows = schedule.shows ?? [];
+  const personas = schedule.personas ?? [];
+  const locale = schedule.locale ?? "en-US";
+  const items: Array<{
+    key: string;
+    time: string;
+    showName: string;
+    djName: string;
+    detail: string;
+    isCurrent: boolean;
+  }> = [];
+  let previousShowId: string | null | undefined = undefined;
+
+  for (let offset = 0; offset < 24 && items.length < 4; offset += 1) {
+    const absoluteHour = hour + offset;
+    const nextDay = (day + Math.floor(absoluteHour / 24)) % 7;
+    const nextHour = absoluteHour % 24;
+    const dayGrid = radioScheduleDay(schedule, nextDay);
+    const showId = Array.isArray(dayGrid) ? dayGrid[nextHour] ?? null : null;
+    if (!showId || showId === previousShowId) {
+      previousShowId = showId;
+      continue;
+    }
+
+    const show = shows.find((candidate) => candidate.id === showId);
+    const persona = show?.personaId ? personas.find((candidate) => candidate.id === show.personaId) : null;
+    const detail = offset === 0 ? persona?.tagline || show?.mood || "" : "";
+    items.push({
+      key: `${nextDay}-${nextHour}-${showId}`,
+      time: offset === 0 ? "Now" : formatStationHour(nextHour, locale),
+      showName: show?.name ?? "Autonomous",
+      djName: persona?.name ?? "",
+      detail,
+      isCurrent: offset === 0,
+    });
+    previousShowId = showId;
+  }
+
+  return items;
 }
 
 function sameRadioTrack(first: RadioTrack | null | undefined, second: RadioTrack | null | undefined) {
@@ -948,6 +1061,79 @@ async function fetchRadioJson<T>(stationUrl: string, endpoint: string): Promise<
     return data;
   } finally {
     window.clearTimeout(timeout);
+  }
+}
+
+async function submitRadioRequest(stationUrl: string, text: string, name: string): Promise<RadioRequestResult> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(buildRadioApiUrl(origin, "request"), {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, name }),
+      signal: controller.signal,
+    });
+    const data = (await response.json().catch(() => ({}))) as Partial<RadioRequestResult> & { error?: string };
+    if (!response.ok) {
+      return { success: false, message: data.message ?? data.error ?? "The booth could not take that request." };
+    }
+    return data as RadioRequestResult;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function fetchRadioRequestStatus(stationUrl: string, requestId: string): Promise<RadioRequestResult | null> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) throw new Error("Enter a valid Subwave station URL.");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(buildRadioApiUrl(origin, `request/${encodeURIComponent(requestId)}`), {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (response.status === 404) return { success: false, status: "unknown" };
+    return (await response.json()) as RadioRequestResult;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function fetchRadioLikeStatus(stationUrl: string): Promise<RadioLikeStatus | null> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin) return null;
+
+  try {
+    const response = await fetch(buildRadioApiUrl(origin, "like"), { cache: "no-store" });
+    return (await response.json()) as RadioLikeStatus;
+  } catch {
+    return null;
+  }
+}
+
+async function submitRadioLike(stationUrl: string, songId: string): Promise<RadioLikeStatus | null> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin || !songId) return null;
+
+  try {
+    const response = await fetch(buildRadioApiUrl(origin, "like"), {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ songId }),
+    });
+    return (await response.json()) as RadioLikeStatus;
+  } catch {
+    return null;
   }
 }
 
@@ -1343,12 +1529,16 @@ export function App() {
   const [radioStationInput, setRadioStationInput] = useState(appSettings.radioStationUrl);
   const [radioStationState, setRadioStationState] = useState<RadioStationState | null>(null);
   const [radioSession, setRadioSession] = useState<RadioSessionPayload | null>(null);
+  const [radioBoothHistory, setRadioBoothHistory] = useState<RadioSessionTurn[]>([]);
   const [radioSchedule, setRadioSchedule] = useState<RadioSchedulePayload | null>(null);
   const [radioStatus, setRadioStatus] = useState<RadioStatus>("idle");
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
   const [radioClockNow, setRadioClockNow] = useState(() => Date.now());
   const [radioWaveformBars, setRadioWaveformBars] = useState<number[]>(idleRadioWaveformBars);
+  const [radioPopover, setRadioPopover] = useState<"schedule" | "request" | "booth" | null>(null);
+  const [radioLikeStatus, setRadioLikeStatus] = useState<RadioLikeStatus | null>(null);
+  const [radioLikeBusy, setRadioLikeBusy] = useState(false);
   const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
@@ -1371,6 +1561,10 @@ export function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const radioAudioRef = useRef<HTMLAudioElement | null>(null);
   const radioPromoteTimerRef = useRef<number | null>(null);
+  const radioWatchdogTimerRef = useRef<number | null>(null);
+  const radioRetryCountRef = useRef(0);
+  const radioGenerationRef = useRef(0);
+  const radioWatchdogArmedAtRef = useRef(0);
   const radioAudioContextRef = useRef<AudioContext | null>(null);
   const radioAnalyserRef = useRef<AnalyserNode | null>(null);
   const radioAnalyserSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -1385,6 +1579,7 @@ export function App() {
   const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "160") : null;
   const radioStationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const radioNowPlaying = firstRadioTrack(radioStationState);
+  const radioNowPlayingSongId = radioNowPlaying?.subsonic_id ? String(radioNowPlaying.subsonic_id) : "";
   const radioUpcoming = upcomingRadioTracks(radioStationState);
   const radioHistory = previousRadioTracks(radioStationState);
   const isRadioPlaying = radioStatus === "playing";
@@ -1400,6 +1595,23 @@ export function App() {
         ? buildCoverArtUrl(config, currentTrack.coverArt, "900")
         : null
     : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setRadioLikeStatus(null);
+    if (!isRadioPlaying || !radioStationUrl || !radioNowPlayingSongId) return;
+
+    void fetchRadioLikeStatus(radioStationUrl).then((status) => {
+      if (cancelled) return;
+      if (status?.songId && status.songId !== radioNowPlayingSongId) return;
+      setRadioLikeStatus(status);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isRadioPlaying, radioNowPlayingSongId, radioStationUrl]);
   const currentStreamUrl = config && currentTrack ? buildStreamUrl(config, currentTrack.id) : null;
   const favoriteIds = useMemo<FavoriteIds>(
     () => ({
@@ -1512,6 +1724,7 @@ export function App() {
     tuneOutRadio("Ready to tune in.");
     setRadioStationState(null);
     setRadioSession(null);
+    setRadioBoothHistory([]);
     setRadioSchedule(null);
     saveRadioStation(origin);
     void refreshRadio(origin);
@@ -1528,6 +1741,7 @@ export function App() {
       tuneOutRadio(activeStation ? "Ready to tune in." : "Add a Subwave station URL to start.");
       setRadioStationState(null);
       setRadioSession(null);
+      setRadioBoothHistory([]);
       setRadioSchedule(null);
     }
 
@@ -1557,6 +1771,30 @@ export function App() {
     });
   }
 
+  function applyRadioSession(nextSession: RadioSessionPayload | null) {
+    setRadioSession(nextSession);
+    setRadioBoothHistory((previous) => mergeRadioBoothHistory(previous, nextSession));
+  }
+
+  function clearRadioWatchdog() {
+    if (radioWatchdogTimerRef.current != null) {
+      window.clearTimeout(radioWatchdogTimerRef.current);
+      radioWatchdogTimerRef.current = null;
+    }
+  }
+
+  function closeRadioStream(audio: HTMLAudioElement) {
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+  }
+
+  function buildRadioPlaybackUrl(origin: string) {
+    const streamUrl = new URL(buildRadioStreamUrl(origin));
+    streamUrl.searchParams.set("t", String(Date.now()));
+    return streamUrl.toString();
+  }
+
   async function refreshRadio(nextUrl = radioStationInput) {
     const origin = normalizeStationUrl(nextUrl);
     if (!origin) {
@@ -1574,7 +1812,7 @@ export function App() {
         fetchRadioSession(origin).catch(() => null),
       ]);
       applyRadioStationState(nextState);
-      if (nextSession) setRadioSession(nextSession);
+      if (nextSession) applyRadioSession(nextSession);
       saveRadioStation(origin);
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
       setRadioMessage("Station connected.");
@@ -1589,8 +1827,10 @@ export function App() {
   function tuneOutRadio(nextMessage?: string) {
     const message = nextMessage ?? (radioStationState ? "Ready to tune in." : "Add a Subwave station URL to start.");
     const audio = radioAudioRef.current;
-    audio?.pause();
-    if (audio) audio.removeAttribute("src");
+    radioGenerationRef.current += 1;
+    clearRadioWatchdog();
+    radioRetryCountRef.current = 0;
+    if (audio) closeRadioStream(audio);
     setSuppressLocalFooter(true);
     setRadioStatus(radioStationState ? "ready" : "idle");
     setRadioMessage(message);
@@ -1612,7 +1852,10 @@ export function App() {
 
     audioRef.current?.pause();
     setIsPlaying(false);
-    radioAudio.src = buildRadioStreamUrl(origin);
+    radioGenerationRef.current += 1;
+    radioRetryCountRef.current = 0;
+    clearRadioWatchdog();
+    radioAudio.src = buildRadioPlaybackUrl(origin);
     radioAudio.volume = radioVolume;
     setRadioStatus("checking");
     setRadioMessage("Tuning in...");
@@ -2022,6 +2265,30 @@ export function App() {
     }
   }
 
+  async function likeCurrentRadioTrack() {
+    if (!radioStationUrl || !radioNowPlayingSongId || radioLikeBusy) return;
+
+    setRadioLikeBusy(true);
+    try {
+      const result = await submitRadioLike(radioStationUrl, radioNowPlayingSongId);
+      if (result?.ok || result?.alreadyLiked || result?.liked) {
+        setRadioLikeStatus({
+          ...result,
+          enabled: result.enabled ?? radioLikeStatus?.enabled ?? true,
+          songId: result.songId ?? radioNowPlayingSongId,
+          liked: true,
+          count: result.count ?? radioLikeStatus?.count ?? 0,
+        });
+        return;
+      }
+
+      const status = await fetchRadioLikeStatus(radioStationUrl);
+      setRadioLikeStatus(status);
+    } finally {
+      setRadioLikeBusy(false);
+    }
+  }
+
   function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song) {
     event.preventDefault();
     setLibraryContextMenu(null);
@@ -2424,6 +2691,11 @@ export function App() {
   }
 
   function togglePlayback() {
+    if (isRadioPlaying) {
+      tuneOutRadio();
+      return;
+    }
+
     if (!queue.length) return;
     const audio = audioRef.current;
 
@@ -2555,12 +2827,12 @@ export function App() {
 
   useEffect(() => {
     if (!radioStationUrl) return;
-    void refreshRadio(radioStationUrl);
+    if (!isRadioPlaying) return;
     void fetchRadioSchedule(radioStationUrl)
       .then(setRadioSchedule)
       .catch(() => setRadioSchedule(null));
     void fetchRadioSession(radioStationUrl)
-      .then(setRadioSession)
+      .then(applyRadioSession)
       .catch(() => setRadioSession(null));
     const interval = window.setInterval(() => {
       void fetchRadioState(radioStationUrl)
@@ -2570,7 +2842,7 @@ export function App() {
         .then(setRadioSchedule)
         .catch(() => undefined);
       void fetchRadioSession(radioStationUrl)
-        .then(setRadioSession)
+        .then(applyRadioSession)
         .catch(() => undefined);
     }, 12000);
 
@@ -2581,7 +2853,88 @@ export function App() {
         radioPromoteTimerRef.current = null;
       }
     };
-  }, [radioStationUrl]);
+  }, [radioStationUrl, isRadioPlaying]);
+
+  useEffect(() => {
+    const audio = radioAudioRef.current;
+    if (!audio) return;
+
+    function reconnectRadio() {
+      radioWatchdogTimerRef.current = null;
+      const audio = radioAudioRef.current;
+      if (!audio || !radioStationUrl || audio.paused || !audio.src) return;
+
+      if (audio.readyState >= HAVE_FUTURE_DATA && audio.currentTime > radioWatchdogArmedAtRef.current) {
+        radioRetryCountRef.current = 0;
+        setRadioStatus("playing");
+        return;
+      }
+
+      const myGeneration = radioGenerationRef.current;
+      const delay = Math.min(RADIO_RECONNECT_BASE_MS * 2 ** radioRetryCountRef.current, RADIO_RECONNECT_MAX_MS);
+      radioRetryCountRef.current += 1;
+      audio.src = buildRadioPlaybackUrl(radioStationUrl);
+      audio.volume = radioVolume;
+      setRadioStatus("checking");
+      setRadioMessage("Reconnecting radio...");
+
+      void audio.play().then(() => {
+        if (radioGenerationRef.current !== myGeneration) return;
+        radioRetryCountRef.current = 0;
+        setSuppressLocalFooter(false);
+        setRadioStatus("playing");
+        setRadioMessage("");
+      }).catch(() => {
+        if (radioGenerationRef.current !== myGeneration) return;
+        radioWatchdogArmedAtRef.current = audio.currentTime;
+        radioWatchdogTimerRef.current = window.setTimeout(reconnectRadio, delay);
+      });
+    }
+
+    function armRadioWatchdog(delay = 5000) {
+      const activeAudio = radioAudioRef.current;
+      if (!activeAudio || !radioStationUrl || activeAudio.paused || !activeAudio.src) return;
+      clearRadioWatchdog();
+      radioWatchdogArmedAtRef.current = activeAudio.currentTime;
+      radioWatchdogTimerRef.current = window.setTimeout(reconnectRadio, delay);
+    }
+
+    function handlePlaying() {
+      clearRadioWatchdog();
+      radioRetryCountRef.current = 0;
+      setRadioStatus("playing");
+      setRadioMessage("");
+    }
+
+    function handleWaiting() {
+      setRadioStatus((currentStatus) => (currentStatus === "playing" ? "checking" : currentStatus));
+      armRadioWatchdog();
+    }
+
+    function handleStalled() {
+      armRadioWatchdog();
+    }
+
+    function handleError() {
+      const activeAudio = radioAudioRef.current;
+      if (!activeAudio || !radioStationUrl || activeAudio.paused || !activeAudio.src) return;
+      const delay = Math.min(RADIO_RECONNECT_BASE_MS * 2 ** radioRetryCountRef.current, RADIO_RECONNECT_MAX_MS);
+      armRadioWatchdog(delay);
+    }
+
+    audio.addEventListener("playing", handlePlaying);
+    audio.addEventListener("waiting", handleWaiting);
+    audio.addEventListener("stalled", handleStalled);
+    audio.addEventListener("error", handleError);
+
+    return () => {
+      clearRadioWatchdog();
+      audio.removeEventListener("playing", handlePlaying);
+      audio.removeEventListener("waiting", handleWaiting);
+      audio.removeEventListener("stalled", handleStalled);
+      audio.removeEventListener("error", handleError);
+    };
+  }, [radioStationUrl, radioVolume]);
 
   useEffect(() => {
     if (!isRadioPlaying) return;
@@ -2781,7 +3134,7 @@ export function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentTrack?.duration, playerDuration, position, queue.length, isPlaying, currentStreamUrl]);
+  }, [currentTrack?.duration, playerDuration, position, queue.length, isPlaying, currentStreamUrl, isRadioPlaying]);
 
   useEffect(() => {
     function closeContextMenus(event: PointerEvent) {
@@ -2879,6 +3232,14 @@ export function App() {
     : "Live broadcast";
   const seekDuration = isRadioPlaying ? (radioHasTimedTrack ? radioDuration : Math.max(radioElapsed, 1)) : playerDuration || currentTrack?.duration || 0;
   const seekPosition = isRadioPlaying ? (radioHasTimedTrack ? Math.min(radioElapsed, radioDuration) : 0) : position;
+  const radioScheduleMenuItems = radioScheduleItems(radioSchedule, radioClockNow);
+  const radioBoothLines = radioBoothHistory.slice(-12).reverse();
+  const radioCanLike = radioLikeStatus?.enabled !== false && Boolean(radioNowPlayingSongId);
+  const radioIsLiked = Boolean(radioLikeStatus?.liked && (!radioLikeStatus.songId || radioLikeStatus.songId === radioNowPlayingSongId));
+
+  useEffect(() => {
+    if (!isRadioPlaying) setRadioPopover(null);
+  }, [isRadioPlaying]);
 
   return (
     <main
@@ -3097,9 +3458,7 @@ export function App() {
             radioStatus={radioStatus}
             radioMessage={radioMessage}
             radioWaveformBars={radioWaveformBars}
-            refreshRadio={refreshRadio}
             tuneInRadio={tuneInRadio}
-            tuneOutRadio={tuneOutRadio}
             libraryItems={libraryItems}
             albums={libraryData.albums}
             recentAlbums={libraryData.recentAlbums}
@@ -3165,9 +3524,9 @@ export function App() {
           onPlay={() => setRadioStatus("playing")}
           onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
           onError={() => {
-            setSuppressLocalFooter(true);
-            setRadioStatus("error");
-            setRadioMessage("The radio stream failed.");
+            if (!radioAudioRef.current?.src) return;
+            setRadioStatus("checking");
+            setRadioMessage("Reconnecting radio...");
           }}
         />
 
@@ -3228,49 +3587,144 @@ export function App() {
         </div>
 
         <div className="player-center">
-          <div className="transport">
-            <button
-              className={shuffleEnabled ? "active" : ""}
-              type="button"
-              aria-label={shuffleEnabled ? "Disable shuffle" : "Enable shuffle"}
-              aria-pressed={shuffleEnabled}
-              onClick={() => setShuffleEnabled((enabled) => !enabled)}
-              disabled={isRadioPlaying || queue.length < 2}
-              title="Shuffle"
-            >
-              <Shuffle size={15} />
-            </button>
-            <button type="button" aria-label="Previous" onClick={playPrevious} disabled={isRadioPlaying || !queue.length || currentIndex === 0}>
-              <SkipBack size={16} />
-            </button>
-            <button
-              className="play-button"
-              type="button"
-              aria-label={isRadioPlaying || isPlaying ? "Pause" : "Play"}
-              onClick={isRadioPlaying ? () => tuneOutRadio() : togglePlayback}
-              disabled={!isRadioPlaying && !queue.length}
-            >
-              {isRadioPlaying || isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-            </button>
-            <button
-              type="button"
-              aria-label="Next"
-              onClick={() => playNext(false)}
-              disabled={isRadioPlaying || !queue.length || (!config && !shuffleEnabled && repeatMode !== "all" && currentIndex >= queue.length - 1)}
-            >
-              <SkipForward size={16} />
-            </button>
-            <button
-              className={repeatMode !== "off" ? "active" : ""}
-              type="button"
-              aria-label={`Repeat ${repeatMode}`}
-              aria-pressed={repeatMode !== "off"}
-              onClick={cycleRepeatMode}
-              disabled={isRadioPlaying || !queue.length}
-              title={repeatMode === "off" ? "Repeat off" : repeatMode === "all" ? "Repeat all" : "Repeat one"}
-            >
-              {repeatMode === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
-            </button>
+          <div className={`transport ${isRadioPlaying ? "radio-transport" : ""}`}>
+            {isRadioPlaying ? (
+              <>
+                <button
+                  className={radioPopover === "schedule" ? "active" : ""}
+                  type="button"
+                  aria-label="Show radio schedule"
+                  aria-expanded={radioPopover === "schedule"}
+                  onClick={() => setRadioPopover((open) => (open === "schedule" ? null : "schedule"))}
+                  title="Schedule"
+                >
+                  <CalendarDays size={15} />
+                </button>
+                <button
+                  className={radioPopover === "request" ? "active" : ""}
+                  type="button"
+                  aria-label="Request a song"
+                  aria-expanded={radioPopover === "request"}
+                  onClick={() => setRadioPopover((open) => (open === "request" ? null : "request"))}
+                  title="Request"
+                >
+                  <Send size={15} />
+                </button>
+                <button className="play-button" type="button" aria-label="Stop radio" onClick={() => tuneOutRadio()} title="Stop radio">
+                  <Square size={17} fill="currentColor" />
+                </button>
+                <button
+                  className={radioIsLiked ? "active" : ""}
+                  type="button"
+                  aria-label={radioIsLiked ? "Track liked" : "Like this Subwave track"}
+                  aria-pressed={radioIsLiked}
+                  onClick={likeCurrentRadioTrack}
+                  disabled={!radioCanLike || radioLikeBusy || radioIsLiked}
+                  title={radioIsLiked ? "Liked" : "Like this track"}
+                >
+                  {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
+                </button>
+                <button
+                  className={radioPopover === "booth" ? "active" : ""}
+                  type="button"
+                  aria-label="Show booth feed"
+                  aria-expanded={radioPopover === "booth"}
+                  onClick={() => setRadioPopover((open) => (open === "booth" ? null : "booth"))}
+                  title="Booth feed"
+                >
+                  <Mic2 size={15} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className={shuffleEnabled ? "active" : ""}
+                  type="button"
+                  aria-label={shuffleEnabled ? "Disable shuffle" : "Enable shuffle"}
+                  aria-pressed={shuffleEnabled}
+                  onClick={() => setShuffleEnabled((enabled) => !enabled)}
+                  disabled={queue.length < 2}
+                  title="Shuffle"
+                >
+                  <Shuffle size={15} />
+                </button>
+                <button type="button" aria-label="Previous" onClick={playPrevious} disabled={!queue.length || currentIndex === 0}>
+                  <SkipBack size={16} />
+                </button>
+                <button className="play-button" type="button" aria-label={isPlaying ? "Pause" : "Play"} onClick={togglePlayback} disabled={!queue.length}>
+                  {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next"
+                  onClick={() => playNext(false)}
+                  disabled={!queue.length || (!config && !shuffleEnabled && repeatMode !== "all" && currentIndex >= queue.length - 1)}
+                >
+                  <SkipForward size={16} />
+                </button>
+                <button
+                  className={repeatMode !== "off" ? "active" : ""}
+                  type="button"
+                  aria-label={`Repeat ${repeatMode}`}
+                  aria-pressed={repeatMode !== "off"}
+                  onClick={cycleRepeatMode}
+                  disabled={!queue.length}
+                  title={repeatMode === "off" ? "Repeat off" : repeatMode === "all" ? "Repeat all" : "Repeat one"}
+                >
+                  {repeatMode === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+                </button>
+              </>
+            )}
+            {isRadioPlaying && radioPopover ? (
+              <div className={`radio-control-popover ${radioPopover === "schedule" ? "schedule-popover" : ""}`} role="menu">
+                <div className="radio-control-popover-title">
+                  <span>{radioPopover === "schedule" ? "Schedule" : radioPopover === "request" ? "Request" : "Booth Feed"}</span>
+                  <button type="button" aria-label="Close" onClick={() => setRadioPopover(null)}>
+                    <X size={14} />
+                  </button>
+                </div>
+                {radioPopover === "schedule" ? (
+                  radioScheduleMenuItems.length ? (
+                    <div className="radio-popover-list radio-schedule-popover-list">
+                      {radioScheduleMenuItems.map((item) => (
+                        <div className={`radio-schedule-popover-row ${item.isCurrent ? "current" : ""}`} key={item.key}>
+                          <span>{item.time}</span>
+                          <div>
+                            <strong>{item.showName}</strong>
+                            {item.djName ? <small>with {item.djName}</small> : null}
+                            {item.detail ? <p>{item.detail}</p> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="radio-popover-empty">Schedule unavailable.</p>
+                  )
+                ) : radioPopover === "request" ? (
+                  <RadioRequestPopover
+                    stationUrl={radioStationUrl}
+                    onClose={() => setRadioPopover(null)}
+                    onResolved={() => {
+                      if (!radioStationUrl) return;
+                      void fetchRadioState(radioStationUrl)
+                        .then(applyRadioStationState)
+                        .catch(() => undefined);
+                    }}
+                  />
+                ) : radioBoothLines.length ? (
+                  <div className="radio-popover-list">
+                    {radioBoothLines.map((line, index) => (
+                      <div className="radio-booth-popover-row" key={`${line.t ?? "line"}-${index}`}>
+                        <span>{relativeRadioTurnTime(line)}</span>
+                        <p>{line.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="radio-popover-empty">Quiet in the booth.</p>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className="seek-row">
             <span>{formatDuration(isRadioPlaying ? radioElapsed : position)}</span>
@@ -3615,6 +4069,10 @@ function RightSidebar({
     activeLyricRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [activeLyricIndex, tab]);
 
+  useEffect(() => {
+    if (isRadioSession && tab === "nowPlaying") setTab("queue");
+  }, [isRadioSession, setTab, tab]);
+
   const progressLabel =
     isRadioPlaying && radioNowPlaying
       ? radioDuration
@@ -3624,7 +4082,8 @@ function RightSidebar({
       ? `${formatDuration(position)} / ${formatDuration(playerDuration || currentTrack.duration)}`
       : "Nothing playing";
   const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
-  const headingLabel = tab === "queue" ? "Queue" : tab === "lyrics" ? "Lyrics" : "Now Playing";
+  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : tab === "lyrics" ? "Lyrics" : "Now Playing";
+  const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
 
   return (
     <aside className="right-sidebar" aria-label="Now playing and queue">
@@ -3635,15 +4094,17 @@ function RightSidebar({
         </div>
       </div>
 
-      <div className="right-tabs" role="tablist" aria-label="Right panel">
+      <div className={`right-tabs ${isRadioSession ? "radio-tabs" : ""}`} role="tablist" aria-label="Right panel">
         <button className={tab === "queue" ? "active" : ""} type="button" onClick={() => setTab("queue")}>
           <ListMusic size={15} />
-          Queue
+          {queueTabLabel}
         </button>
-        <button className={tab === "nowPlaying" ? "active" : ""} type="button" onClick={() => setTab("nowPlaying")}>
-          <Music2 size={15} />
-          Now Playing
-        </button>
+        {!isRadioSession ? (
+          <button className={tab === "nowPlaying" ? "active" : ""} type="button" onClick={() => setTab("nowPlaying")}>
+            <Music2 size={15} />
+            Now Playing
+          </button>
+        ) : null}
         <button className={tab === "lyrics" ? "active" : ""} type="button" onClick={() => setTab("lyrics")}>
           <Music2 size={15} />
           Lyrics
@@ -3652,17 +4113,17 @@ function RightSidebar({
 
       {tab === "queue" ? (
         <div className="right-panel-section queue-panel-section">
-          <div className="queue-heading">
-            <p className="eyebrow">{isRadioSession ? "Radio Timeline" : "Now + Next"}</p>
-            {!isRadioSession ? (
+          {!isRadioSession ? (
+            <div className="queue-heading">
+              <p className="eyebrow">Now + Next</p>
               <div className="queue-heading-actions">
                 <span>{displayedQueue.length ? `${displayedQueue.length} tracks` : "Empty"}</span>
                 <button type="button" onClick={onClearQueue} disabled={!queue.length}>
                   Clear
                 </button>
               </div>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           <div className="queue-list right-queue-list">
             {isRadioSession ? (
               hasRadioQueuePayload ? (
@@ -3677,15 +4138,15 @@ function RightSidebar({
                   ) : null}
                   {radioNowPlaying ? (
                     <div className="radio-queue-section">
-                      <p>On air</p>
-                      <RadioQueueRow track={radioNowPlaying} marker="Now" tone="current" />
+                      <p className="radio-on-air-label">On air</p>
+                      <RadioQueueRow track={radioNowPlaying} tone="current" />
                     </div>
                   ) : null}
                   {radioUpcoming.length ? (
                     <div className="radio-queue-section">
                       <p>Up next</p>
                       {radioUpcoming.slice(0, 8).map((track, index) => (
-                        <RadioQueueRow track={track} marker={`${index + 1}`} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                        <RadioQueueRow track={track} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
                       ))}
                     </div>
                   ) : null}
@@ -3867,15 +4328,21 @@ function RightSidebar({
   );
 }
 
-function RadioQueueRow({ track, marker, tone = "next" }: { track: RadioTrack; marker?: string; tone?: "previous" | "current" | "next" }) {
+function RadioQueueRow({ track, tone = "next" }: { track: RadioTrack; tone?: "previous" | "current" | "next" }) {
+  const metaArtist = track.artist ?? track.album ?? "Subwave";
+  const metaStatus = track.requestedBy ? "Request" : track.duration ? formatDuration(track.duration) : "";
+
   return (
-    <div className={`queue-row radio-queue-row ${tone} ${marker ? "" : "no-marker"}`}>
-      {marker ? <small>{marker}</small> : null}
+    <div className={`queue-row radio-queue-row ${tone}`}>
       <div className="queue-track">
-        <strong>{track.title ?? "Unknown track"}</strong>
-        <small>{track.artist ?? track.album ?? "Subwave"}</small>
+        <strong>
+          <span>{track.title ?? "Unknown track"}</span>
+        </strong>
+        <div className="radio-queue-meta">
+          <small>{metaArtist}</small>
+          {metaStatus ? <small>{metaStatus}</small> : null}
+        </div>
       </div>
-      {track.duration ? <small>{formatDuration(track.duration)}</small> : null}
     </div>
   );
 }
@@ -4445,6 +4912,153 @@ function FirstRunWizard({
   );
 }
 
+function radioRequestAck(result: RadioRequestResult, fallback: string) {
+  if (result.ack) return result.ack;
+  const track = result.track;
+  const queuePosition = typeof result.queuePosition === "number" && result.queuePosition > 0 ? ` - #${result.queuePosition} in the queue` : "";
+  if (track?.title) return `Lining up ${track.title}${track.artist ? ` by ${track.artist}` : ""}${queuePosition}.`;
+  return result.message ?? fallback;
+}
+
+function RadioRequestPopover({
+  stationUrl,
+  onClose,
+  onResolved,
+}: {
+  stationUrl: string;
+  onClose: () => void;
+  onResolved: () => void;
+}) {
+  const [requestText, setRequestText] = useState("");
+  const [requesterName, setRequesterName] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const pollTimerRef = useRef<number | null>(null);
+  const pollStopRef = useRef(false);
+
+  function stopPolling() {
+    pollStopRef.current = true;
+    if (pollTimerRef.current != null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
+  useEffect(() => stopPolling, []);
+
+  function startPolling(requestId: string) {
+    pollStopRef.current = false;
+    const deadline = Date.now() + RADIO_REQUEST_POLL_DEADLINE_MS;
+
+    async function tick() {
+      if (pollStopRef.current || Date.now() > deadline) return;
+      const result = await fetchRadioRequestStatus(stationUrl, requestId);
+      if (pollStopRef.current) return;
+
+      if (result?.status === "resolved") {
+        setStatus("sent");
+        setMessage(radioRequestAck(result, "Request received - the DJ has it."));
+        onResolved();
+        return;
+      }
+
+      if (result?.status === "failed") {
+        setStatus("error");
+        setMessage(result.message ?? "The booth waved this one off.");
+        return;
+      }
+
+      if (result?.status === "unknown") return;
+      pollTimerRef.current = window.setTimeout(tick, RADIO_REQUEST_POLL_INTERVAL_MS);
+    }
+
+    pollTimerRef.current = window.setTimeout(tick, RADIO_REQUEST_POLL_INTERVAL_MS);
+  }
+
+  async function submitRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedText = requestText.trim();
+    if (!trimmedText || status === "sending") return;
+
+    stopPolling();
+    setStatus("sending");
+    setMessage("");
+
+    try {
+      const result = await submitRadioRequest(stationUrl, trimmedText, requesterName.trim());
+      if (!result.success) {
+        setStatus("error");
+        setMessage(result.message ?? "The booth could not take that request.");
+        return;
+      }
+
+      setRequestText("");
+      setStatus("sent");
+      setMessage(radioRequestAck(result, "Request received - the DJ has it."));
+      if (result.requestId) startPolling(result.requestId);
+      onResolved();
+    } catch {
+      setStatus("error");
+      setMessage("The booth line is down - try again in a moment.");
+    }
+  }
+
+  function newRequest() {
+    stopPolling();
+    setStatus("idle");
+    setMessage("");
+  }
+
+  const hasReceipt = status === "sent" || (status === "error" && message);
+
+  return (
+    <div className="radio-request-popover">
+      {hasReceipt ? (
+        <div className="radio-request-receipt">
+          <p className={status === "error" ? "bad" : ""}>{message}</p>
+          <button className="secondary-button compact-button" type="button" onClick={newRequest}>
+            <Send size={15} />
+            New Request
+          </button>
+        </div>
+      ) : (
+        <form className="radio-request-form" onSubmit={submitRequest}>
+          <label>
+            <span>Request</span>
+            <textarea
+              value={requestText}
+              onChange={(event) => setRequestText(event.target.value)}
+              placeholder="Song, artist, or vibe..."
+              maxLength={200}
+              autoFocus
+            />
+          </label>
+          <label>
+            <span>Name</span>
+            <input
+              value={requesterName}
+              onChange={(event) => setRequesterName(event.target.value)}
+              placeholder="Optional"
+              maxLength={40}
+            />
+          </label>
+          <div className="radio-request-actions">
+            <button className="secondary-button compact-button" type="button" disabled={status === "sending"} onClick={onClose}>
+              <X size={15} />
+              Cancel
+            </button>
+            <button className="connect-button compact-button" type="submit" disabled={status === "sending" || !requestText.trim()}>
+              {status === "sending" ? <Loader2 size={15} className="spin" /> : <Send size={15} />}
+              Send
+            </button>
+          </div>
+          {message ? <p className={`radio-request-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
+        </form>
+      )}
+    </div>
+  );
+}
+
 function RadioView({
   appSettings,
   onSelectStation,
@@ -4455,9 +5069,7 @@ function RadioView({
   status,
   message,
   waveformBars,
-  refreshRadio,
   tuneIn,
-  tuneOut,
 }: {
   appSettings: AppSettings;
   onSelectStation: (stationUrl: string) => void;
@@ -4468,12 +5080,57 @@ function RadioView({
   status: RadioStatus;
   message: string;
   waveformBars: number[];
-  refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneIn: () => Promise<void>;
-  tuneOut: () => void;
 }) {
   const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const savedStations = appSettings.radioStationUrls;
+  const isPlaying = status === "playing";
+  const isTuning = status === "checking";
+  const selectedStationLabel = stationUrl ? stationUrl.replace(/^https?:\/\//, "") : "No station selected";
+
+  if (!isPlaying) {
+    return (
+      <section className="radio-view radio-tune-view">
+        <div className="radio-tune-gate">
+          <div className="radio-tune-mark" aria-hidden="true">
+            <RadioTower size={34} />
+          </div>
+          <div className="radio-tune-copy">
+            <p className="eyebrow">Radio</p>
+            <h3>Tune into Subwave</h3>
+            <span>{selectedStationLabel}</span>
+          </div>
+
+          <div className="radio-tune-controls">
+            <label className="radio-channel-select radio-tune-select">
+              <span>Channel</span>
+              <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={!savedStations.length || isTuning}>
+                {savedStations.length ? (
+                  savedStations.map((savedStationUrl) => (
+                    <option value={savedStationUrl} key={savedStationUrl}>
+                      {savedStationUrl.replace(/^https?:\/\//, "")}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No saved stations</option>
+                )}
+              </select>
+            </label>
+            <button className="connect-button radio-tune-button" type="button" onClick={() => void tuneIn()} disabled={!stationUrl || isTuning}>
+              {isTuning ? <Loader2 size={18} /> : <Play size={18} fill="currentColor" />}
+              {isTuning ? "Tuning In" : "Tune In"}
+            </button>
+            <button className="secondary-button compact-button" type="button" onClick={onOpenSettings}>
+              <Settings size={15} />
+              Stations
+            </button>
+          </div>
+          {status === "error" ? <p className="radio-status bad">{message}</p> : null}
+        </div>
+      </section>
+    );
+  }
+
   const nowPlaying = firstRadioTrack(stationState);
   const listenerCount = radioListenerCount(stationState);
   const stationName = radioStationName(stationState, stationUrl);
@@ -4489,12 +5146,17 @@ function RadioView({
     ? `${showTiming.nextShow?.name ?? "Autonomous"}${nextDjName ? ` with ${nextDjName}` : ""}`
     : "No later show";
   const coverUrl = buildRadioCoverUrl(stationUrl, nowPlaying);
-  const isPlaying = status === "playing";
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
   const radioTitleParts = splitFeaturedTitle(radioTitle);
   const latestVoice = latestRadioVoiceLine(session, nowPlaying);
   const latestVoiceAge = latestVoice ? relativeRadioTurnTime(latestVoice) : null;
+  const streamLabel = formatRadioStreamLabel(stationState?.stream?.bitrate, stationState?.stream?.format);
+  const nowPlayingDetails = [
+    nowPlaying?.album,
+    nowPlaying?.year ? String(nowPlaying.year) : "",
+    stationName,
+  ].filter(Boolean);
 
   return (
     <section className="radio-view">
@@ -4513,13 +5175,13 @@ function RadioView({
         </div>
 
         <div className="radio-copy">
-          <p className="eyebrow">{listenerCount == null ? "Radio" : `${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
+          <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
           <h3>
             <span>{radioTitleParts.main}</span>
             {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
           </h3>
           <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
-          {nowPlaying?.album ? <p className="radio-album">{nowPlaying.album}{nowPlaying.year ? ` / ${nowPlaying.year}` : ""}</p> : null}
+          {nowPlayingDetails.length ? <p className="radio-album">{nowPlayingDetails.join(" / ")}</p> : null}
 
           {savedStations.length > 1 ? (
             <label className="radio-channel-select">
@@ -4541,21 +5203,6 @@ function RadioView({
             </div>
             <p>{latestVoice?.text ?? "Quiet in the booth..."}</p>
           </div>
-
-          <div className="radio-controls">
-            <button className="connect-button compact-button" type="button" onClick={isPlaying ? () => tuneOut() : () => void tuneIn()}>
-              {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-              {isPlaying ? "Tune Out" : "Tune In"}
-            </button>
-            <button className="secondary-button compact-button" type="button" onClick={() => void refreshRadio()}>
-              <RadioTower size={15} />
-              Refresh
-            </button>
-            <button className="icon-button" type="button" onClick={onOpenSettings} aria-label="Radio settings" title="Radio settings">
-              <Settings size={16} />
-            </button>
-          </div>
-          {status === "error" ? <p className="radio-status bad">{message}</p> : null}
         </div>
 
         {visualEffectsEnabled ? (
@@ -4577,6 +5224,11 @@ function RadioView({
             <strong>{nextShowLine}</strong>
             {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
           </div>
+          <div>
+            <span>Stream</span>
+            <strong>{stationName}</strong>
+            <small>{listenerCount ?? "0"} listener{listenerCount === 1 ? "" : "s"} / {streamLabel}</small>
+          </div>
         </div>
       </div>
     </section>
@@ -4597,9 +5249,7 @@ function LibraryView({
   radioStatus,
   radioMessage,
   radioWaveformBars,
-  refreshRadio,
   tuneInRadio,
-  tuneOutRadio,
   libraryItems,
   albums,
   recentAlbums,
@@ -4654,9 +5304,7 @@ function LibraryView({
   radioStatus: RadioStatus;
   radioMessage: string;
   radioWaveformBars: number[];
-  refreshRadio: (nextUrl?: string) => Promise<RadioStationState | null>;
   tuneInRadio: () => Promise<void>;
-  tuneOutRadio: () => void;
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   recentAlbums: Album[];
@@ -4710,9 +5358,7 @@ function LibraryView({
         status={radioStatus}
         message={radioMessage}
         waveformBars={radioWaveformBars}
-        refreshRadio={refreshRadio}
         tuneIn={tuneInRadio}
-        tuneOut={tuneOutRadio}
       />
     );
   }
