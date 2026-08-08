@@ -3724,7 +3724,9 @@ button.similar-chip:hover,
 }
 
 .queue-row.dragging {
-  opacity: 0.52;
+  outline: 1px dashed rgba(242, 217, 133, 0.24);
+  outline-offset: -2px;
+  opacity: 0.24;
 }
 
 .radio-queue-row {
@@ -3896,6 +3898,55 @@ button.similar-chip:hover,
   padding: 14px 8px;
   color: rgba(244, 241, 236, 0.52);
   font-size: 12px;
+}
+
+.queue-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid rgba(242, 217, 133, 0.22);
+  border-radius: 8px;
+  background: rgba(47, 42, 38, 0.94);
+  color: #f8df91;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+}
+
+.queue-drag-ghost > svg {
+  color: rgba(244, 241, 236, 0.72);
+}
+
+.queue-drag-ghost div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.queue-drag-ghost strong,
+.queue-drag-ghost small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-drag-ghost strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.queue-drag-ghost small {
+  color: rgba(244, 241, 236, 0.62);
+  font-size: 10px;
+}
+
+.queue-drag-ghost > small {
+  text-align: right;
 }
 
 .song-context-menu {

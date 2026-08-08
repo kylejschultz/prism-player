@@ -232,6 +232,7 @@ type RadioLikeStatus = {
   count?: number;
   ok?: boolean;
   alreadyLiked?: boolean;
+  removed?: boolean;
   error?: string;
 };
 
@@ -1151,6 +1152,23 @@ async function submitRadioLike(stationUrl: string, songId: string): Promise<Radi
   }
 }
 
+async function submitRadioUnlike(stationUrl: string, songId: string): Promise<RadioLikeStatus | null> {
+  const origin = normalizeStationUrl(stationUrl);
+  if (!origin || !songId) return null;
+
+  try {
+    const response = await fetch(buildRadioApiUrl(origin, "like"), {
+      method: "DELETE",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ songId }),
+    });
+    return (await response.json()) as RadioLikeStatus;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchRadioSchedule(stationUrl: string): Promise<RadioSchedulePayload> {
   const origin = normalizeStationUrl(stationUrl);
   if (!origin) throw new Error("Enter a valid Subwave station URL.");
@@ -1666,8 +1684,24 @@ export function App() {
     return new Map(playlists.map((playlist) => [playlist.id, playlist]));
   }, [libraryData.playlists, searchResults.playlists]);
   const displayedQueue = useMemo(() => {
-    return queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0));
-  }, [currentIndex, queue]);
+    const items = queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0));
+    const draggedDisplayIndex = items.findIndex((item) => item.index === draggedQueueIndex);
+    const dragOverDisplayIndex = items.findIndex((item) => item.index === dragOverQueueIndex);
+
+    if (
+      draggedQueueIndex == null ||
+      dragOverQueueIndex == null ||
+      draggedQueueIndex === dragOverQueueIndex ||
+      draggedDisplayIndex < 0 ||
+      dragOverDisplayIndex < 0
+    ) {
+      return items;
+    }
+
+    const [draggedItem] = items.splice(draggedDisplayIndex, 1);
+    items.splice(dragOverDisplayIndex, 0, draggedItem);
+    return items;
+  }, [currentIndex, dragOverQueueIndex, draggedQueueIndex, queue]);
   const libraryItems = useMemo(
     () => [
       { label: "Artists", value: hasConfig ? `${libraryData.artists.length} loaded` : "Needs server" },
@@ -2280,6 +2314,24 @@ export function App() {
 
     setRadioLikeBusy(true);
     try {
+      if (radioIsLiked) {
+        const result = await submitRadioUnlike(radioStationUrl, radioNowPlayingSongId);
+        if (result?.ok || result?.liked === false || result?.removed) {
+          setRadioLikeStatus({
+            ...result,
+            enabled: result.enabled ?? radioLikeStatus?.enabled ?? true,
+            songId: result.songId ?? radioNowPlayingSongId,
+            liked: false,
+            count: result.count ?? radioLikeStatus?.count ?? 0,
+          });
+          return;
+        }
+
+        const status = await fetchRadioLikeStatus(radioStationUrl);
+        setRadioLikeStatus(status);
+        return;
+      }
+
       const result = await submitRadioLike(radioStationUrl, radioNowPlayingSongId);
       if (result?.ok || result?.alreadyLiked || result?.liked) {
         setRadioLikeStatus({
@@ -3636,11 +3688,11 @@ export function App() {
                 <button
                   className={radioIsLiked ? "active" : ""}
                   type="button"
-                  aria-label={radioIsLiked ? "Track liked" : "Like this Subwave track"}
+                  aria-label={radioIsLiked ? "Unlike this Subwave track" : "Like this Subwave track"}
                   aria-pressed={radioIsLiked}
                   onClick={likeCurrentRadioTrack}
-                  disabled={!radioCanLike || radioLikeBusy || radioIsLiked}
-                  title={radioIsLiked ? "Liked" : "Like this track"}
+                  disabled={!radioCanLike || radioLikeBusy}
+                  title={radioIsLiked ? "Unlike this track" : "Like this track"}
                 >
                   {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
                 </button>
@@ -4071,6 +4123,15 @@ function RightSidebar({
   const recentRadioHistory = radioHistory.slice(0, 5).reverse();
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const latestDragOverQueueIndexRef = useRef<number | null>(dragOverQueueIndex);
+  const [queueDragGhost, setQueueDragGhost] = useState<{
+    song: Song;
+    width: number;
+    height: number;
+    left: number;
+    top: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const activeLyricIndex = useMemo(() => {
     const elapsedMs = Math.max(0, position * 1000);
     let active = -1;
@@ -4109,10 +4170,20 @@ function RightSidebar({
   const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
   const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : tab === "lyrics" ? "Lyrics" : "Now Playing";
   const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
-  const queueIndexFromPointer = (event: PointerEvent) => {
-    const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-queue-index]");
-    const index = Number(row?.dataset.queueIndex);
-    return Number.isInteger(index) ? index : null;
+  const queueIndexFromPointer = (event: PointerEvent, sourceIndex: number) => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
+      .map((row) => ({ row, index: Number(row.dataset.queueIndex) }))
+      .filter((entry) => Number.isInteger(entry.index) && entry.index !== sourceIndex);
+
+    if (!rows.length) return sourceIndex;
+
+    let target = sourceIndex;
+    for (const { row, index } of rows) {
+      const rect = row.getBoundingClientRect();
+      if (event.clientY < rect.top + rect.height / 2) return index;
+      target = index;
+    }
+    return target;
   };
   const setQueueDropTarget = (index: number) => {
     latestDragOverQueueIndexRef.current = index;
@@ -4123,24 +4194,40 @@ function RightSidebar({
     if (!queue[index]) return;
     event.preventDefault();
     event.stopPropagation();
+    const row = event.currentTarget.closest<HTMLElement>("[data-queue-index]");
+    const rowRect = row?.getBoundingClientRect();
+    if (rowRect) {
+      setQueueDragGhost({
+        song: queue[index],
+        width: rowRect.width,
+        height: rowRect.height,
+        left: rowRect.left,
+        top: rowRect.top,
+        offsetX: event.clientX - rowRect.left,
+        offsetY: event.clientY - rowRect.top,
+      });
+    }
     setDraggedQueueIndex(index);
     setQueueDropTarget(index);
 
     const handleMove = (moveEvent: PointerEvent) => {
       moveEvent.preventDefault();
-      const nextIndex = queueIndexFromPointer(moveEvent);
+      setQueueDragGhost((ghost) => ghost ? { ...ghost, left: moveEvent.clientX - ghost.offsetX, top: moveEvent.clientY - ghost.offsetY } : ghost);
+      const nextIndex = queueIndexFromPointer(moveEvent, index);
       if (nextIndex != null) setQueueDropTarget(nextIndex);
     };
     const handleEnd = (upEvent: PointerEvent) => {
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleEnd);
       document.removeEventListener("pointercancel", handleCancel);
-      onDropQueueItem(latestDragOverQueueIndexRef.current ?? queueIndexFromPointer(upEvent) ?? index, index);
+      setQueueDragGhost(null);
+      onDropQueueItem(latestDragOverQueueIndexRef.current ?? queueIndexFromPointer(upEvent, index) ?? index, index);
     };
     const handleCancel = () => {
       document.removeEventListener("pointermove", handleMove);
       document.removeEventListener("pointerup", handleEnd);
       document.removeEventListener("pointercancel", handleCancel);
+      setQueueDragGhost(null);
       setDraggedQueueIndex(null);
       setDragOverQueueIndex(null);
     };
@@ -4386,6 +4473,24 @@ function RightSidebar({
           )}
         </div>
       )}
+      {queueDragGhost ? (
+        <div
+          className="queue-drag-ghost"
+          style={{
+            width: queueDragGhost.width,
+            height: queueDragGhost.height,
+            transform: `translate3d(${queueDragGhost.left}px, ${queueDragGhost.top}px, 0)`,
+          }}
+          aria-hidden="true"
+        >
+          <Menu size={14} />
+          <div>
+            <strong>{queueDragGhost.song.title}</strong>
+            <small>{queueDragGhost.song.artist ?? "Unknown artist"}</small>
+          </div>
+          <small>{formatDuration(queueDragGhost.song.duration)}</small>
+        </div>
+      ) : null}
     </aside>
   );
 }
