@@ -232,7 +232,6 @@ type RadioLikeStatus = {
   count?: number;
   ok?: boolean;
   alreadyLiked?: boolean;
-  removed?: boolean;
   error?: string;
 };
 
@@ -1142,23 +1141,6 @@ async function submitRadioLike(stationUrl: string, songId: string): Promise<Radi
   try {
     const response = await fetch(buildRadioApiUrl(origin, "like"), {
       method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ songId }),
-    });
-    return (await response.json()) as RadioLikeStatus;
-  } catch {
-    return null;
-  }
-}
-
-async function submitRadioUnlike(stationUrl: string, songId: string): Promise<RadioLikeStatus | null> {
-  const origin = normalizeStationUrl(stationUrl);
-  if (!origin || !songId) return null;
-
-  try {
-    const response = await fetch(buildRadioApiUrl(origin, "like"), {
-      method: "DELETE",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ songId }),
@@ -2314,24 +2296,6 @@ export function App() {
 
     setRadioLikeBusy(true);
     try {
-      if (radioIsLiked) {
-        const result = await submitRadioUnlike(radioStationUrl, radioNowPlayingSongId);
-        if (result?.ok || result?.liked === false || result?.removed) {
-          setRadioLikeStatus({
-            ...result,
-            enabled: result.enabled ?? radioLikeStatus?.enabled ?? true,
-            songId: result.songId ?? radioNowPlayingSongId,
-            liked: false,
-            count: result.count ?? radioLikeStatus?.count ?? 0,
-          });
-          return;
-        }
-
-        const status = await fetchRadioLikeStatus(radioStationUrl);
-        setRadioLikeStatus(status);
-        return;
-      }
-
       const result = await submitRadioLike(radioStationUrl, radioNowPlayingSongId);
       if (result?.ok || result?.alreadyLiked || result?.liked) {
         setRadioLikeStatus({
@@ -3688,11 +3652,11 @@ export function App() {
                 <button
                   className={radioIsLiked ? "active" : ""}
                   type="button"
-                  aria-label={radioIsLiked ? "Unlike this Subwave track" : "Like this Subwave track"}
+                  aria-label={radioIsLiked ? "Already liked this Subwave track" : "Like this Subwave track"}
                   aria-pressed={radioIsLiked}
                   onClick={likeCurrentRadioTrack}
-                  disabled={!radioCanLike || radioLikeBusy}
-                  title={radioIsLiked ? "Unlike this track" : "Like this track"}
+                  disabled={!radioCanLike || radioIsLiked || radioLikeBusy}
+                  title={radioIsLiked ? "Liked" : "Like this track"}
                 >
                   {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
                 </button>
