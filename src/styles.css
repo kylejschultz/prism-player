@@ -565,8 +565,12 @@ h1 {
 .workspace {
   grid-column: 2;
   grid-row: 1 / 2;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
   min-width: 0;
-  padding: 10px 20px 20px;
+  min-height: 0;
+  padding: 12px 20px 20px;
   overflow: hidden;
   background: linear-gradient(180deg, rgba(8, 8, 8, 0.16), rgba(8, 8, 8, 0.04) 48%, transparent);
 }
@@ -744,9 +748,17 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 38px;
-  margin-bottom: 6px;
-  padding-top: 2px;
+  min-height: 44px;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.workspace-viewport {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .topbar-actions {
@@ -896,8 +908,9 @@ h1 {
 }
 
 .browser-panel {
-  min-height: calc(100vh - 190px);
-  max-height: calc(100vh - 190px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -3770,10 +3783,13 @@ button.similar-chip:hover,
   width: 26px;
   height: 26px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: rgba(244, 241, 236, 0.42);
   cursor: grab;
+  opacity: 0;
+  touch-action: none;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
 }
 
 .queue-drag-handle:active {
@@ -3782,6 +3798,7 @@ button.similar-chip:hover,
 
 .queue-row:hover .queue-drag-handle,
 .queue-row:focus-within .queue-drag-handle {
+  opacity: 1;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(244, 241, 236, 0.72);
 }
@@ -3848,6 +3865,8 @@ button.similar-chip:hover,
 .queue-row-actions {
   display: flex;
   justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 140ms ease;
 }
 
 .queue-row-actions button {
@@ -3856,10 +3875,15 @@ button.similar-chip:hover,
   width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
   color: rgba(244, 241, 236, 0.58);
   cursor: pointer;
+}
+
+.queue-row:hover .queue-row-actions,
+.queue-row:focus-within .queue-row-actions {
+  opacity: 1;
 }
 
 .queue-row-actions button:hover:not(:disabled),
@@ -4055,11 +4079,6 @@ button.similar-chip:hover,
   .analytics-banner {
     grid-template-columns: 30px minmax(0, 1fr) auto;
     gap: 10px;
-  }
-
-  .browser-panel {
-    min-height: calc(100vh - 184px);
-    max-height: calc(100vh - 184px);
   }
 
   .settings-layout {
