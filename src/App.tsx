@@ -51,6 +51,15 @@ type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
+function shuffled<T>(items: T[]) {
+  const next = [...items];
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+  }
+  return next;
+}
+
 type NavidromeConfig = {
   serverUrl: string;
   username: string;
@@ -1332,22 +1341,6 @@ async function fetchLyrics(config: NavidromeConfig, song: Song) {
   return normalizeLyrics(response);
 }
 
-async function fetchAutoplaySongs(config: NavidromeConfig, seedSong: Song) {
-  const similarResponse = await navidromeRequest<{ similarSongs2?: { song?: Song[] } }>(config, "getSimilarSongs2", {
-    id: seedSong.id,
-    count: "25",
-  }).catch(() => null);
-
-  const similarSongs = similarResponse?.similarSongs2?.song ?? [];
-  if (similarSongs.length) return similarSongs;
-
-  const randomResponse = await navidromeRequest<{ randomSongs?: { song?: Song[] } }>(config, "getRandomSongs", {
-    size: "25",
-  });
-
-  return randomResponse.randomSongs?.song ?? [];
-}
-
 async function createPlaylist(config: NavidromeConfig, name: string, songs: Song[] = []) {
   await navidromeRequest(config, "createPlaylist", {
     name,
@@ -1536,6 +1529,7 @@ export function App() {
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
   const [queue, setQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
+  const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
@@ -1598,7 +1592,6 @@ export function App() {
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
-  const autoplayLoadingRef = useRef(false);
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
@@ -2429,8 +2422,13 @@ export function App() {
     tuneOutRadio();
     setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
-    setQueue(songs);
-    setCurrentIndex(Math.min(Math.max(startIndex, 0), songs.length - 1));
+    const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
+    const nextQueue = shuffleEnabled
+      ? [songs[safeStartIndex], ...shuffled(songs.filter((_, index) => index !== safeStartIndex))]
+      : songs;
+    setSourceQueue(songs);
+    setQueue(nextQueue);
+    setCurrentIndex(shuffleEnabled ? 0 : safeStartIndex);
     resetPlaybackPosition();
     setPlayerError("");
     setIsPlaying(true);
@@ -2438,6 +2436,7 @@ export function App() {
 
   function appendToQueue(song: Song) {
     setQueue((currentQueue) => [...currentQueue, song]);
+    setSourceQueue((currentSourceQueue) => [...currentSourceQueue, song]);
   }
 
   function insertNextInQueue(song: Song) {
@@ -2446,6 +2445,12 @@ export function App() {
       const nextQueue = [...currentQueue];
       nextQueue.splice(currentIndex + 1, 0, song);
       return nextQueue;
+    });
+    setSourceQueue((currentSourceQueue) => {
+      const sourceIndex = currentTrack ? currentSourceQueue.indexOf(currentTrack) : -1;
+      const nextSourceQueue = [...currentSourceQueue];
+      nextSourceQueue.splice(sourceIndex >= 0 ? sourceIndex + 1 : nextSourceQueue.length, 0, song);
+      return nextSourceQueue;
     });
   }
 
@@ -2465,46 +2470,11 @@ export function App() {
 
     scrobbledPlayRef.current = "";
     setQueue((currentQueue) => [...currentQueue, song]);
+    setSourceQueue((currentSourceQueue) => [...currentSourceQueue, song]);
     setCurrentIndex(queue.length);
     resetPlaybackPosition();
     setPlayerError("");
     setIsPlaying(true);
-  }
-
-  function getRandomQueueIndex() {
-    if (queue.length <= 1) return currentIndex;
-
-    const availableIndexes = queue.map((_, index) => index).filter((index) => index !== currentIndex);
-    return availableIndexes[Math.floor(Math.random() * availableIndexes.length)] ?? currentIndex;
-  }
-
-  async function continueAutoplay(seedTrack: Song) {
-    if (!config || autoplayLoadingRef.current) return false;
-
-    autoplayLoadingRef.current = true;
-
-    try {
-      const autoplaySongs = await fetchAutoplaySongs(config, seedTrack);
-      const queuedIds = new Set(queue.map((song) => song.id));
-      const nextSongs = autoplaySongs.filter((song) => !queuedIds.has(song.id));
-
-      if (!nextSongs.length) return false;
-
-      tuneOutRadio();
-      setSuppressLocalFooter(false);
-      audioRef.current?.pause();
-      scrobbledPlayRef.current = "";
-      resetPlaybackPosition();
-      setQueue((currentQueue) => [...currentQueue, ...nextSongs]);
-      setCurrentIndex(queue.length);
-      setPlayerError("");
-      setIsPlaying(true);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      autoplayLoadingRef.current = false;
-    }
   }
 
   function playNext(fromTrackEnd = false) {
@@ -2521,20 +2491,12 @@ export function App() {
       return;
     }
 
-    if (shuffleEnabled && queue.length > 1) {
-      audioRef.current?.pause();
-      scrobbledPlayRef.current = "";
-      setCurrentIndex(getRandomQueueIndex());
-      resetPlaybackPosition();
-      setPlayerError("");
-      setIsPlaying(true);
-      return;
-    }
-
     if (currentIndex >= queue.length - 1) {
       if (repeatMode === "all") {
         audioRef.current?.pause();
-        if (queue.length > 1) {
+        if (sourceQueue.length > 1) {
+          const nextQueue = shuffleEnabled ? shuffled(sourceQueue) : sourceQueue;
+          setQueue(nextQueue);
           scrobbledPlayRef.current = "";
           setCurrentIndex(0);
         } else {
@@ -2547,16 +2509,6 @@ export function App() {
         resetPlaybackPosition();
         setPlayerError("");
         setIsPlaying(true);
-        return;
-      }
-
-      if (config && currentTrack) {
-        void continueAutoplay(currentTrack).then((continued) => {
-          if (!continued) {
-            setIsPlaying(false);
-            seekTo(0);
-          }
-        });
         return;
       }
 
@@ -2640,6 +2592,24 @@ export function App() {
     setRepeatMode((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
   }
 
+  function toggleShuffle() {
+    if (queue.length < 2 || !currentTrack) return;
+
+    if (shuffleEnabled) {
+      const sourceIndex = sourceQueue.indexOf(currentTrack);
+      setQueue(sourceQueue);
+      setCurrentIndex(sourceIndex >= 0 ? sourceIndex : 0);
+      setShuffleEnabled(false);
+      return;
+    }
+
+    const sourceIndex = sourceQueue.indexOf(currentTrack);
+    const remaining = sourceQueue.filter((_, index) => index !== sourceIndex);
+    setQueue([currentTrack, ...shuffled(remaining)]);
+    setCurrentIndex(0);
+    setShuffleEnabled(true);
+  }
+
     function reorderQueueItem(fromIndex: number, insertAtIndex: number) {
       if (!queue[fromIndex]) return;
       const toIndex = insertAtIndex > fromIndex ? insertAtIndex - 1 : insertAtIndex;
@@ -2651,6 +2621,15 @@ export function App() {
       nextQueue.splice(toIndex, 0, movedSong);
       return nextQueue;
     });
+
+    if (!shuffleEnabled) {
+      setSourceQueue((currentSourceQueue) => {
+        const nextSourceQueue = [...currentSourceQueue];
+        const [movedSong] = nextSourceQueue.splice(fromIndex, 1);
+        nextSourceQueue.splice(toIndex, 0, movedSong);
+        return nextSourceQueue;
+      });
+    }
 
     if (currentIndex === fromIndex) {
       setCurrentIndex(toIndex);
@@ -2673,6 +2652,7 @@ export function App() {
 
     const removingCurrentTrack = index === currentIndex;
     setQueue((currentQueue) => currentQueue.filter((_, queueIndex) => queueIndex !== index));
+    setSourceQueue((currentSourceQueue) => currentSourceQueue.filter((song) => song !== queue[index]));
 
     if (queue.length <= 1) {
       audioRef.current?.pause();
@@ -2697,6 +2677,7 @@ export function App() {
   function clearQueue() {
     audioRef.current?.pause();
     setQueue([]);
+    setSourceQueue([]);
     setCurrentIndex(0);
     resetPlaybackPosition();
     setPlayerDuration(0);
@@ -2759,6 +2740,7 @@ export function App() {
     setSearchResults(emptySearchResults);
     setSearchStatus("idle");
     setQueue([]);
+    setSourceQueue([]);
     setLastPlayedTrack(null);
     setCurrentIndex(0);
     setIsPlaying(false);
@@ -3665,7 +3647,7 @@ export function App() {
                   type="button"
                   aria-label={shuffleEnabled ? "Disable shuffle" : "Enable shuffle"}
                   aria-pressed={shuffleEnabled}
-                  onClick={() => setShuffleEnabled((enabled) => !enabled)}
+                  onClick={toggleShuffle}
                   disabled={queue.length < 2}
                   title="Shuffle"
                 >
@@ -3681,7 +3663,7 @@ export function App() {
                   type="button"
                   aria-label="Next"
                   onClick={() => playNext(false)}
-                  disabled={!queue.length || (!config && !shuffleEnabled && repeatMode !== "all" && currentIndex >= queue.length - 1)}
+                  disabled={!queue.length || (repeatMode !== "all" && currentIndex >= queue.length - 1)}
                 >
                   <SkipForward size={16} />
                 </button>
