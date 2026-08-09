@@ -142,7 +142,7 @@ At a high level:
 
 ## Privacy
 
-Prism stores your server connection and local playback preferences in browser/app local storage. Optional anonymous analytics are opt-in and limited to install-level app metadata such as app version, install ID, platform, channel, and whether the build is a development or release build. Library, account, and playback data are not sent.
+Prism stores your server connection and local playback preferences in browser/app local storage. Optional anonymous analytics are opt-in and limited to install-level app metadata such as app version, install ID, platform, channel, whether the build is a development or release build, and aggregate artist, album, and song counts. Account and playback data are not sent.
 
 ## License
 

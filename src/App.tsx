@@ -39,6 +39,7 @@ import {
   Waves,
   X,
 } from "lucide-react";
+import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
@@ -317,7 +318,7 @@ const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
-const APP_VERSION = "0.1.0";
+const APP_VERSION = packageJson.version;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
 const HAVE_FUTURE_DATA = 3;
@@ -546,7 +547,17 @@ function isDevRuntime() {
   return Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 }
 
-async function sendAnalyticsPing() {
+function getLibraryStats(libraryData?: LibraryData) {
+  if (!libraryData) return {};
+
+  return {
+    artist_count: libraryData.artists.length,
+    album_count: libraryData.albums.length,
+    song_count: libraryData.albums.reduce((total, album) => total + (album.songCount ?? 0), 0),
+  };
+}
+
+async function sendAnalyticsPing(libraryData?: LibraryData) {
   const isDev = isDevRuntime();
 
   await fetch(BEACON_ENDPOINT, {
@@ -561,6 +572,7 @@ async function sendAnalyticsPing() {
       channel: isDev ? "dev" : "release",
       os: getRuntimePlatform(),
       dev: isDev,
+      ...getLibraryStats(libraryData),
     }),
   });
 }
@@ -1929,7 +1941,7 @@ export function App() {
     });
 
     if (enabled) {
-      void sendAnalyticsPing()
+      void sendAnalyticsPing(libraryData)
         .then(() => localStorage.setItem(ANALYTICS_LAST_PING_KEY, new Date().toISOString()))
         .catch(() => undefined);
     }
@@ -2790,6 +2802,7 @@ export function App() {
 
   useEffect(() => {
     if (!appSettings.analyticsEnabled) return;
+    if (config && libraryStatus !== "ready") return;
 
     const lastPing = localStorage.getItem(ANALYTICS_LAST_PING_KEY);
     const lastPingTime = lastPing ? new Date(lastPing).getTime() : 0;
@@ -2797,10 +2810,10 @@ export function App() {
 
     if (!shouldPing) return;
 
-    void sendAnalyticsPing()
+    void sendAnalyticsPing(libraryData)
       .then(() => localStorage.setItem(ANALYTICS_LAST_PING_KEY, new Date().toISOString()))
       .catch(() => undefined);
-  }, [appSettings.analyticsEnabled]);
+  }, [appSettings.analyticsEnabled, config, libraryData, libraryStatus]);
 
   useEffect(() => {
     if (!rightPanelOpen || rightPanelTab !== "lyrics") return;
@@ -4568,7 +4581,7 @@ function AnalyticsBanner({
       </div>
       <div>
         <strong>Help improve Prism</strong>
-        <p>Share anonymous install analytics through Beacon. No library, account, or playback data is sent.</p>
+        <p>Share anonymous install analytics through Beacon, including aggregate library counts. No account or playback data is sent.</p>
       </div>
       <div className="analytics-banner-actions">
         <button className="secondary-button compact-button" type="button" onClick={onDismiss}>
@@ -4868,7 +4881,7 @@ function SettingsView({
           <span>Share anonymous install analytics</span>
         </label>
         <p className="settings-note">
-          Sends a periodic Beacon ping with app version, install id, platform, channel, and dev/release flag. No library, account, or playback data is sent.
+          Sends a periodic Beacon ping with app version, install id, platform, channel, dev/release flag, and aggregate artist, album, and song counts. No account or playback data is sent.
         </p>
       </section> : null}
 
