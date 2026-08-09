@@ -1665,25 +1665,10 @@ export function App() {
     const playlists = [...libraryData.playlists, ...searchResults.playlists];
     return new Map(playlists.map((playlist) => [playlist.id, playlist]));
   }, [libraryData.playlists, searchResults.playlists]);
-  const displayedQueue = useMemo(() => {
-    const items = queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0));
-    const draggedDisplayIndex = items.findIndex((item) => item.index === draggedQueueIndex);
-    const dragOverDisplayIndex = items.findIndex((item) => item.index === dragOverQueueIndex);
-
-    if (
-      draggedQueueIndex == null ||
-      dragOverQueueIndex == null ||
-      draggedQueueIndex === dragOverQueueIndex ||
-      draggedDisplayIndex < 0 ||
-      dragOverDisplayIndex < 0
-    ) {
-      return items;
-    }
-
-    const [draggedItem] = items.splice(draggedDisplayIndex, 1);
-    items.splice(dragOverDisplayIndex, 0, draggedItem);
-    return items;
-  }, [currentIndex, dragOverQueueIndex, draggedQueueIndex, queue]);
+    const displayedQueue = useMemo(
+      () => queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0)),
+      [currentIndex, queue],
+    );
   const libraryItems = useMemo(
     () => [
       { label: "Artists", value: hasConfig ? `${libraryData.artists.length} loaded` : "Needs server" },
@@ -2655,8 +2640,10 @@ export function App() {
     setRepeatMode((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
   }
 
-  function reorderQueueItem(fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex || !queue[fromIndex] || !queue[toIndex]) return;
+    function reorderQueueItem(fromIndex: number, insertAtIndex: number) {
+      if (!queue[fromIndex]) return;
+      const toIndex = insertAtIndex > fromIndex ? insertAtIndex - 1 : insertAtIndex;
+      if (fromIndex === toIndex) return;
 
     setQueue((currentQueue) => {
       const nextQueue = [...currentQueue];
@@ -2674,9 +2661,9 @@ export function App() {
     }
   }
 
-  function dropQueueItem(toIndex: number, fromIndex = draggedQueueIndex) {
-    if (fromIndex == null) return;
-    reorderQueueItem(fromIndex, toIndex);
+    function dropQueueItem(insertAtIndex: number, fromIndex = draggedQueueIndex) {
+      if (fromIndex == null) return;
+      reorderQueueItem(fromIndex, insertAtIndex);
     setDraggedQueueIndex(null);
     setDragOverQueueIndex(null);
   }
@@ -4134,22 +4121,20 @@ function RightSidebar({
   const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
   const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : tab === "lyrics" ? "Lyrics" : "Now Playing";
   const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
-  const queueIndexFromPointer = (event: PointerEvent, sourceIndex: number) => {
-    const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
-      .map((row) => ({ row, index: Number(row.dataset.queueIndex) }))
-      .filter((entry) => Number.isInteger(entry.index) && entry.index !== sourceIndex);
+    const queueIndexFromPointer = (event: PointerEvent) => {
+      const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
+        .map((row) => ({ row, index: Number(row.dataset.queueIndex) }))
+        .filter((entry) => Number.isInteger(entry.index));
 
-    if (!rows.length) return sourceIndex;
+      if (!rows.length) return null;
 
-    let target = sourceIndex;
-    for (const { row, index } of rows) {
-      const rect = row.getBoundingClientRect();
-      if (event.clientY < rect.top + rect.height / 2) return index;
-      target = index;
-    }
-    return target;
+      for (const { row, index } of rows) {
+        const rect = row.getBoundingClientRect();
+        if (event.clientY < rect.top + rect.height / 2) return index;
+      }
+      return rows[rows.length - 1]?.index + 1;
   };
-  const setQueueDropTarget = (index: number) => {
+    const setQueueDropTarget = (index: number | null) => {
     latestDragOverQueueIndexRef.current = index;
     setDragOverQueueIndex(index);
   };
@@ -4170,14 +4155,14 @@ function RightSidebar({
         offsetX: event.clientX - rowRect.left,
         offsetY: event.clientY - rowRect.top,
       });
-    }
-    setDraggedQueueIndex(index);
-    setQueueDropTarget(index);
+      }
+      setDraggedQueueIndex(index);
+      setQueueDropTarget(null);
 
     const handleMove = (moveEvent: PointerEvent) => {
       moveEvent.preventDefault();
       setQueueDragGhost((ghost) => ghost ? { ...ghost, left: moveEvent.clientX - ghost.offsetX, top: moveEvent.clientY - ghost.offsetY } : ghost);
-      const nextIndex = queueIndexFromPointer(moveEvent, index);
+        const nextIndex = queueIndexFromPointer(moveEvent);
       if (nextIndex != null) setQueueDropTarget(nextIndex);
     };
     const handleEnd = (upEvent: PointerEvent) => {
@@ -4185,7 +4170,7 @@ function RightSidebar({
       document.removeEventListener("pointerup", handleEnd);
       document.removeEventListener("pointercancel", handleCancel);
       setQueueDragGhost(null);
-      onDropQueueItem(latestDragOverQueueIndexRef.current ?? queueIndexFromPointer(upEvent, index) ?? index, index);
+        onDropQueueItem(latestDragOverQueueIndexRef.current ?? queueIndexFromPointer(upEvent) ?? index, index);
     };
     const handleCancel = () => {
       document.removeEventListener("pointermove", handleMove);
@@ -4273,19 +4258,19 @@ function RightSidebar({
             ) : queue.length ? (
               displayedQueue.map(({ song, index }) => (
                 <div
-                  className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""}`}
+                    className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""} ${dragOverQueueIndex === index ? "drop-before" : ""} ${dragOverQueueIndex === index + 1 ? "drop-after" : ""}`}
                   key={`${song.id}-${index}`}
                   data-queue-index={index}
                   onDragOver={(event) => {
                     event.preventDefault();
-                    setQueueDropTarget(index);
+                      setQueueDropTarget(index);
                   }}
-                  onPointerEnter={() => {
-                    if (draggedQueueIndex != null) setQueueDropTarget(index);
-                  }}
-                  onPointerMove={() => {
-                    if (draggedQueueIndex != null) setQueueDropTarget(index);
-                  }}
+                    onPointerMove={(event) => {
+                      if (draggedQueueIndex != null) {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setQueueDropTarget(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
+                      }
+                    }}
                   onDrop={() => onDropQueueItem(dragOverQueueIndex ?? index, draggedQueueIndex ?? undefined)}
                 >
                   <button

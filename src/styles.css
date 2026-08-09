@@ -3729,6 +3729,31 @@ button.similar-chip:hover,
   opacity: 0.24;
 }
 
+.queue-row.drop-before,
+.queue-row.drop-after {
+  position: relative;
+}
+
+.queue-row.drop-before::before,
+.queue-row.drop-after::after {
+  position: absolute;
+  right: 8px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: #f8df91;
+  box-shadow: 0 0 10px rgba(248, 223, 145, 0.65);
+  content: "";
+}
+
+.queue-row.drop-before::before {
+  top: -2px;
+}
+
+.queue-row.drop-after::after {
+  bottom: -2px;
+}
+
 .radio-queue-row {
   grid-template-columns: minmax(0, 1fr);
   min-height: 46px;
