@@ -2275,7 +2275,7 @@ button.similar-chip:hover,
 .radio-hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, min(30%, 320px)) minmax(0, 1fr);
   grid-template-rows: minmax(0, auto) minmax(28px, 1fr) minmax(48px, 62px) auto;
   align-content: stretch;
   gap: 12px 22px;
@@ -2318,7 +2318,7 @@ button.similar-chip:hover,
   grid-row: 1;
   align-self: start;
   aspect-ratio: 1;
-  width: min(100%, 42vh, 360px);
+  width: min(100%, 38vh, 320px);
   min-width: 0;
   overflow: hidden;
   border-radius: 8px;
@@ -2351,18 +2351,25 @@ button.similar-chip:hover,
   display: flex;
   flex-direction: column;
   justify-content: start;
+  container-type: inline-size;
   min-width: 0;
   max-width: 820px;
+  max-height: 100%;
+  overflow: hidden;
   padding-top: 6px;
 }
 
 .radio-copy h3 {
+  display: -webkit-box;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   margin-top: 10px;
   color: #f4f1ec;
-  font-size: 48px;
+  font-size: clamp(36px, 9cqw, 48px);
   font-weight: 650;
   line-height: 1;
+  overflow: hidden;
 }
 
 .radio-copy h3 span,
@@ -2397,7 +2404,7 @@ button.similar-chip:hover,
   display: grid;
   gap: 8px;
   max-width: 720px;
-  margin-top: 22px;
+  margin-top: clamp(12px, 4cqw, 22px);
   padding: 12px 14px;
   border-left: 2px solid rgba(242, 217, 133, 0.82);
   background: rgba(8, 8, 8, 0.28);
@@ -2426,13 +2433,32 @@ button.similar-chip:hover,
 }
 
 .radio-dj-callout p {
-  max-height: 4.1em;
+  max-height: 4.05em;
   overflow-y: auto;
   padding-right: 6px;
   color: rgba(244, 241, 236, 0.82);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
+}
+
+@container (max-width: 520px) {
+  .radio-copy h3 {
+    -webkit-line-clamp: 3;
+    font-size: clamp(30px, 8cqw, 38px);
+  }
+
+  .radio-copy h3 em {
+    font-size: 0.5em;
+  }
+
+  .radio-artist {
+    font-size: 20px;
+  }
+
+  .radio-dj-callout p {
+    max-height: 2.8em;
+  }
 }
 
 .radio-waveform {
