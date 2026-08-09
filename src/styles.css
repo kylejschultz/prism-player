@@ -565,8 +565,12 @@ h1 {
 .workspace {
   grid-column: 2;
   grid-row: 1 / 2;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
   min-width: 0;
-  padding: 10px 20px 20px;
+  min-height: 0;
+  padding: 12px 20px 20px;
   overflow: hidden;
   background: linear-gradient(180deg, rgba(8, 8, 8, 0.16), rgba(8, 8, 8, 0.04) 48%, transparent);
 }
@@ -744,9 +748,17 @@ h1 {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 38px;
-  margin-bottom: 6px;
-  padding-top: 2px;
+  min-height: 44px;
+  padding: 2px 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.workspace-viewport {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .topbar-actions {
@@ -896,8 +908,9 @@ h1 {
 }
 
 .browser-panel {
-  min-height: calc(100vh - 190px);
-  max-height: calc(100vh - 190px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -3711,7 +3724,34 @@ button.similar-chip:hover,
 }
 
 .queue-row.dragging {
-  opacity: 0.52;
+  outline: 1px dashed rgba(242, 217, 133, 0.24);
+  outline-offset: -2px;
+  opacity: 0.24;
+}
+
+.queue-row.drop-before,
+.queue-row.drop-after {
+  position: relative;
+}
+
+.queue-row.drop-before::before,
+.queue-row.drop-after::after {
+  position: absolute;
+  right: 8px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: #f8df91;
+  box-shadow: 0 0 10px rgba(248, 223, 145, 0.65);
+  content: "";
+}
+
+.queue-row.drop-before::before {
+  top: -2px;
+}
+
+.queue-row.drop-after::after {
+  bottom: -2px;
 }
 
 .radio-queue-row {
@@ -3770,10 +3810,13 @@ button.similar-chip:hover,
   width: 26px;
   height: 26px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: rgba(244, 241, 236, 0.42);
   cursor: grab;
+  opacity: 0;
+  touch-action: none;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
 }
 
 .queue-drag-handle:active {
@@ -3782,6 +3825,7 @@ button.similar-chip:hover,
 
 .queue-row:hover .queue-drag-handle,
 .queue-row:focus-within .queue-drag-handle {
+  opacity: 1;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(244, 241, 236, 0.72);
 }
@@ -3848,6 +3892,8 @@ button.similar-chip:hover,
 .queue-row-actions {
   display: flex;
   justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 140ms ease;
 }
 
 .queue-row-actions button {
@@ -3856,10 +3902,15 @@ button.similar-chip:hover,
   width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
   color: rgba(244, 241, 236, 0.58);
   cursor: pointer;
+}
+
+.queue-row:hover .queue-row-actions,
+.queue-row:focus-within .queue-row-actions {
+  opacity: 1;
 }
 
 .queue-row-actions button:hover:not(:disabled),
@@ -3872,6 +3923,55 @@ button.similar-chip:hover,
   padding: 14px 8px;
   color: rgba(244, 241, 236, 0.52);
   font-size: 12px;
+}
+
+.queue-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid rgba(242, 217, 133, 0.22);
+  border-radius: 8px;
+  background: rgba(47, 42, 38, 0.94);
+  color: #f8df91;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  pointer-events: none;
+}
+
+.queue-drag-ghost > svg {
+  color: rgba(244, 241, 236, 0.72);
+}
+
+.queue-drag-ghost div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.queue-drag-ghost strong,
+.queue-drag-ghost small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-drag-ghost strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.queue-drag-ghost small {
+  color: rgba(244, 241, 236, 0.62);
+  font-size: 10px;
+}
+
+.queue-drag-ghost > small {
+  text-align: right;
 }
 
 .song-context-menu {
@@ -4055,11 +4155,6 @@ button.similar-chip:hover,
   .analytics-banner {
     grid-template-columns: 30px minmax(0, 1fr) auto;
     gap: 10px;
-  }
-
-  .browser-panel {
-    min-height: calc(100vh - 184px);
-    max-height: calc(100vh - 184px);
   }
 
   .settings-layout {

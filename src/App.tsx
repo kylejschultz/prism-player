@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent, MouseEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   AlertCircle,
   CalendarDays,
@@ -1677,25 +1677,10 @@ export function App() {
     const playlists = [...libraryData.playlists, ...searchResults.playlists];
     return new Map(playlists.map((playlist) => [playlist.id, playlist]));
   }, [libraryData.playlists, searchResults.playlists]);
-  const displayedQueue = useMemo(() => {
-    const items = queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0));
-    const draggedDisplayIndex = items.findIndex((item) => item.index === draggedQueueIndex);
-    const dragOverDisplayIndex = items.findIndex((item) => item.index === dragOverQueueIndex);
-
-    if (
-      draggedQueueIndex == null ||
-      dragOverQueueIndex == null ||
-      draggedQueueIndex === dragOverQueueIndex ||
-      draggedDisplayIndex < 0 ||
-      dragOverDisplayIndex < 0
-    ) {
-      return items;
-    }
-
-    const [draggedItem] = items.splice(draggedDisplayIndex, 1);
-    items.splice(dragOverDisplayIndex, 0, draggedItem);
-    return items;
-  }, [currentIndex, dragOverQueueIndex, draggedQueueIndex, queue]);
+    const displayedQueue = useMemo(
+      () => queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0)),
+      [currentIndex, queue],
+    );
   const libraryItems = useMemo(
     () => [
       { label: "Artists", value: hasConfig ? `${libraryData.artists.length} loaded` : "Needs server" },
@@ -2667,8 +2652,10 @@ export function App() {
     setRepeatMode((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
   }
 
-  function reorderQueueItem(fromIndex: number, toIndex: number) {
-    if (fromIndex === toIndex || !queue[fromIndex] || !queue[toIndex]) return;
+    function reorderQueueItem(fromIndex: number, insertAtIndex: number) {
+      if (!queue[fromIndex]) return;
+      const toIndex = insertAtIndex > fromIndex ? insertAtIndex - 1 : insertAtIndex;
+      if (fromIndex === toIndex) return;
 
     setQueue((currentQueue) => {
       const nextQueue = [...currentQueue];
@@ -2686,9 +2673,9 @@ export function App() {
     }
   }
 
-  function dropQueueItem(toIndex: number) {
-    if (draggedQueueIndex == null) return;
-    reorderQueueItem(draggedQueueIndex, toIndex);
+    function dropQueueItem(insertAtIndex: number, fromIndex = draggedQueueIndex) {
+      if (fromIndex == null) return;
+      reorderQueueItem(fromIndex, insertAtIndex);
     setDraggedQueueIndex(null);
     setDragOverQueueIndex(null);
   }
@@ -3467,87 +3454,89 @@ export function App() {
           />
         </header>
 
-        {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
-          <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
-        ) : null}
+        <div className="workspace-viewport">
+          {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
+            <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
+          ) : null}
 
-        {activeView === "settings" ? (
-          <SettingsView
-            form={form}
-            setForm={setForm}
-            status={status}
-            statusMessage={statusMessage}
-            appSettings={appSettings}
-            activeTab={settingsTab}
-            setActiveTab={selectSettingsTab}
-            updateAppSettings={updateAppSettings}
-            onSelectRadioStation={selectRadioStation}
-            onRemoveRadioStation={removeRadioStation}
-            setAnalyticsConsent={setAnalyticsConsent}
-            resetAppSettings={resetAppSettings}
-            setAlbumViewMode={setAlbumViewMode}
-            setArtistViewMode={setArtistViewMode}
-            onSave={saveConnection}
-            onReset={resetConnection}
-          />
-        ) : (
-          <LibraryView
-            activeView={activeView}
-            config={config}
-            libraryStatus={libraryStatus}
-            statusMessage={statusMessage}
-            appSettings={appSettings}
-            onSelectRadioStation={selectRadioStation}
-            onOpenRadioSettings={() => openSettings("radio")}
-            radioStationState={radioStationState}
-            radioSession={radioSession}
-            radioSchedule={radioSchedule}
-            radioStatus={radioStatus}
-            radioMessage={radioMessage}
-            radioWaveformBars={radioWaveformBars}
-            tuneInRadio={tuneInRadio}
-            libraryItems={libraryItems}
-            albums={libraryData.albums}
-            recentAlbums={libraryData.recentAlbums}
-            recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
-            favorites={libraryData.favorites}
-            playlists={libraryData.playlists}
-            albumViewMode={albumViewMode}
-            setAlbumViewMode={setAlbumViewMode}
-            artistViewMode={artistViewMode}
-            setArtistViewMode={setArtistViewMode}
-            artists={libraryData.artists}
-            searchQuery={searchQuery}
-            searchResults={searchResults}
-            searchStatus={searchStatus}
-            setPlaylistCreatorOpen={setPlaylistCreatorOpen}
-            onSongContextMenu={openSongContextMenu}
-            onRetryLibrary={() => void refreshLibrary()}
-            onSelectLibraryView={selectView}
-            detailSelection={detailSelection}
-            detailStatus={detailStatus}
-            detailMessage={detailMessage}
-            currentTrack={currentTrack}
-            isPlaying={isPlaying}
-            favoriteIds={favoriteIds}
-            favoriteBusyKey={favoriteBusyKey}
-            onToggleFavorite={toggleFavorite}
-            onOpenAlbum={(album) => void openAlbum(album)}
-            onOpenArtist={(artist) => void openArtist(artist)}
-            onOpenPlaylist={openPlaylist}
-            onPlayAlbum={(album) => void playAlbum(album)}
-            onPlayArtist={(artist) => void playArtist(artist)}
-            onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
-            onSavePlaylistDetails={savePlaylistDetails}
-            onDeletePlaylist={deletePlaylistAndReturn}
-            playlistEditRequestKey={playlistEditRequestKey}
-            onRemovePlaylistSong={removeSongFromPlaylistAndRefresh}
-            onReorderPlaylist={reorderPlaylistAndRefresh}
-            onReplaceQueue={replaceQueue}
-            onPlaySong={playSong}
-            onQueueSong={appendToQueue}
-          />
-        )}
+          {activeView === "settings" ? (
+            <SettingsView
+              form={form}
+              setForm={setForm}
+              status={status}
+              statusMessage={statusMessage}
+              appSettings={appSettings}
+              activeTab={settingsTab}
+              setActiveTab={selectSettingsTab}
+              updateAppSettings={updateAppSettings}
+              onSelectRadioStation={selectRadioStation}
+              onRemoveRadioStation={removeRadioStation}
+              setAnalyticsConsent={setAnalyticsConsent}
+              resetAppSettings={resetAppSettings}
+              setAlbumViewMode={setAlbumViewMode}
+              setArtistViewMode={setArtistViewMode}
+              onSave={saveConnection}
+              onReset={resetConnection}
+            />
+          ) : (
+            <LibraryView
+              activeView={activeView}
+              config={config}
+              libraryStatus={libraryStatus}
+              statusMessage={statusMessage}
+              appSettings={appSettings}
+              onSelectRadioStation={selectRadioStation}
+              onOpenRadioSettings={() => openSettings("radio")}
+              radioStationState={radioStationState}
+              radioSession={radioSession}
+              radioSchedule={radioSchedule}
+              radioStatus={radioStatus}
+              radioMessage={radioMessage}
+              radioWaveformBars={radioWaveformBars}
+              tuneInRadio={tuneInRadio}
+              libraryItems={libraryItems}
+              albums={libraryData.albums}
+              recentAlbums={libraryData.recentAlbums}
+              recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
+              favorites={libraryData.favorites}
+              playlists={libraryData.playlists}
+              albumViewMode={albumViewMode}
+              setAlbumViewMode={setAlbumViewMode}
+              artistViewMode={artistViewMode}
+              setArtistViewMode={setArtistViewMode}
+              artists={libraryData.artists}
+              searchQuery={searchQuery}
+              searchResults={searchResults}
+              searchStatus={searchStatus}
+              setPlaylistCreatorOpen={setPlaylistCreatorOpen}
+              onSongContextMenu={openSongContextMenu}
+              onRetryLibrary={() => void refreshLibrary()}
+              onSelectLibraryView={selectView}
+              detailSelection={detailSelection}
+              detailStatus={detailStatus}
+              detailMessage={detailMessage}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={toggleFavorite}
+              onOpenAlbum={(album) => void openAlbum(album)}
+              onOpenArtist={(artist) => void openArtist(artist)}
+              onOpenPlaylist={openPlaylist}
+              onPlayAlbum={(album) => void playAlbum(album)}
+              onPlayArtist={(artist) => void playArtist(artist)}
+              onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
+              onSavePlaylistDetails={savePlaylistDetails}
+              onDeletePlaylist={deletePlaylistAndReturn}
+              playlistEditRequestKey={playlistEditRequestKey}
+              onRemovePlaylistSong={removeSongFromPlaylistAndRefresh}
+              onReorderPlaylist={reorderPlaylistAndRefresh}
+              onReplaceQueue={replaceQueue}
+              onPlaySong={playSong}
+              onQueueSong={appendToQueue}
+            />
+          )}
+        </div>
       </section>
 
       <footer className="player-bar" aria-label="Playback controls">
@@ -3663,10 +3652,10 @@ export function App() {
                 <button
                   className={radioIsLiked ? "active" : ""}
                   type="button"
-                  aria-label={radioIsLiked ? "Track liked" : "Like this Subwave track"}
+                  aria-label={radioIsLiked ? "Already liked this Subwave track" : "Like this Subwave track"}
                   aria-pressed={radioIsLiked}
                   onClick={likeCurrentRadioTrack}
-                  disabled={!radioCanLike || radioLikeBusy || radioIsLiked}
+                  disabled={!radioCanLike || radioIsLiked || radioLikeBusy}
                   title={radioIsLiked ? "Liked" : "Like this track"}
                 >
                   {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
@@ -3848,7 +3837,7 @@ export function App() {
           dragOverQueueIndex={dragOverQueueIndex}
           setDraggedQueueIndex={setDraggedQueueIndex}
           setDragOverQueueIndex={setDragOverQueueIndex}
-          onDropQueueItem={dropQueueItem}
+      onDropQueueItem={dropQueueItem}
           onSelectQueueTrack={selectQueueTrack}
           onRemoveQueueItem={removeQueueItem}
           onClearQueue={clearQueue}
@@ -4080,7 +4069,7 @@ function RightSidebar({
   dragOverQueueIndex: number | null;
   setDraggedQueueIndex: (index: number | null) => void;
   setDragOverQueueIndex: (index: number | null) => void;
-  onDropQueueItem: (index: number) => void;
+  onDropQueueItem: (toIndex: number, fromIndex?: number) => void;
   onSelectQueueTrack: (index: number) => void;
   onRemoveQueueItem: (index: number) => void;
   onClearQueue: () => void;
@@ -4097,6 +4086,16 @@ function RightSidebar({
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const recentRadioHistory = radioHistory.slice(0, 5).reverse();
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
+  const latestDragOverQueueIndexRef = useRef<number | null>(dragOverQueueIndex);
+  const [queueDragGhost, setQueueDragGhost] = useState<{
+    song: Song;
+    width: number;
+    height: number;
+    left: number;
+    top: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const activeLyricIndex = useMemo(() => {
     const elapsedMs = Math.max(0, position * 1000);
     let active = -1;
@@ -4120,6 +4119,10 @@ function RightSidebar({
     if (isRadioSession && tab === "nowPlaying") setTab("queue");
   }, [isRadioSession, setTab, tab]);
 
+  useEffect(() => {
+    latestDragOverQueueIndexRef.current = dragOverQueueIndex;
+  }, [dragOverQueueIndex]);
+
   const progressLabel =
     isRadioPlaying && radioNowPlaying
       ? radioDuration
@@ -4131,6 +4134,70 @@ function RightSidebar({
   const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
   const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : tab === "lyrics" ? "Lyrics" : "Now Playing";
   const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
+    const queueIndexFromPointer = (event: PointerEvent) => {
+      const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
+        .map((row) => ({ row, index: Number(row.dataset.queueIndex) }))
+        .filter((entry) => Number.isInteger(entry.index));
+
+      if (!rows.length) return null;
+
+      for (const { row, index } of rows) {
+        const rect = row.getBoundingClientRect();
+        if (event.clientY < rect.top + rect.height / 2) return index;
+      }
+      return rows[rows.length - 1]?.index + 1;
+  };
+    const setQueueDropTarget = (index: number | null) => {
+    latestDragOverQueueIndexRef.current = index;
+    setDragOverQueueIndex(index);
+  };
+
+  function startQueuePointerReorder(event: ReactPointerEvent<HTMLButtonElement>, index: number) {
+    if (!queue[index]) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const row = event.currentTarget.closest<HTMLElement>("[data-queue-index]");
+    const rowRect = row?.getBoundingClientRect();
+    if (rowRect) {
+      setQueueDragGhost({
+        song: queue[index],
+        width: rowRect.width,
+        height: rowRect.height,
+        left: rowRect.left,
+        top: rowRect.top,
+        offsetX: event.clientX - rowRect.left,
+        offsetY: event.clientY - rowRect.top,
+      });
+      }
+      setDraggedQueueIndex(index);
+      setQueueDropTarget(null);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      setQueueDragGhost((ghost) => ghost ? { ...ghost, left: moveEvent.clientX - ghost.offsetX, top: moveEvent.clientY - ghost.offsetY } : ghost);
+        const nextIndex = queueIndexFromPointer(moveEvent);
+      if (nextIndex != null) setQueueDropTarget(nextIndex);
+    };
+    const handleEnd = (upEvent: PointerEvent) => {
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleEnd);
+      document.removeEventListener("pointercancel", handleCancel);
+      setQueueDragGhost(null);
+        onDropQueueItem(latestDragOverQueueIndexRef.current ?? queueIndexFromPointer(upEvent) ?? index, index);
+    };
+    const handleCancel = () => {
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleEnd);
+      document.removeEventListener("pointercancel", handleCancel);
+      setQueueDragGhost(null);
+      setDraggedQueueIndex(null);
+      setDragOverQueueIndex(null);
+    };
+
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleEnd, { once: true });
+    document.addEventListener("pointercancel", handleCancel, { once: true });
+  }
 
   return (
     <aside className="right-sidebar" aria-label="Now playing and queue">
@@ -4204,29 +4271,26 @@ function RightSidebar({
             ) : queue.length ? (
               displayedQueue.map(({ song, index }) => (
                 <div
-                  className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""}`}
+                    className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""} ${dragOverQueueIndex === index ? "drop-before" : ""} ${dragOverQueueIndex === index + 1 ? "drop-after" : ""}`}
                   key={`${song.id}-${index}`}
+                  data-queue-index={index}
                   onDragOver={(event) => {
                     event.preventDefault();
-                    setDragOverQueueIndex(index);
+                      setQueueDropTarget(index);
                   }}
-                  onDrop={() => onDropQueueItem(dragOverQueueIndex ?? index)}
+                    onPointerMove={(event) => {
+                      if (draggedQueueIndex != null) {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setQueueDropTarget(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
+                      }
+                    }}
+                  onDrop={() => onDropQueueItem(dragOverQueueIndex ?? index, draggedQueueIndex ?? undefined)}
                 >
                   <button
                     className="queue-drag-handle"
                     type="button"
-                    aria-label={`Drag ${song.title} to reorder`}
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", String(index));
-                      setDraggedQueueIndex(index);
-                      setDragOverQueueIndex(index);
-                    }}
-                    onDragEnd={() => {
-                      setDraggedQueueIndex(null);
-                      setDragOverQueueIndex(null);
-                    }}
+                    aria-label={`Move ${song.title}`}
+                    onPointerDown={(event) => startQueuePointerReorder(event, index)}
                   >
                     <Menu size={14} />
                   </button>
@@ -4237,7 +4301,7 @@ function RightSidebar({
                   <small>{formatDuration(song.duration)}</small>
                   <div className="queue-row-actions">
                     <button type="button" aria-label={`Remove ${song.title}`} onClick={() => onRemoveQueueItem(index)}>
-                      <Trash2 size={13} />
+                      <X size={13} />
                     </button>
                   </div>
                 </div>
@@ -4371,6 +4435,24 @@ function RightSidebar({
           )}
         </div>
       )}
+      {queueDragGhost ? (
+        <div
+          className="queue-drag-ghost"
+          style={{
+            width: queueDragGhost.width,
+            height: queueDragGhost.height,
+            transform: `translate3d(${queueDragGhost.left}px, ${queueDragGhost.top}px, 0)`,
+          }}
+          aria-hidden="true"
+        >
+          <Menu size={14} />
+          <div>
+            <strong>{queueDragGhost.song.title}</strong>
+            <small>{queueDragGhost.song.artist ?? "Unknown artist"}</small>
+          </div>
+          <small>{formatDuration(queueDragGhost.song.duration)}</small>
+        </div>
+      ) : null}
     </aside>
   );
 }
