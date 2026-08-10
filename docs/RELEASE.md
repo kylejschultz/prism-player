@@ -18,7 +18,7 @@ The `Security` workflow should also be required for pull requests. It runs GitHu
 
 The `Enforce release PR source` workflow should be required on `release`. It blocks direct feature PRs into `release`, while allowing `dev -> release` release-candidate PRs and release-please PRs.
 
-The macOS packaging workflow is intentionally separate from pull request CI because Tauri bundling is slower and produces release artifacts.
+The packaging workflow is intentionally separate from pull request CI because Tauri bundling is slower and produces release artifacts. Run it manually from Actions when a development build is needed; published releases automatically build and attach both the macOS DMG and Windows NSIS installer.
 
 ## Commit Convention
 
@@ -45,7 +45,7 @@ Use Conventional Commits for commit messages and pull request titles:
    - `src-tauri/tauri.conf.json` version bump
 8. Merge the release PR when the changelog and version look right.
 9. release-please creates the Git tag and GitHub release.
-10. The `Build` workflow runs on the published release, builds the macOS DMG, stores it as a workflow artifact, and uploads it to the GitHub release.
+10. The `Build` workflow runs on the published release, builds the macOS DMG and Windows NSIS installer, stores them as workflow artifacts, and uploads them to the GitHub release.
 
 ## Versioning
 

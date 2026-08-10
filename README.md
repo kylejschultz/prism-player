@@ -85,7 +85,7 @@ Development should happen on short-lived branches and merge through pull request
 7. When `dev` is ready to ship, open a release-candidate PR from `dev` into `release`.
 8. release-please opens or updates the release PR after changes land on `release`.
 9. Merging the release PR creates the tag and GitHub release.
-10. The release packaging workflow builds and attaches the macOS DMG.
+10. The release packaging workflow builds and attaches the macOS DMG and Windows installer. Run it manually from Actions for an on-demand development artifact.
 
 Recommended branch names:
 
@@ -138,7 +138,7 @@ At a high level:
 - release-please maintains a release PR based on Conventional Commit history.
 - The release PR updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `CHANGELOG.md`.
 - Merging the release PR creates a GitHub release.
-- The packaging workflow builds the macOS DMG and uploads it to the release.
+- The packaging workflow builds the macOS DMG and Windows installer and uploads them to the release.
 
 ## Privacy
 
