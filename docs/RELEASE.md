@@ -5,18 +5,18 @@ Prism Player uses pull requests, Conventional Commits, and release-please to kee
 ## Branches
 
 - `dev` is the integration branch for active work.
-- `main` is the protected release branch.
+- `release` is the protected release branch.
 - Feature, fix, documentation, and maintenance work should happen on short-lived branches from `dev`.
 - Normal pull requests target `dev` and must pass CI and security checks before merge.
-- Pull requests into `main` should only come from `dev` for a release candidate, or from release-please automation.
+- Pull requests into `release` should only come from `dev` for a release candidate, or from release-please automation.
 
 ## Required Checks
 
-The `CI` workflow should be required by branch protection on `dev` and `main`. It installs dependencies with `npm ci`, runs ESLint, runs TypeScript type checking, builds the frontend, and checks the Tauri Rust crate with `cargo check` and `cargo clippy`.
+The `CI` workflow should be required by branch protection on `dev` and `release`. It installs dependencies with `npm ci`, runs ESLint, runs TypeScript type checking, builds the frontend, and checks the Tauri Rust crate with `cargo check` and `cargo clippy`.
 
 The `Security` workflow should also be required for pull requests. It runs GitHub dependency review, npm production dependency audit, Rust dependency audit, CodeQL, and Gitleaks secret scanning.
 
-The `Enforce main PR source` workflow should be required on `main`. It blocks direct feature PRs into `main`, while allowing `dev -> main` release-candidate PRs and release-please PRs.
+The `Enforce release PR source` workflow should be required on `release`. It blocks direct feature PRs into `release`, while allowing `dev -> release` release-candidate PRs and release-please PRs.
 
 The macOS packaging workflow is intentionally separate from pull request CI because Tauri bundling is slower and produces release artifacts.
 
@@ -34,9 +34,9 @@ Use Conventional Commits for commit messages and pull request titles:
 
 1. Work merges to `dev` through feature, fix, docs, chore, build, test, and CI pull requests.
 2. Several branches can be tested together on `dev` before anything reaches users.
-3. When `dev` is ready to ship, open a `dev -> main` release-candidate PR.
+3. When `dev` is ready to ship, open a `dev -> release` release-candidate PR.
 4. Merge the release-candidate PR after checks pass and the combined changes look right.
-5. The `Release Please` workflow evaluates Conventional Commits on `main`.
+5. The `Release Please` workflow evaluates Conventional Commits on `release`.
 6. release-please opens or updates a release PR.
 7. The release PR contains:
    - `CHANGELOG.md` updates
@@ -66,7 +66,7 @@ Before merging a release PR, check:
 - The app builds locally or CI is green.
 - Any new privacy, signing, platform, or server-API behavior is documented.
 
-Before merging a `dev -> main` release-candidate PR, check:
+Before merging a `dev -> release` release-candidate PR, check:
 
 - All intended feature branches for the release are already merged into `dev`.
 - CI and security checks are green.
