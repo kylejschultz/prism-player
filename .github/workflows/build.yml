@@ -1,9 +1,16 @@
 name: Build
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   macos:
@@ -12,10 +19,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Resolve artifact name
+        id: artifact
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            suffix="${{ github.event.release.tag_name }}"
+          else
+            suffix="${GITHUB_REF_NAME}"
+          fi
+          suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -24,14 +42,117 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Build macOS app
         run: npm run tauri:build
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: prism-player-macos-dmg
+          name: prism-player-${{ steps.artifact.outputs.suffix }}-macos-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+          retention-days: ${{ github.event_name == 'release' && 90 || 14 }}
+
+      - name: Attach DMG to GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for dmg in src-tauri/target/release/bundle/dmg/*.dmg; do
+            gh release upload "${{ github.event.release.tag_name }}" "$dmg" --clobber
+          done
+
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Resolve artifact name
+        id: artifact
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "release") {
+            $suffix = "${{ github.event.release.tag_name }}"
+          } else {
+            $suffix = "${{ github.ref_name }}"
+          }
+          $suffix = $suffix -replace '[\\/:*?"<>|]', '-'
+          "suffix=$suffix" >> $env:GITHUB_OUTPUT
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build NSIS installer
+        run: npm run tauri:build -- --bundles nsis
+
+      - name: Upload NSIS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: prism-player-${{ steps.artifact.outputs.suffix }}-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'release' && 90 || 14 }}
+
+      - name: Attach installer to GitHub release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for installer in src-tauri/target/release/bundle/nsis/*.exe; do
+            gh release upload "${{ github.event.release.tag_name }}" "$installer" --clobber
+          done
+
+  announce-discord:
+    name: Discord release announcement
+    needs: [macos, windows]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Post release announcement
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo "::error::Set the DISCORD_RELEASE_WEBHOOK_URL repository secret before publishing a release."
+            exit 1
+          fi
+
+          description="${RELEASE_BODY:-Initial alpha release.}"
+          if (( ${#description} > 3900 )); then
+            description="${description:0:3897}..."
+          fi
+
+          payload="$(jq -n \
+            --arg content '<@&1536269011468419072>' \
+            --arg title "${RELEASE_NAME:-Prism Player $RELEASE_TAG}" \
+            --arg url "$RELEASE_URL" \
+            --arg description "$description" \
+            --argjson allowed_mentions '{"parse":["roles"]}' \
+            '{content: $content, allowed_mentions: $allowed_mentions, embeds: [{title: $title, url: $url, description: $description, color: 5934141, footer: {text: "Prism Player release"}}]}')"
+
+          curl --fail --retry 3 --retry-all-errors --silent --show-error \
+            -H 'Content-Type: application/json' \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"

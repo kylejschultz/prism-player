@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, release]
+  push:
+    branches: [dev, release]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
