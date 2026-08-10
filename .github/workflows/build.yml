@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve artifact name
         id: artifact
@@ -35,7 +35,7 @@ jobs:
           echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -50,7 +50,7 @@ jobs:
         run: npm run tauri:build
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: prism-player-${{ steps.artifact.outputs.suffix }}-macos-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
