@@ -1011,10 +1011,27 @@ function formatStationHour(hour: number, locale: RadioStationLocale = "en-US") {
 
 function splitFeaturedTitle(title: string) {
   const match = title.match(/\s+((?:feat\.?|ft\.?|featuring)\s+.+)$/i);
-  if (!match?.index) return { main: title, feature: "" };
+  if (match?.index) {
+    return {
+      main: title.slice(0, match.index).trim(),
+      feature: match[1]?.trim() ?? "",
+    };
+  }
+
+  const liveParenthetical = title.match(/\s+(\((?=[^)]*\blive\b)[^)]+\))$/i);
+  if (liveParenthetical?.index) {
+    return {
+      main: title.slice(0, liveParenthetical.index).trim(),
+      feature: liveParenthetical[1]?.replace(/^\((.*)\)$/, "$1").trim() ?? "",
+    };
+  }
+
+  const liveSuffix = title.match(/\s+(?:[-–—]\s*)?((?:live)(?:\s+(?:at|from|in)\b)?.+)$/i);
+  if (!liveSuffix?.index) return { main: title, feature: "" };
+
   return {
-    main: title.slice(0, match.index).trim(),
-    feature: match[1]?.trim() ?? "",
+    main: title.slice(0, liveSuffix.index).trim(),
+    feature: liveSuffix[1]?.trim() ?? "",
   };
 }
 
