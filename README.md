@@ -74,7 +74,7 @@ npm run tauri:build
 
 ## Repository Workflow
 
-Development should happen on short-lived branches and merge through pull requests into `dev`. The `dev` branch is the integration lane for active feature work; `main` is the release branch.
+Development should happen on short-lived branches and merge through pull requests into `dev`. The `dev` branch is the integration lane for active feature work; `release` is the release branch.
 
 1. Create a branch from `dev`.
 2. Make small, reviewable commits using Conventional Commits.
@@ -82,8 +82,8 @@ Development should happen on short-lived branches and merge through pull request
 4. Wait for CI and security checks to pass.
 5. Squash or merge using a Conventional Commit-style title.
 6. Let multiple feature branches settle together on `dev`.
-7. When `dev` is ready to ship, open a release-candidate PR from `dev` into `main`.
-8. release-please opens or updates the release PR after changes land on `main`.
+7. When `dev` is ready to ship, open a release-candidate PR from `dev` into `release`.
+8. release-please opens or updates the release PR after changes land on `release`.
 9. Merging the release PR creates the tag and GitHub release.
 10. The release packaging workflow builds and attaches the macOS DMG.
 
@@ -94,7 +94,7 @@ Recommended branch names:
 - `docs/public-readme`
 - `chore/ci-security-release-flow`
 
-PRs directly into `main` are intentionally blocked unless the source branch is `dev` or release-please automation.
+PRs directly into `release` are intentionally blocked unless the source branch is `dev` or release-please automation.
 
 ## Commit Style
 
@@ -134,7 +134,7 @@ Release automation is documented in [docs/RELEASE.md](docs/RELEASE.md).
 At a high level:
 
 - Normal feature and fix PRs merge to `dev`.
-- Release-candidate PRs merge from `dev` into `main`.
+- Release-candidate PRs merge from `dev` into `release`.
 - release-please maintains a release PR based on Conventional Commit history.
 - The release PR updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `CHANGELOG.md`.
 - Merging the release PR creates a GitHub release.
