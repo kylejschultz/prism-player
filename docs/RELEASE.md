@@ -20,6 +20,8 @@ The `Enforce release PR source` workflow should be required on `release`. It blo
 
 The packaging workflow is intentionally separate from pull request CI because Tauri bundling is slower and produces release artifacts. Run it manually from Actions when a development build is needed; published releases automatically build and attach both the macOS DMG and Windows NSIS installer.
 
+After both release installers are attached, the same workflow posts the release notes to Discord and pings the Prism release role. Set the `DISCORD_RELEASE_WEBHOOK_URL` repository secret to the Discord channel webhook before publishing a release.
+
 ## Commit Convention
 
 Use Conventional Commits for commit messages and pull request titles:
