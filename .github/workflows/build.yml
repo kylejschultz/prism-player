@@ -151,6 +151,7 @@ jobs:
       - name: Post release announcement
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
+          DISCORD_ANNOUNCEMENT_ROLE_ID: '1536269011468419072'
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
         run: |
@@ -159,23 +160,72 @@ jobs:
             exit 1
           fi
 
-          release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name,url,body)"
-          release_name="$(jq -r '.name // empty' <<<"$release")"
-          release_url="$(jq -r '.url' <<<"$release")"
-          description="$(jq -r '.body // "Initial alpha release."' <<<"$release")"
-          if (( ${#description} > 3900 )); then
-            description="${description:0:3897}..."
-          fi
+          export RELEASE_JSON="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name,url,body,assets)"
+          python3 <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
 
-          payload="$(jq -n \
-            --arg content '<@&1536269011468419072>' \
-            --arg title "${release_name:-Prism Player $RELEASE_TAG}" \
-            --arg url "$release_url" \
-            --arg description "$description" \
-            --argjson allowed_mentions '{"parse":["roles"]}' \
-            '{content: $content, allowed_mentions: $allowed_mentions, embeds: [{title: $title, url: $url, description: $description, color: 5934141, footer: {text: "Prism Player release"}}]}')"
+          webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
+          release = json.loads(os.environ["RELEASE_JSON"])
+          role_id = os.environ["DISCORD_ANNOUNCEMENT_ROLE_ID"]
 
-          curl --fail --retry 3 --retry-all-errors --silent --show-error \
-            -H 'Content-Type: application/json' \
-            --data "$payload" \
-            "$DISCORD_WEBHOOK_URL"
+          def asset_url(suffix):
+              for asset in release.get("assets", []):
+                  if asset["name"].lower().endswith(suffix):
+                      return asset["url"]
+              return None
+
+          def post(payload, components=False):
+              separator = "&" if "?" in webhook_url else "?"
+              url = f"{webhook_url}{separator}with_components=true" if components else webhook_url
+              request = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={"Content-Type": "application/json", "User-Agent": "prism-player-release-bot/1.0"},
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      if response.status not in (200, 204):
+                          raise RuntimeError(f"Discord webhook returned HTTP {response.status}")
+              except urllib.error.HTTPError as exc:
+                  print(exc.read().decode("utf-8", "replace"))
+                  raise
+
+          post({
+              "username": "Prism Player Releases",
+              "content": f"<@&{role_id}>",
+              "allowed_mentions": {"parse": [], "roles": [role_id]},
+          })
+
+          notes = (release.get("body") or "See the GitHub release for the full notes.").strip()
+          if len(notes) > 1800:
+              notes = notes[:1797].rstrip() + "..."
+
+          buttons = []
+          macos_url = asset_url(".dmg")
+          windows_url = asset_url(".exe")
+          if macos_url:
+              buttons.append({"type": 2, "style": 5, "label": "Download for macOS", "url": macos_url})
+          if windows_url:
+              buttons.append({"type": 2, "style": 5, "label": "Download for Windows", "url": windows_url})
+          buttons.append({"type": 2, "style": 5, "label": "View GitHub Release", "url": release["url"]})
+
+          card_components = [
+              {"type": 10, "content": f"# Prism Player {release.get('name') or os.environ['RELEASE_TAG']}\nA new Prism Player release is ready."},
+              {"type": 14, "divider": True, "spacing": 1},
+              {"type": 10, "content": f"## What changed\n{notes}"},
+              {"type": 14, "divider": True, "spacing": 1},
+              {"type": 10, "content": "## Downloads"},
+              {"type": 1, "components": buttons},
+              {"type": 14, "divider": True, "spacing": 1},
+              {"type": 10, "content": "_Prism Player release_"},
+          ]
+          post({
+              "username": "Prism Player Releases",
+              "flags": 32768,
+              "components": [{"type": 17, "accent_color": 5934141, "components": card_components}],
+          }, components=True)
+          PY
