@@ -9,6 +9,11 @@ on:
         description: Published release tag to build and announce, for example v0.1.0
         required: false
         type: string
+      announce_only:
+        description: Send the Discord announcement without rebuilding release artifacts
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -20,6 +25,7 @@ concurrency:
 jobs:
   macos:
     name: macOS DMG
+    if: inputs.announce_only != true
     runs-on: macos-latest
 
     steps:
@@ -76,6 +82,7 @@ jobs:
 
   windows:
     name: Windows installer
+    if: inputs.announce_only != true
     runs-on: windows-latest
 
     steps:
@@ -135,7 +142,7 @@ jobs:
   announce-discord:
     name: Discord release announcement
     needs: [macos, windows]
-    if: github.event_name == 'release' || inputs.ref != ''
+    if: always() && (github.event_name == 'release' || inputs.ref != '')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -152,7 +159,7 @@ jobs:
             exit 1
           fi
 
-          release="$(gh release view "$RELEASE_TAG" --json name,url,body)"
+          release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name,url,body)"
           release_name="$(jq -r '.name // empty' <<<"$release")"
           release_url="$(jq -r '.url' <<<"$release")"
           description="$(jq -r '.body // "Initial alpha release."' <<<"$release")"
