@@ -44,7 +44,7 @@ Only bypass these warnings for a Prism installer you downloaded from the officia
 Prism includes a built-in Subwave radio experience alongside your music library.
 
 1. Open *Settings* and select *Radio*.
-2. Under *Subwave channels*, add your station address, such as `https://radio.gurthyy.xyz`.
+2. Under *Subwave channels*, add your station address, such as `https://subwave.example.com`.
 3. Return to the *Radio* item in the sidebar, select the station, and choose *Tune In*.
 4. While listening, use the radio controls to see the schedule and booth feed, request a song, like the current track, or stop the stream.
 
