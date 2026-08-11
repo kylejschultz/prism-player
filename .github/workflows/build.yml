@@ -142,7 +142,7 @@ jobs:
   announce-discord:
     name: Discord release announcement
     needs: [macos, windows]
-    if: always() && (github.event_name == 'release' || inputs.ref != '')
+    if: always() && (github.event_name == 'release' || inputs.ref != '') && vars.DISABLE_DISCORD_RELEASE_ANNOUNCEMENT != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -151,7 +151,7 @@ jobs:
       - name: Post release announcement
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-          DISCORD_ANNOUNCEMENT_ROLE_ID: '1536269011468419072'
+          DISCORD_ANNOUNCEMENT_ROLE_ID: ${{ vars.DISCORD_ANNOUNCEMENT_ROLE_ID }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
         run: |
@@ -169,7 +169,7 @@ jobs:
 
           webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
           release = json.loads(os.environ["RELEASE_JSON"])
-          role_id = os.environ["DISCORD_ANNOUNCEMENT_ROLE_ID"]
+          role_id = os.environ.get("DISCORD_ANNOUNCEMENT_ROLE_ID", "").strip()
 
           def asset_url(suffix):
               for asset in release.get("assets", []):
@@ -194,11 +194,12 @@ jobs:
                   print(exc.read().decode("utf-8", "replace"))
                   raise
 
-          post({
-              "username": "Prism Player Releases",
-              "content": f"<@&{role_id}>",
-              "allowed_mentions": {"parse": [], "roles": [role_id]},
-          })
+          if role_id:
+              post({
+                  "username": "Prism Player Releases",
+                  "content": f"<@&{role_id}>",
+                  "allowed_mentions": {"parse": [], "roles": [role_id]},
+              })
 
           notes = (release.get("body") or "See the GitHub release for the full notes.").strip()
           if len(notes) > 1800:

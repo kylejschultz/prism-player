@@ -3,6 +3,7 @@ name: Release Please
 on:
   push:
     branches: [release]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,8 +14,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Verify release token is configured
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_PLEASE_TOKEN" ]]; then
+            echo "RELEASE_PLEASE_TOKEN must be configured so release-created events trigger packaging workflows."
+            exit 1
+          fi
+
       - uses: googleapis/release-please-action@v5
         with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           target-branch: release
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
