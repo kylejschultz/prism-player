@@ -1,22 +1,8 @@
 # Prism Player
 
-Prism Player is a focused desktop music player for Navidrome and other Subsonic-compatible libraries. It is built for people who want a fast native-feeling library browser, a proper queue, and a clean listening surface without turning their music server into a web tab.
+Prism Player is a focused desktop music player for Navidrome and other Subsonic-compatible libraries. It gives your music server a fast, native-feeling home: an easy library browser, a proper queue, and a clean listening surface that never feels like another web tab.
 
-The app is currently in early active development, with macOS and Windows desktop builds.
-
-## What It Does
-
-- Connects to Navidrome/Subsonic servers with a local saved connection.
-- Browses artists, albums, playlists, favorites, recently added, and recently played music.
-- Supports grid and list modes for large album and artist libraries.
-- Plays tracks directly from the server with shuffle, repeat, seeking, volume, and queue persistence.
-- Tunes into Subwave internet-radio stations with live now-playing, schedule, requests, likes, and booth updates.
-- Provides global search across artists, albums, songs, and playlists.
-- Opens album, artist, and playlist detail views with cover art, metadata, and track lists.
-- Creates playlists, edits playlist details, reorders playlist tracks, and removes playlist entries.
-- Stars and unstars songs, albums, and artists through the server API.
-- Shows queue, now-playing details, and lyrics in a collapsible right sidebar.
-- Keeps local preferences for view modes, sidebar state, volume, queue, and analytics consent.
+Built for the way you actually listen, Prism brings your collection, playlists, and live Subwave radio into one polished desktop player. The app is currently in early active development, with macOS and Windows desktop builds.
 
 ## Get Prism
 
@@ -57,6 +43,16 @@ Prism is pre-1.0 software. Feedback and bug reports are welcome through [GitHub 
 ## Contributing
 
 Development setup, branches, commits, tests, and release workflow live in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Features at a glance
+
+- Connect to Navidrome and other Subsonic-compatible music servers.
+- Browse artists, albums, playlists, favorites, recently added, and recently played music in grid or list views.
+- Play directly from your server with a persistent queue, shuffle, repeat, seeking, and volume controls.
+- Search artists, albums, songs, and playlists, then explore rich album, artist, and playlist detail views.
+- Create, edit, reorder, and manage playlists; star songs, albums, and artists.
+- Tune into Subwave stations with live now-playing, schedules, requests, likes, and booth updates.
+- Keep queue, now-playing details, lyrics, and listening preferences close at hand.
 
 
 ## Privacy
