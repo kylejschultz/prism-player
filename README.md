@@ -2,7 +2,7 @@
 
 Prism Player is a focused desktop music player for Navidrome and other Subsonic-compatible libraries. It is built for people who want a fast native-feeling library browser, a proper queue, and a clean listening surface without turning their music server into a web tab.
 
-The app is currently in early active development. The first target platform is macOS, with the codebase set up around Tauri, React, TypeScript, and Vite.
+The app is currently in early active development, with macOS and Windows desktop builds.
 
 ## What It Does
 
@@ -17,128 +17,35 @@ The app is currently in early active development. The first target platform is m
 - Shows queue, now-playing details, and lyrics in a collapsible right sidebar.
 - Keeps local preferences for view modes, sidebar state, volume, queue, and analytics consent.
 
+## Get Prism
+
+Download the appropriate installer from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Only install builds from Prism's GitHub releases.
+
+Prism is pre-1.0 software. The core Navidrome library and playback loop is in place, but signing, auto-update, and broader platform support are still being shaped.
+
+### Important: unsigned builds
+
+The current macOS and Windows builds are *not yet code-signed*. Your operating system may warn you before it opens them. This is expected for now; signing is planned for a future release.
+
+- On macOS, if Prism is blocked, open it once, then go to *System Settings → Privacy & Security* and choose *Open Anyway* for Prism.
+- On Windows, if Microsoft Defender SmartScreen shows “Windows protected your PC,” select *More info*, then *Run anyway*.
+
+Only bypass these warnings for a Prism installer you downloaded from the official releases page above.
+
+## First connection
+
+1. Open Prism.
+2. Enter the address of your Navidrome or other Subsonic-compatible server.
+3. Sign in, then browse your library, build a queue, and start listening.
+
 ## Status
 
-Prism is pre-1.0 software. The core Navidrome library and playback loop is in place, but packaging, signing, auto-update, and broader platform support are still being shaped.
+Prism is pre-1.0 software. Feedback and bug reports are welcome through [GitHub Issues](https://github.com/kylejschultz/prism-player/issues).
 
-Current release target:
+## Contributing
 
-- macOS DMG builds from GitHub Actions.
-- Conventional commits for change history.
-- release-please for version bumps, changelog entries, tags, and GitHub releases.
+Development setup, branches, commits, tests, and release workflow live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Development
-
-Requirements:
-
-- Node.js 22
-- npm
-- Rust stable
-- macOS 13+ for the current bundled desktop target
-
-Install dependencies:
-
-```sh
-npm ci
-```
-
-Run the web preview:
-
-```sh
-npm run dev
-```
-
-Run the Tauri desktop app:
-
-```sh
-npm run tauri:dev
-```
-
-Build the frontend:
-
-```sh
-npm run build
-```
-
-Run pre-release checks:
-
-```sh
-npm test
-```
-
-Build the macOS DMG:
-
-```sh
-npm run tauri:build
-```
-
-## Repository Workflow
-
-Development should happen on short-lived branches and merge through pull requests into `dev`. The `dev` branch is the integration lane for active feature work; `release` is the release branch.
-
-1. Create a branch from `dev`.
-2. Make small, reviewable commits using Conventional Commits.
-3. Open a pull request into `dev`.
-4. Wait for CI and security checks to pass.
-5. Squash or merge using a Conventional Commit-style title.
-6. Let multiple feature branches settle together on `dev`.
-7. When `dev` is ready to ship, open a release-candidate PR from `dev` into `release`.
-8. release-please opens or updates the release PR after changes land on `release`.
-9. Merging the release PR creates the tag and GitHub release.
-10. The release packaging workflow builds and attaches the macOS DMG and Windows installer. Run it manually from Actions for an on-demand development artifact.
-
-Recommended branch names:
-
-- `feat/navidrome-auth`
-- `fix/queue-persistence`
-- `docs/public-readme`
-- `chore/ci-security-release-flow`
-
-PRs directly into `release` are intentionally blocked unless the source branch is `dev` or release-please automation.
-
-## Commit Style
-
-Prism uses Conventional Commits so release notes and semantic versions can be generated automatically.
-
-Common commit types:
-
-- `feat:` for user-facing features
-- `fix:` for bug fixes
-- `docs:` for documentation-only changes
-- `style:` for formatting-only changes
-- `refactor:` for code changes that do not alter behavior
-- `test:` for tests
-- `build:` for packaging, dependencies, or build system changes
-- `ci:` for GitHub Actions and automation
-- `chore:` for maintenance
-
-Examples:
-
-```text
-feat: add playlist detail editing
-fix: preserve queue after refresh
-docs: document release workflow
-ci: add release-please automation
-```
-
-Breaking changes should use `!` or a `BREAKING CHANGE:` footer:
-
-```text
-feat!: require Navidrome token auth
-```
-
-## Releases
-
-Release automation is documented in [docs/RELEASE.md](docs/RELEASE.md).
-
-At a high level:
-
-- Normal feature and fix PRs merge to `dev`.
-- Release-candidate PRs merge from `dev` into `release`.
-- release-please maintains a release PR based on Conventional Commit history.
-- The release PR updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `CHANGELOG.md`.
-- Merging the release PR creates a GitHub release.
-- The packaging workflow builds the macOS DMG and Windows installer and uploads them to the release.
 
 ## Privacy
 
