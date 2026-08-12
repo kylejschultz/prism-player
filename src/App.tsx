@@ -9,9 +9,12 @@ import {
   CheckCircle2,
   Disc3,
   Download,
+  ExternalLink,
+  Github,
   History,
   Heart,
   Home,
+  Info,
   Library,
   ListMusic,
   Loader2,
@@ -23,6 +26,7 @@ import {
   Play,
   Plus,
   RadioTower,
+  RefreshCw,
   Repeat,
   Repeat1,
   Search,
@@ -35,6 +39,7 @@ import {
   Square,
   Trash2,
   Menu,
+  MessageCircle,
   UserRound,
   Volume2,
   Waves,
@@ -44,7 +49,7 @@ import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
-type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "advanced";
+type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type AlbumViewMode = "art" | "list";
@@ -354,6 +359,8 @@ const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
 const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
+const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
+const PRISM_DISCORD_URL = "https://discord.gg/aDEBQq3XtN";
 const APP_VERSION = packageJson.version;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
@@ -458,6 +465,7 @@ function getSettingsTabLabel(tab: SettingsTab) {
     appearance: "Appearance",
     radio: "Radio",
     privacy: "Privacy",
+    about: "About",
     advanced: "Advanced",
   };
 
@@ -1568,6 +1576,7 @@ export function App() {
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "checking" | "up-to-date" | "available" | "error">("idle");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
@@ -3129,26 +3138,37 @@ export function App() {
     };
   }, [currentIndex, position, queue]);
 
+  async function checkForUpdates(signal?: AbortSignal) {
+    setUpdateCheckStatus("checking");
+
+    try {
+      const response = await fetch(PRISM_LATEST_RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json" },
+        signal,
+      });
+      if (!response.ok) throw new Error("Unable to check for updates.");
+
+      const release = (await response.json()) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean };
+      const version = release.tag_name?.replace(/^v/, "") ?? "";
+      if (!release.draft && !release.prerelease && version && isVersionNewer(version, packageJson.version)) {
+        setAvailableUpdate({ version, releaseUrl: release.html_url || PRISM_RELEASES_URL });
+        setUpdateCheckStatus("available");
+        return;
+      }
+
+      setAvailableUpdate(null);
+      setUpdateCheckStatus("up-to-date");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setAvailableUpdate(null);
+        setUpdateCheckStatus("error");
+      }
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController();
-
-    void fetch(PRISM_LATEST_RELEASE_API, {
-      headers: { Accept: "application/vnd.github+json" },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Unable to check for updates.");
-        return (await response.json()) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean };
-      })
-      .then((release) => {
-        const version = release.tag_name?.replace(/^v/, "") ?? "";
-        if (!release.draft && !release.prerelease && version && isVersionNewer(version, packageJson.version)) {
-          setAvailableUpdate({ version, releaseUrl: release.html_url || PRISM_RELEASES_URL });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!(error instanceof DOMException && error.name === "AbortError")) setAvailableUpdate(null);
-      });
+    void checkForUpdates(controller.signal);
 
     return () => controller.abort();
   }, []);
@@ -3534,6 +3554,9 @@ export function App() {
               resetAppSettings={resetAppSettings}
               setAlbumViewMode={setAlbumViewMode}
               setArtistViewMode={setArtistViewMode}
+              availableUpdate={availableUpdate}
+              updateCheckStatus={updateCheckStatus}
+              onCheckForUpdates={() => void checkForUpdates()}
               onSave={saveConnection}
               onReset={resetConnection}
             />
@@ -4773,6 +4796,9 @@ function SettingsView({
   resetAppSettings,
   setAlbumViewMode,
   setArtistViewMode,
+  availableUpdate,
+  updateCheckStatus,
+  onCheckForUpdates,
   onSave,
   onReset,
 }: {
@@ -4790,6 +4816,9 @@ function SettingsView({
   resetAppSettings: () => void;
   setAlbumViewMode: (mode: AlbumViewMode) => void;
   setArtistViewMode: (mode: ArtistViewMode) => void;
+  availableUpdate: AvailableUpdate | null;
+  updateCheckStatus: "idle" | "checking" | "up-to-date" | "available" | "error";
+  onCheckForUpdates: () => void;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
@@ -4823,6 +4852,7 @@ function SettingsView({
           { id: "appearance", label: "Appearance", icon: <Waves size={15} /> },
           { id: "radio", label: "Radio", icon: <RadioTower size={15} /> },
           { id: "privacy", label: "Privacy", icon: <CheckCircle2 size={15} /> },
+          { id: "about", label: "About", icon: <Info size={15} /> },
           { id: "advanced", label: "Advanced", icon: <Settings size={15} /> },
         ].map((tab) => (
           <button
@@ -5046,6 +5076,42 @@ function SettingsView({
         <p className="settings-note">
           Sends a periodic Beacon ping with app version, install id, platform, channel, dev/release flag, and aggregate artist, album, and song counts. No account or playback data is sent.
         </p>
+      </section> : null}
+
+      {activeTab === "about" ? <section className="settings-panel about-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Prism Player</p>
+            <h3>About</h3>
+          </div>
+          <Info size={18} />
+        </div>
+        <div className="about-version-row">
+          <div>
+            <span className="settings-label">Installed version</span>
+            <strong>v{APP_VERSION}</strong>
+          </div>
+          <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
+            {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+            Check for updates
+          </button>
+        </div>
+        <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
+          {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
+          {updateCheckStatus === "up-to-date" ? "You’re on the latest released version." : null}
+          {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
+          {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
+          {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
+        </p>
+        {availableUpdate ? <a className="connect-button compact-button about-update-link" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
+          <Download size={15} />
+          View v{availableUpdate.version}
+        </a> : null}
+        <div className="about-links" aria-label="Prism links">
+          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Github size={16} /> GitHub <ExternalLink size={13} /></a>
+          <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
+          <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
+        </div>
       </section> : null}
 
       {activeTab === "advanced" ? <section className="settings-panel">
