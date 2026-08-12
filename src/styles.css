@@ -1986,7 +1986,7 @@ button.similar-chip:hover,
 
 .about-version-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   padding: 14px;

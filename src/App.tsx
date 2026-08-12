@@ -5091,8 +5091,8 @@ function SettingsView({
           <div className="about-version-details">
             <span className="settings-label">Installed version</span>
             <strong>v{APP_VERSION}</strong>
+            <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
           </div>
-          <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
           <div className="about-update-action">
             {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
               <Download size={15} />
