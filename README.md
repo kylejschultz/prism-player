@@ -3,6 +3,9 @@
 # Prism Player
 
 [![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/aDEBQq3XtN)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/kylejschultz?label=Sponsor&logo=githubsponsors&color=ea4aaa)](https://github.com/sponsors/kylejschultz)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support%20the%20project-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/kylejschultz)
 
 </div>
 
@@ -18,7 +21,7 @@ It is still early, but there are builds for macOS and Windows.
 
 ## Get Prism
 
-Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Only use builds from Prism's GitHub releases.
+Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest).
 
 Prism is pre-1.0 software. The main library and playback experience are in place, but app signing and auto-updates are not yet.
 
@@ -38,6 +41,10 @@ Only bypass these warnings if you downloaded Prism from the releases page above.
 3. Sign in, then listen to your library.
 
 ![Prism's first-run Navidrome connection screen](docs/images/navidrome-first-run.png)
+
+Once you're connected, Prism gives you a simple place to browse the artists, albums, and music already on your server.
+
+![Prism artist view](docs/images/artist.png)
 
 ## Subwave Radio
 
@@ -65,23 +72,13 @@ Want to work on Prism? Development setup, branches, tests, and release notes are
 <details>
 <summary>Open the screenshot gallery</summary>
 
-### Connecting and radio setup
+Click any screenshot to open it full size.
 
-![Adding a Subwave station in Prism](docs/images/subwave-stations.png)
-
-![Choosing a Subwave station to tune into](docs/images/subwave-tune-in.png)
-
-### Listening to radio
-
-![Subwave radio in Prism](docs/images/subwave-radio.png)
-
-![Subwave song request in Prism](docs/images/subwave-request.png)
-
-### Your library
-
-![Album view in Prism](docs/images/album.png)
-
-![Artist view in Prism](docs/images/artist.png)
+<a href="docs/images/album.png"><img src="docs/images/album.png" alt="Prism album view" height="180"></a>
+<a href="docs/images/subwave-stations.png"><img src="docs/images/subwave-stations.png" alt="Adding a Subwave station" height="180"></a>
+<a href="docs/images/subwave-tune-in.png"><img src="docs/images/subwave-tune-in.png" alt="Choosing a Subwave station" height="180"></a>
+<a href="docs/images/subwave-radio.png"><img src="docs/images/subwave-radio.png" alt="Subwave radio in Prism" height="180"></a>
+<a href="docs/images/subwave-request.png"><img src="docs/images/subwave-request.png" alt="Subwave song request" height="180"></a>
 
 </details>
 
@@ -102,4 +99,4 @@ Prism stores your server connection and playback preferences locally. Optional a
 
 ## License
 
-License details are not set yet.
+[GNU General Public License v3.0](./LICENSE) — free to use, modify, and share. If you distribute a modified version, it needs to stay under the same license.
