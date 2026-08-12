@@ -3,6 +3,7 @@ import type { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointer
 import {
   AlertCircle,
   CalendarDays,
+  Code2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -10,7 +11,6 @@ import {
   Disc3,
   Download,
   ExternalLink,
-  Github,
   History,
   Heart,
   Home,
@@ -5108,7 +5108,7 @@ function SettingsView({
           View v{availableUpdate.version}
         </a> : null}
         <div className="about-links" aria-label="Prism links">
-          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Github size={16} /> GitHub <ExternalLink size={13} /></a>
+          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
           <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
           <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
         </div>
