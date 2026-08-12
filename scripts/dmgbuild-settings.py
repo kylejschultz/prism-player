@@ -1,7 +1,7 @@
 import os
 
 application = defines["application"]
-background = os.path.join(defines["assets"], "background.png")
+background = os.path.join(defines["assets"], "background-v2.png")
 
 files = [application]
 symlinks = {"Applications": "/Applications"}

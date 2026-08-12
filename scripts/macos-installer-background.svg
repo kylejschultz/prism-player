@@ -21,8 +21,7 @@
   <circle cx="879" cy="128" r="150" fill="#f3cb70" opacity=".08" filter="url(#blur)"/>
   <text x="500" y="100" text-anchor="middle" fill="#fbfaf7" font-family="SF Pro Display, Helvetica Neue, Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="1">Prism Player</text>
   <text x="500" y="132" text-anchor="middle" fill="#b9b5ca" font-family="SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="16" letter-spacing=".4">Your music, in focus.</text>
-  <path d="M396 318 H604" stroke="#f6d87b" stroke-width="4" stroke-linecap="round" filter="url(#glow)"/>
-  <path d="M574 291 L604 318 L574 345" fill="none" stroke="#f6d87b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M440 318 H560 M530 288 L560 318 L530 348" fill="none" stroke="#f6d87b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
   <text x="500" y="394" text-anchor="middle" fill="#f7f4ed" font-family="SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="17" font-weight="600" letter-spacing=".2">Drag Prism Player to Applications</text>
   <text x="500" y="423" text-anchor="middle" fill="#aaa5b8" font-family="SF Pro Text, Helvetica Neue, Arial, sans-serif" font-size="13">Then launch it from your Applications folder</text>
   <path d="M430 476 H570" stroke="#fff" stroke-opacity=".16"/>
