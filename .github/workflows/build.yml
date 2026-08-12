@@ -9,11 +9,24 @@ on:
         description: Published release tag to build and announce, for example v0.1.0
         required: false
         type: string
+      source_ref:
+        description: Git ref to build for a manual test artifact (does not publish a release asset)
+        required: false
+        type: string
       announce_only:
         description: Send the Discord announcement without rebuilding release artifacts
         required: false
         default: false
         type: boolean
+      platform:
+        description: Build target for manual test builds
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
 
 permissions:
   contents: write
@@ -25,19 +38,19 @@ concurrency:
 jobs:
   macos:
     name: macOS DMG
-    if: inputs.announce_only != true
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'windows')
     runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
         env:
-          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
         run: |
           if [[ -n "$RELEASE_TAG" ]]; then
             suffix="$RELEASE_TAG"
@@ -82,20 +95,20 @@ jobs:
 
   windows:
     name: Windows installer
-    if: inputs.announce_only != true
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'macos')
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
         run: |
           if ($env:RELEASE_TAG) {
             $suffix = $env:RELEASE_TAG
