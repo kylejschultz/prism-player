@@ -1589,6 +1589,7 @@ export function App() {
   const [radioLikeStatus, setRadioLikeStatus] = useState<RadioLikeStatus | null>(null);
   const [radioLikeBusy, setRadioLikeBusy] = useState(false);
   const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
+  const [isRadioTuning, setIsRadioTuning] = useState(false);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
   const [playlistCreatorOpen, setPlaylistCreatorOpen] = useState(false);
@@ -1631,9 +1632,10 @@ export function App() {
   const radioUpcoming = upcomingRadioTracks(radioStationState);
   const radioHistory = previousRadioTracks(radioStationState);
   const isRadioPlaying = radioStatus === "playing";
+  const isRadioPresentation = isRadioPlaying || isRadioTuning;
   const radioElapsed = isRadioPlaying ? radioTrackElapsedSeconds(radioNowPlaying, radioStationState, radioClockNow) : 0;
   const radioCoverUrl = buildRadioCoverUrl(radioStationUrl, radioNowPlaying);
-  const footerTrack = isRadioPlaying || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
+  const footerTrack = isRadioPresentation || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   const coverWashUrl = appSettings.coverWashEnabled && visualEffectsEnabled
@@ -1865,6 +1867,7 @@ export function App() {
     radioRetryCountRef.current = 0;
     if (audio) closeRadioStream(audio);
     setSuppressLocalFooter(true);
+    setIsRadioTuning(false);
     setRadioStatus(radioStationState ? "ready" : "idle");
     setRadioMessage(message);
   }
@@ -1878,10 +1881,20 @@ export function App() {
       return;
     }
 
-    if (!radioStationState || origin !== radioStationUrl) {
-      const nextState = await refreshRadio(origin);
-      if (!nextState) return;
-    }
+    // A previous station's state must never be presented as the next station
+    // is connecting. The footer has a dedicated tuning state until fresh
+    // metadata arrives from this connection.
+    setSuppressLocalFooter(true);
+    setRadioStationState(null);
+    setRadioSession(null);
+    setRadioBoothHistory([]);
+    setRadioSchedule(null);
+    setIsRadioTuning(true);
+    setRadioStatus("checking");
+    setRadioMessage("Tuning in...");
+
+    const nextState = await refreshRadio(origin);
+    if (!nextState) return;
 
     audioRef.current?.pause();
     setIsPlaying(false);
@@ -1890,15 +1903,14 @@ export function App() {
     clearRadioWatchdog();
     radioAudio.src = buildRadioPlaybackUrl(origin);
     radioAudio.volume = radioVolume;
-    setRadioStatus("checking");
-    setRadioMessage("Tuning in...");
-
     try {
       await radioAudio.play();
       setSuppressLocalFooter(false);
+      setIsRadioTuning(false);
       setRadioStatus("playing");
       setRadioMessage("");
     } catch {
+      setIsRadioTuning(false);
       setRadioStatus("error");
       setRadioMessage("The stream could not start.");
     }
@@ -2908,6 +2920,7 @@ export function App() {
       radioRetryCountRef.current += 1;
       audio.src = buildRadioPlaybackUrl(radioStationUrl);
       audio.volume = radioVolume;
+      setIsRadioTuning(true);
       setRadioStatus("checking");
       setRadioMessage("Reconnecting radio...");
 
@@ -2915,6 +2928,7 @@ export function App() {
         if (radioGenerationRef.current !== myGeneration) return;
         radioRetryCountRef.current = 0;
         setSuppressLocalFooter(false);
+        setIsRadioTuning(false);
         setRadioStatus("playing");
         setRadioMessage("");
       }).catch(() => {
@@ -2935,6 +2949,7 @@ export function App() {
     function handlePlaying() {
       clearRadioWatchdog();
       radioRetryCountRef.current = 0;
+      setIsRadioTuning(false);
       setRadioStatus("playing");
       setRadioMessage("");
     }
@@ -3556,7 +3571,10 @@ export function App() {
           ref={radioAudioRef}
           crossOrigin="anonymous"
           preload="none"
-          onPlay={() => setRadioStatus("playing")}
+          onPlay={() => {
+            setIsRadioTuning(false);
+            setRadioStatus("playing");
+          }}
           onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
           onError={() => {
             if (!radioAudioRef.current?.src) return;
@@ -3565,10 +3583,10 @@ export function App() {
           }}
         />
 
-        <div className={`now-playing ${footerTrack || isRadioPlaying ? "" : "empty"}`}>
-          {isRadioPlaying ? (
+        <div className={`now-playing ${footerTrack || isRadioPresentation ? "" : "empty"}`}>
+          {isRadioPresentation ? (
             radioCoverUrl ? (
-              <CoverArt src={radioCoverUrl} label={radioNowPlaying?.title ?? "Radio"} className="player-cover" fallbackIcon={<RadioTower size={20} />} />
+              <CoverArt src={isRadioTuning ? null : radioCoverUrl} label={isRadioTuning ? "Tuning In" : radioNowPlaying?.title ?? "Radio"} className="player-cover" fallbackIcon={<RadioTower size={20} />} />
             ) : (
               <CoverArt src={null} label="Radio" className="player-cover" fallbackIcon={<RadioTower size={20} />} />
             )
@@ -3576,13 +3594,13 @@ export function App() {
             <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
           ) : null}
           <div className="now-playing-copy">
-            {isRadioPlaying ? (
+            {isRadioPresentation ? (
               <>
-                <span className="track-title radio-footer-title">{footerRadioTitle}</span>
+                <span className="track-title radio-footer-title">{isRadioTuning ? "Tuning In" : footerRadioTitle}</span>
                 <p className="track-meta">
-                  <span>{footerRadioMeta}</span>
+                  <span>{isRadioTuning ? "Connecting to station…" : footerRadioMeta}</span>
                 </p>
-                {radioNowPlaying?.album ? <p className="track-album">{radioNowPlaying.album}</p> : null}
+                {!isRadioTuning && radioNowPlaying?.album ? <p className="track-album">{radioNowPlaying.album}</p> : null}
               </>
             ) : footerTrack ? (
               <>
