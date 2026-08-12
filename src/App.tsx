@@ -5103,7 +5103,7 @@ function SettingsView({
             </button>}
             <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
               {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
-              {updateCheckStatus === "up-to-date" ? "You’re on the latest released version." : null}
+              {updateCheckStatus === "up-to-date" ? "You’re up to date." : null}
               {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
               {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
               {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}

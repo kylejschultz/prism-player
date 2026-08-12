@@ -2022,9 +2022,11 @@ button.similar-chip:hover,
 }
 
 .update-check-status {
-  min-height: 16px;
   margin: 0;
-  text-align: center;
+  color: rgba(244, 241, 236, 0.58);
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: right;
 }
 
 .update-check-status.bad {
@@ -2034,7 +2036,7 @@ button.similar-chip:hover,
 .about-update-action {
   display: grid;
   justify-items: end;
-  gap: 6px;
+  gap: 5px;
 }
 
 .about-links {
