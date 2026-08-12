@@ -1869,8 +1869,8 @@ export function App() {
     setRadioMessage(message);
   }
 
-  async function tuneInRadio() {
-    const origin = normalizeStationUrl(radioStationInput || appSettings.radioStationUrl);
+  async function tuneInRadio(nextUrl?: string) {
+    const origin = normalizeStationUrl(nextUrl || radioStationInput || appSettings.radioStationUrl);
     const radioAudio = radioAudioRef.current;
     if (!origin || !radioAudio) {
       setRadioStatus("error");
@@ -3493,6 +3493,7 @@ export function App() {
               radioMessage={radioMessage}
               radioWaveformBars={radioWaveformBars}
               tuneInRadio={tuneInRadio}
+              onAddFirstRadioStation={tuneInRadio}
               libraryItems={libraryItems}
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
@@ -5206,6 +5207,7 @@ function RadioView({
   message,
   waveformBars,
   tuneIn,
+  onAddFirstStation,
 }: {
   appSettings: AppSettings;
   onSelectStation: (stationUrl: string) => void;
@@ -5217,9 +5219,11 @@ function RadioView({
   message: string;
   waveformBars: number[];
   tuneIn: () => Promise<void>;
+  onAddFirstStation: (stationUrl: string) => Promise<void>;
 }) {
   const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const savedStations = appSettings.radioStationUrls;
+  const [firstStationUrl, setFirstStationUrl] = useState("");
   const isPlaying = status === "playing";
   const isTuning = status === "checking";
   const selectedStationLabel = stationUrl ? stationUrl.replace(/^https?:\/\//, "") : "No station selected";
@@ -5233,28 +5237,43 @@ function RadioView({
           </div>
           <div className="radio-tune-copy">
             <p className="eyebrow">Radio</p>
-            <h3>Tune into Subwave</h3>
-            <span>{selectedStationLabel}</span>
+            <h3>{savedStations.length ? "Tune into Subwave" : "Add your Subwave station"}</h3>
+            <span>{savedStations.length ? selectedStationLabel : "Paste your station URL to connect and start listening."}</span>
           </div>
 
           <div className="radio-tune-controls">
-            <label className="radio-channel-select radio-tune-select">
-              <span>Channel</span>
-              <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={!savedStations.length || isTuning}>
-                {savedStations.length ? (
-                  savedStations.map((savedStationUrl) => (
+            {savedStations.length ? (
+              <label className="radio-channel-select radio-tune-select">
+                <span>Channel</span>
+                <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={isTuning}>
+                  {savedStations.map((savedStationUrl) => (
                     <option value={savedStationUrl} key={savedStationUrl}>
                       {savedStationUrl.replace(/^https?:\/\//, "")}
                     </option>
-                  ))
-                ) : (
-                  <option value="">No saved stations</option>
-                )}
-              </select>
-            </label>
-            <button className="connect-button radio-tune-button" type="button" onClick={() => void tuneIn()} disabled={!stationUrl || isTuning}>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="radio-channel-select radio-tune-select">
+                <span>Station URL</span>
+                <input
+                  type="url"
+                  value={firstStationUrl}
+                  onChange={(event) => setFirstStationUrl(event.target.value)}
+                  placeholder="https://radio.example.com"
+                  autoComplete="url"
+                  disabled={isTuning}
+                />
+              </label>
+            )}
+            <button
+              className="connect-button radio-tune-button"
+              type="button"
+              onClick={() => void (savedStations.length ? tuneIn() : onAddFirstStation(firstStationUrl))}
+              disabled={isTuning || (!savedStations.length && !firstStationUrl.trim())}
+            >
               {isTuning ? <Loader2 size={18} /> : <Play size={18} fill="currentColor" />}
-              {isTuning ? "Tuning In" : "Tune In"}
+              {isTuning ? "Tuning In" : savedStations.length ? "Tune In" : "Add & Tune In"}
             </button>
             <button className="secondary-button compact-button" type="button" onClick={onOpenSettings}>
               <Settings size={15} />
@@ -5386,6 +5405,7 @@ function LibraryView({
   radioMessage,
   radioWaveformBars,
   tuneInRadio,
+  onAddFirstRadioStation,
   libraryItems,
   albums,
   recentAlbums,
@@ -5441,6 +5461,7 @@ function LibraryView({
   radioMessage: string;
   radioWaveformBars: number[];
   tuneInRadio: () => Promise<void>;
+  onAddFirstRadioStation: (stationUrl: string) => Promise<void>;
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   recentAlbums: Album[];
@@ -5495,6 +5516,7 @@ function LibraryView({
         message={radioMessage}
         waveformBars={radioWaveformBars}
         tuneIn={tuneInRadio}
+        onAddFirstStation={onAddFirstRadioStation}
       />
     );
   }
