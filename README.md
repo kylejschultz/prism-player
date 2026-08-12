@@ -4,6 +4,8 @@ Prism Player is a desktop music player for Navidrome and other Subsonic-compatib
 
 It is still early, but there are desktop builds for macOS and Windows.
 
+![Prism Player home screen](docs/images/home.png)
+
 ## Get Prism
 
 Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Only use builds from Prism's GitHub releases.
@@ -36,6 +38,12 @@ Prism can tune into a Subwave station right alongside your library.
 
 Prism checks that the address is a Subwave station before connecting. You can save more than one station and switch between them later.
 
+![Subwave station setup](docs/images/subwave-stations.png)
+
+Once you're tuned in, Prism shows what's playing and gives you the radio controls without taking you away from the rest of your music.
+
+![Subwave radio and song request](docs/images/subwave-request.png)
+
 ## Status
 
 Prism is pre-1.0 software. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
@@ -53,6 +61,8 @@ Want to work on Prism? Development setup, branches, tests, and release notes are
 - Playlist editing and favorites.
 - Subwave radio with now-playing, schedules, requests, likes, and booth updates.
 - Queue, now-playing details, and lyrics in the sidebar.
+
+![Album view in Prism](docs/images/album.png)
 
 
 ## Privacy
