@@ -3,14 +3,18 @@ import type { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointer
 import {
   AlertCircle,
   CalendarDays,
+  Code2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Disc3,
+  Download,
+  ExternalLink,
   History,
   Heart,
   Home,
+  Info,
   Library,
   ListMusic,
   Loader2,
@@ -22,6 +26,7 @@ import {
   Play,
   Plus,
   RadioTower,
+  RefreshCw,
   Repeat,
   Search,
   Send,
@@ -33,6 +38,7 @@ import {
   Square,
   Trash2,
   Menu,
+  MessageCircle,
   UserRound,
   Volume2,
   Waves,
@@ -42,7 +48,7 @@ import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
-type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "advanced";
+type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type AlbumViewMode = "art" | "list";
@@ -51,6 +57,11 @@ type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
+type AvailableUpdate = {
+  version: string;
+  releaseUrl: string;
+};
+
 function shuffled<T>(items: T[]) {
   const next = [...items];
   for (let index = next.length - 1; index > 0; index -= 1) {
@@ -58,6 +69,24 @@ function shuffled<T>(items: T[]) {
     [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
   }
   return next;
+}
+
+function versionParts(version: string) {
+  return version.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+}
+
+function isVersionNewer(candidate: string, current: string) {
+  const candidateParts = versionParts(candidate);
+  const currentParts = versionParts(current);
+  const length = Math.max(candidateParts.length, currentParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    if ((candidateParts[index] ?? 0) !== (currentParts[index] ?? 0)) {
+      return (candidateParts[index] ?? 0) > (currentParts[index] ?? 0);
+    }
+  }
+
+  return false;
 }
 
 type NavidromeConfig = {
@@ -74,6 +103,7 @@ type AppSettings = {
   sidebarPlaylistLimit: number;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
+  updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
   radioStationUrl: string;
@@ -326,7 +356,12 @@ const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
+const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
+const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
+const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
+const PRISM_DISCORD_URL = "https://discord.gg/aDEBQq3XtN";
 const APP_VERSION = packageJson.version;
+const APP_COMMIT_SHA = __APP_COMMIT_SHA__;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
 const HAVE_FUTURE_DATA = 3;
@@ -372,6 +407,7 @@ const defaultSettings: AppSettings = {
   sidebarPlaylistLimit: 8,
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
+  updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
   radioStationUrl: "",
@@ -430,6 +466,7 @@ function getSettingsTabLabel(tab: SettingsTab) {
     appearance: "Appearance",
     radio: "Radio",
     privacy: "Privacy",
+    about: "About",
     advanced: "Advanced",
   };
 
@@ -518,6 +555,7 @@ function loadStoredSettings(): AppSettings {
       sidebarPlaylistLimit: clampNumber(Number(parsed.sidebarPlaylistLimit ?? defaultSettings.sidebarPlaylistLimit), 3, 20),
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
@@ -1551,6 +1589,8 @@ export function App() {
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "checking" | "up-to-date" | "available" | "error">("idle");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
@@ -3157,6 +3197,41 @@ export function App() {
     };
   }, [currentIndex, position, queue]);
 
+  async function checkForUpdates(signal?: AbortSignal) {
+    setUpdateCheckStatus("checking");
+
+    try {
+      const response = await fetch(PRISM_LATEST_RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json" },
+        signal,
+      });
+      if (!response.ok) throw new Error("Unable to check for updates.");
+
+      const release = (await response.json()) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean };
+      const version = release.tag_name?.replace(/^v/, "") ?? "";
+      if (!release.draft && !release.prerelease && version && isVersionNewer(version, packageJson.version)) {
+        setAvailableUpdate({ version, releaseUrl: release.html_url || PRISM_RELEASES_URL });
+        setUpdateCheckStatus("available");
+        return;
+      }
+
+      setAvailableUpdate(null);
+      setUpdateCheckStatus("up-to-date");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setAvailableUpdate(null);
+        setUpdateCheckStatus("error");
+      }
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void checkForUpdates(controller.signal);
+
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     if (!config || !currentTrack || !isPlaying) return;
 
@@ -3551,6 +3626,12 @@ export function App() {
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
           ) : null}
+          {availableUpdate && appSettings.updateDismissedVersion !== availableUpdate.version ? (
+            <UpdateBanner
+              update={availableUpdate}
+              onDismiss={() => updateAppSettings({ ...appSettings, updateDismissedVersion: availableUpdate.version })}
+            />
+          ) : null}
 
           {activeView === "settings" ? (
             <SettingsView
@@ -3568,6 +3649,9 @@ export function App() {
               resetAppSettings={resetAppSettings}
               setAlbumViewMode={setAlbumViewMode}
               setArtistViewMode={setArtistViewMode}
+              availableUpdate={availableUpdate}
+              updateCheckStatus={updateCheckStatus}
+              onCheckForUpdates={() => void checkForUpdates()}
               onSave={saveConnection}
               onReset={resetConnection}
             />
@@ -4780,6 +4864,28 @@ function AnalyticsBanner({
   );
 }
 
+function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismiss: () => void }) {
+  return (
+    <section className="analytics-banner update-banner" aria-label="Prism update available">
+      <div className="analytics-banner-icon" aria-hidden="true">
+        <Download size={18} />
+      </div>
+      <div>
+        <strong>Prism {update.version} is available</strong>
+        <p>You’re using {packageJson.version}. Visit the release page to download the latest build.</p>
+      </div>
+      <div className="analytics-banner-actions">
+        <button className="secondary-button compact-button" type="button" onClick={onDismiss}>
+          Not Now
+        </button>
+        <a className="connect-button compact-button" href={update.releaseUrl} target="_blank" rel="noreferrer">
+          View Release
+        </a>
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({
   form,
   setForm,
@@ -4795,6 +4901,9 @@ function SettingsView({
   resetAppSettings,
   setAlbumViewMode,
   setArtistViewMode,
+  availableUpdate,
+  updateCheckStatus,
+  onCheckForUpdates,
   onSave,
   onReset,
 }: {
@@ -4812,6 +4921,9 @@ function SettingsView({
   resetAppSettings: () => void;
   setAlbumViewMode: (mode: AlbumViewMode) => void;
   setArtistViewMode: (mode: ArtistViewMode) => void;
+  availableUpdate: AvailableUpdate | null;
+  updateCheckStatus: "idle" | "checking" | "up-to-date" | "available" | "error";
+  onCheckForUpdates: () => void;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
@@ -4845,6 +4957,7 @@ function SettingsView({
           { id: "appearance", label: "Appearance", icon: <Waves size={15} /> },
           { id: "radio", label: "Radio", icon: <RadioTower size={15} /> },
           { id: "privacy", label: "Privacy", icon: <CheckCircle2 size={15} /> },
+          { id: "about", label: "About", icon: <Info size={15} /> },
           { id: "advanced", label: "Advanced", icon: <Settings size={15} /> },
         ].map((tab) => (
           <button
@@ -5068,6 +5181,44 @@ function SettingsView({
         <p className="settings-note">
           Sends a periodic Beacon ping with app version, install id, platform, channel, dev/release flag, and aggregate artist, album, and song counts. No account or playback data is sent.
         </p>
+      </section> : null}
+
+      {activeTab === "about" ? <section className="settings-panel about-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Prism Player</p>
+            <h3>About</h3>
+          </div>
+          <Info size={18} />
+        </div>
+        <div className="about-version-row">
+          <div className="about-version-details">
+            <span className="settings-label">Installed version</span>
+            <strong>v{APP_VERSION}</strong>
+            <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
+          </div>
+          <div className="about-update-action">
+            {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
+              <Download size={15} />
+              Update available
+            </a> : <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
+              {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+              Check for updates
+            </button>}
+            <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
+              {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
+              {updateCheckStatus === "up-to-date" ? "You’re up to date." : null}
+              {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
+              {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
+              {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
+            </p>
+          </div>
+        </div>
+        <div className="about-links" aria-label="Prism links">
+          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
+          <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
+          <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
+        </div>
       </section> : null}
 
       {activeTab === "advanced" ? <section className="settings-panel">

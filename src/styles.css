@@ -1980,6 +1980,94 @@ button.similar-chip:hover,
   padding-top: 18px;
 }
 
+.about-panel {
+  align-content: start;
+}
+
+.about-version-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(242, 217, 133, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(242, 217, 133, 0.11), rgba(255, 255, 255, 0.035));
+}
+
+.about-version-details {
+  display: grid;
+  gap: 3px;
+}
+
+.about-commit-sha {
+  color: rgba(244, 241, 236, 0.48);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.settings-label {
+  color: rgba(244, 241, 236, 0.56);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.about-version-row strong {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.update-check-status {
+  margin: 0;
+  color: rgba(244, 241, 236, 0.58);
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.update-check-status.bad {
+  color: #ffad9f;
+}
+
+.about-update-action {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.about-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.about-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(244, 241, 236, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.about-links a:hover,
+.about-links a:focus-visible {
+  border-color: rgba(242, 217, 133, 0.3);
+  background: rgba(242, 217, 133, 0.12);
+  color: #f8df91;
+}
+
 .settings-form label,
 .settings-panel label {
   display: grid;
