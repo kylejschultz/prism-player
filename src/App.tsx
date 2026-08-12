@@ -1561,6 +1561,7 @@ export function App() {
   const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activePlaybackSource, setActivePlaybackSource] = useState<"local" | "radio">("local");
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
@@ -2461,6 +2462,7 @@ export function App() {
   function replaceQueue(songs: Song[], startIndex = 0) {
     if (!songs.length) return;
     tuneOutRadio();
+    setActivePlaybackSource("local");
     setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
     const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
@@ -2498,6 +2500,7 @@ export function App() {
   function playSong(song: Song) {
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     tuneOutRadio();
+    setActivePlaybackSource("local");
     setSuppressLocalFooter(false);
 
     if (existingIndex >= 0) {
@@ -2734,8 +2737,19 @@ export function App() {
   }
 
   function togglePlayback() {
-    if (isRadioPlaying) {
-      tuneOutRadio();
+    if (activePlaybackSource === "radio" && radioStationUrl) {
+      const radioAudio = radioAudioRef.current;
+      if (isRadioPlaying) {
+        radioAudio?.pause();
+        setRadioMessage("Radio paused.");
+      } else if (radioAudio?.src) {
+        void radioAudio.play().catch(() => {
+          setRadioStatus("error");
+          setRadioMessage("The stream could not resume.");
+        });
+      } else {
+        void tuneInRadio();
+      }
       return;
     }
 
@@ -3214,7 +3228,16 @@ export function App() {
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
-    if (currentTrack) {
+    const controlsRadio = activePlaybackSource === "radio" && Boolean(radioStationUrl);
+
+    if (controlsRadio && radioNowPlaying) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: radioNowPlaying.title ?? "Subwave Radio",
+        artist: radioNowPlaying.artist ?? "Subwave",
+        album: radioNowPlaying.album ?? "Live radio",
+        artwork: radioCoverUrl ? [{ src: radioCoverUrl, sizes: "160x160", type: "image/jpeg" }] : [],
+      });
+    } else if (currentTrack) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.artist ?? "Unknown artist",
@@ -3225,16 +3248,35 @@ export function App() {
       navigator.mediaSession.metadata = null;
     }
 
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-    navigator.mediaSession.setActionHandler("play", () => setIsPlaying(true));
+    navigator.mediaSession.playbackState = controlsRadio ? (isRadioPlaying ? "playing" : "paused") : isPlaying ? "playing" : "paused";
+    navigator.mediaSession.setActionHandler("play", () => {
+      if (controlsRadio) {
+        const radioAudio = radioAudioRef.current;
+        if (radioAudio?.src) {
+          void radioAudio.play().catch(() => {
+            setRadioStatus("error");
+            setRadioMessage("The stream could not resume.");
+          });
+        } else {
+          void tuneInRadio();
+        }
+        return;
+      }
+      setIsPlaying(true);
+    });
     navigator.mediaSession.setActionHandler("pause", () => {
+      if (controlsRadio) {
+        radioAudioRef.current?.pause();
+        setRadioMessage("Radio paused.");
+        return;
+      }
       audioRef.current?.pause();
       setIsPlaying(false);
     });
-    navigator.mediaSession.setActionHandler("previoustrack", playPrevious);
-    navigator.mediaSession.setActionHandler("nexttrack", () => playNext(false));
-    navigator.mediaSession.setActionHandler("seekbackward", () => seekTo(Math.max(0, position - 10)));
-    navigator.mediaSession.setActionHandler("seekforward", () => seekTo(Math.min((playerDuration || currentTrack?.duration || 0), position + 10)));
+    navigator.mediaSession.setActionHandler("previoustrack", controlsRadio ? null : playPrevious);
+    navigator.mediaSession.setActionHandler("nexttrack", controlsRadio ? null : () => playNext(false));
+    navigator.mediaSession.setActionHandler("seekbackward", controlsRadio ? null : () => seekTo(Math.max(0, position - 10)));
+    navigator.mediaSession.setActionHandler("seekforward", controlsRadio ? null : () => seekTo(Math.min((playerDuration || currentTrack?.duration || 0), position + 10)));
 
     return () => {
       navigator.mediaSession.setActionHandler("play", null);
@@ -3244,7 +3286,7 @@ export function App() {
       navigator.mediaSession.setActionHandler("seekbackward", null);
       navigator.mediaSession.setActionHandler("seekforward", null);
     };
-  }, [currentTrack, currentTrackCoverUrl, isPlaying, playerDuration, position]);
+  }, [activePlaybackSource, currentTrack, currentTrackCoverUrl, isPlaying, isRadioPlaying, playerDuration, position, radioCoverUrl, radioNowPlaying, radioStationUrl]);
 
   useEffect(() => {
     const trimmedQuery = searchQuery.trim();
@@ -3557,6 +3599,7 @@ export function App() {
         <audio
           ref={audioRef}
           preload="auto"
+          onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget.duration)}
           onEnded={() => playNext(true)}
@@ -3573,6 +3616,7 @@ export function App() {
           preload="none"
           onPlay={() => {
             setIsRadioTuning(false);
+            setActivePlaybackSource("radio");
             setRadioStatus("playing");
           }}
           onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
