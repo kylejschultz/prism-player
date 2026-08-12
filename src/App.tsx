@@ -5087,26 +5087,27 @@ function SettingsView({
           <Info size={18} />
         </div>
         <div className="about-version-row">
-          <div>
+          <div className="about-version-details">
             <span className="settings-label">Installed version</span>
             <strong>v{APP_VERSION}</strong>
           </div>
-          <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
-            {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
-            Check for updates
-          </button>
+          <div className="about-update-action">
+            {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
+              <Download size={15} />
+              Update available
+            </a> : <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
+              {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+              Check for updates
+            </button>}
+            <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
+              {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
+              {updateCheckStatus === "up-to-date" ? "You’re on the latest released version." : null}
+              {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
+              {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
+              {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
+            </p>
+          </div>
         </div>
-        <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
-          {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
-          {updateCheckStatus === "up-to-date" ? "You’re on the latest released version." : null}
-          {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
-          {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
-          {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
-        </p>
-        {availableUpdate ? <a className="connect-button compact-button about-update-link" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
-          <Download size={15} />
-          View v{availableUpdate.version}
-        </a> : null}
         <div className="about-links" aria-label="Prism links">
           <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
           <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
