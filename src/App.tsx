@@ -40,7 +40,7 @@ import {
 } from "lucide-react";
 import packageJson from "../package.json";
 
-type LibraryViewMode = "overview" | "albums" | "artists" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
+type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
 type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
@@ -410,6 +410,7 @@ function getViewLabel(view: View) {
     overview: "Home",
     albums: "Albums",
     artists: "Artists",
+    songs: "Songs",
     playlists: "Playlists",
     recentlyAdded: "Recently Added",
     recentlyPlayed: "Recently Played",
@@ -1343,6 +1344,19 @@ async function fetchAlbumDetail(config: NavidromeConfig, albumId: string): Promi
   return response.album;
 }
 
+async function fetchSongLibrary(config: NavidromeConfig, albums: Album[]) {
+  const songs: Song[] = [];
+  const batchSize = 10;
+
+  for (let index = 0; index < albums.length; index += batchSize) {
+    const batch = albums.slice(index, index + batchSize);
+    const details = await Promise.all(batch.map((album) => fetchAlbumDetail(config, album.id)));
+    songs.push(...details.flatMap((album) => album.song ?? []));
+  }
+
+  return songs.sort((left, right) => `${left.title}\u0000${left.artist ?? ""}`.localeCompare(`${right.title}\u0000${right.artist ?? ""}`));
+}
+
 async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Promise<ArtistDetail> {
   const [artistResponse, infoResponse] = await Promise.all([
     navidromeRequest<{ artist: ArtistDetail }>(config, "getArtist", { id: artistId }),
@@ -1541,6 +1555,8 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
+  const [songLibrary, setSongLibrary] = useState<Song[]>([]);
+  const [songLibraryStatus, setSongLibraryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -2403,6 +2419,18 @@ export function App() {
     pushBrowserHistory();
     clearDetail();
     setActiveView(view);
+    if (view === "songs" && config && songLibraryStatus !== "ready" && songLibraryStatus !== "loading") void loadSongLibrary();
+  }
+
+  async function loadSongLibrary() {
+    if (!config) return;
+    setSongLibraryStatus("loading");
+    try {
+      setSongLibrary(await fetchSongLibrary(config, libraryData.albums));
+      setSongLibraryStatus("ready");
+    } catch {
+      setSongLibraryStatus("error");
+    }
   }
 
   function openSettings(tab: SettingsTab = "connection") {
@@ -2787,6 +2815,8 @@ export function App() {
     setConfig(null);
     setForm(emptyConfig);
     setLibraryData(emptyLibraryData);
+    setSongLibrary([]);
+    setSongLibraryStatus("idle");
     setDetailSelection(null);
     setBackStack([]);
     setForwardStack([]);
@@ -3408,6 +3438,14 @@ export function App() {
             <Disc3 size={18} />
             Albums
           </button>
+          <button
+            className={`nav-item nav-child ${activeView === "songs" ? "active" : ""}`}
+            type="button"
+            onClick={() => selectView("songs")}
+          >
+            <Music2 size={18} />
+            Songs
+          </button>
           <div className="nav-parent-row">
             <button
               className={`nav-item nav-child nav-parent ${activeView === "playlists" ? "active" : ""}`}
@@ -3554,6 +3592,9 @@ export function App() {
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
+              songs={songLibrary}
+              songLibraryStatus={songLibraryStatus}
+              onRetrySongs={() => void loadSongLibrary()}
               favorites={libraryData.favorites}
               playlists={libraryData.playlists}
               albumViewMode={albumViewMode}
@@ -5472,6 +5513,9 @@ function LibraryView({
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
+  songs,
+  songLibraryStatus,
+  onRetrySongs,
   favorites,
   playlists,
   albumViewMode,
@@ -5528,6 +5572,9 @@ function LibraryView({
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
+  songs: Song[];
+  songLibraryStatus: "idle" | "loading" | "ready" | "error";
+  onRetrySongs: () => void;
   favorites: LibraryData["favorites"];
   playlists: Playlist[];
   albumViewMode: AlbumViewMode;
@@ -5709,6 +5756,24 @@ function LibraryView({
               onOpenArtist={onOpenArtist}
               onPlayArtist={onPlayArtist}
             />
+          ) : null}
+          {activeView === "songs" ? (
+            songLibraryStatus === "loading" ? (
+              <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading your songs…" />
+            ) : songLibraryStatus === "error" ? (
+              <StateNotice tone="bad" icon={<AlertCircle size={16} />} title="Songs could not load" text="Try again to reload your library tracks." actionLabel="Retry" onAction={onRetrySongs} />
+            ) : (
+              <SearchSongList
+                songs={songs}
+                currentTrack={currentTrack}
+                favoriteIds={favoriteIds}
+                favoriteBusyKey={favoriteBusyKey}
+                onToggleFavorite={onToggleFavorite}
+                onPlaySong={onPlaySong}
+                onQueueSong={onQueueSong}
+                onSongContextMenu={onSongContextMenu}
+              />
+            )
           ) : null}
           {activeView === "playlists" ? (
             <PlaylistBrowser playlists={playlists} onOpenPlaylist={onOpenPlaylist} onPlayPlaylist={onPlayPlaylist} />
