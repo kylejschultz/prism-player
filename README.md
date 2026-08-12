@@ -27,6 +27,8 @@ Only bypass these warnings if you downloaded Prism from the releases page above.
 2. Enter the address of your Navidrome or other Subsonic-compatible server.
 3. Sign in, then listen to your library.
 
+![Connected Navidrome server in Prism](docs/images/server-connection.png)
+
 ## Listen to Subwave Radio
 
 Prism can tune into a Subwave station right alongside your library.
@@ -39,6 +41,8 @@ Prism can tune into a Subwave station right alongside your library.
 Prism checks that the address is a Subwave station before connecting. You can save more than one station and switch between them later.
 
 ![Subwave station setup](docs/images/subwave-stations.png)
+
+![Choosing a Subwave station to tune into](docs/images/subwave-tune-in.png)
 
 Once you're tuned in, Prism shows what's playing and gives you the radio controls without taking you away from the rest of your music.
 
@@ -63,6 +67,8 @@ Want to work on Prism? Development setup, branches, tests, and release notes are
 - Queue, now-playing details, and lyrics in the sidebar.
 
 ![Album view in Prism](docs/images/album.png)
+
+![Artist view in Prism](docs/images/artist.png)
 
 
 ## Privacy
