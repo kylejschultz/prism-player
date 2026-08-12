@@ -2000,6 +2000,15 @@ button.similar-chip:hover,
   gap: 3px;
 }
 
+.about-commit-sha {
+  color: rgba(244, 241, 236, 0.48);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .settings-label {
   color: rgba(244, 241, 236, 0.56);
   font-size: 11px;
@@ -2024,7 +2033,7 @@ button.similar-chip:hover,
 
 .about-update-action {
   display: grid;
-  justify-items: center;
+  justify-items: end;
   gap: 6px;
 }
 

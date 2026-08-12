@@ -362,6 +362,7 @@ const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/pris
 const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
 const PRISM_DISCORD_URL = "https://discord.gg/aDEBQq3XtN";
 const APP_VERSION = packageJson.version;
+const APP_COMMIT_SHA = __APP_COMMIT_SHA__;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
 const HAVE_FUTURE_DATA = 3;
@@ -5091,6 +5092,7 @@ function SettingsView({
             <span className="settings-label">Installed version</span>
             <strong>v{APP_VERSION}</strong>
           </div>
+          <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
           <div className="about-update-action">
             {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
               <Download size={15} />
