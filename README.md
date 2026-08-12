@@ -1,8 +1,20 @@
+<div align="center">
+
 # Prism Player
 
-Prism Player is a desktop music player for Navidrome and other Subsonic-compatible servers. It keeps your library, queue, playlists, and Subwave radio in one place without making you use a browser tab.
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/aDEBQq3XtN)
 
-It is still early, but there are desktop builds for macOS and Windows.
+</div>
+
+**A desktop player for the music server you already use.**
+
+Prism connects to Navidrome and other Subsonic-compatible servers, so you can play your library, manage the queue, and keep your playlists in one proper desktop app. If you use Subwave too, radio lives right there with the rest of your music.
+
+It is still early, but there are builds for macOS and Windows.
+
+![Prism Player home screen](docs/images/home.png)
+
+> **Need help or want to talk about Prism?** [Join the Discord](https://discord.gg/aDEBQq3XtN). It is the quickest place for questions, ideas, and bug reports.
 
 ## Get Prism
 
@@ -27,7 +39,7 @@ Only bypass these warnings if you downloaded Prism from the releases page above.
 
 ![Prism's first-run Navidrome connection screen](docs/images/navidrome-first-run.png)
 
-## Listen to Subwave Radio
+## Subwave Radio
 
 Prism can tune into a Subwave station right alongside your library.
 
@@ -38,13 +50,7 @@ Prism can tune into a Subwave station right alongside your library.
 
 Prism checks that the address is a Subwave station before connecting. You can save more than one station and switch between them later.
 
-Once you're tuned in, Prism shows what's playing and gives you the radio controls without taking you away from the rest of your music.
-
-![Subwave radio in Prism](docs/images/subwave-radio.png)
-
-Use the request button when you want to send something to the station.
-
-![Subwave song request in Prism](docs/images/subwave-request.png)
+Once you're tuned in, Prism shows what is playing and keeps the station controls close by. Use the request button when you want to send something to the station.
 
 ## Status
 
@@ -54,7 +60,32 @@ Prism is pre-1.0 software. If something is broken or you have an idea, open a [G
 
 Want to work on Prism? Development setup, branches, tests, and release notes are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## What’s in it
+## More screenshots
+
+<details>
+<summary>Open the screenshot gallery</summary>
+
+### Connecting and radio setup
+
+![Adding a Subwave station in Prism](docs/images/subwave-stations.png)
+
+![Choosing a Subwave station to tune into](docs/images/subwave-tune-in.png)
+
+### Listening to radio
+
+![Subwave radio in Prism](docs/images/subwave-radio.png)
+
+![Subwave song request in Prism](docs/images/subwave-request.png)
+
+### Your library
+
+![Album view in Prism](docs/images/album.png)
+
+![Artist view in Prism](docs/images/artist.png)
+
+</details>
+
+## Features at a glance
 
 - Navidrome and Subsonic server support.
 - Artists, albums, playlists, favorites, recently added, and recently played views.
