@@ -44,7 +44,8 @@ npm test
 Build the macOS DMG:
 
 ```sh
-npm run tauri:build
+python3 -m pip install dmgbuild
+npm run tauri:build:installer
 ```
 
 ## Repository workflow

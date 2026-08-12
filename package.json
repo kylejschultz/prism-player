@@ -12,7 +12,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:app": "tauri build --bundles app",
+    "tauri:build:installer": "npm run tauri:build:app && ./scripts/package-macos-installer.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
