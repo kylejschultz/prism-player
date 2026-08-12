@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CheckCircle2,
   Disc3,
+  Download,
   History,
   Heart,
   Home,
@@ -52,6 +53,11 @@ type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
+type AvailableUpdate = {
+  version: string;
+  releaseUrl: string;
+};
+
 function shuffled<T>(items: T[]) {
   const next = [...items];
   for (let index = next.length - 1; index > 0; index -= 1) {
@@ -59,6 +65,24 @@ function shuffled<T>(items: T[]) {
     [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
   }
   return next;
+}
+
+function versionParts(version: string) {
+  return version.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+}
+
+function isVersionNewer(candidate: string, current: string) {
+  const candidateParts = versionParts(candidate);
+  const currentParts = versionParts(current);
+  const length = Math.max(candidateParts.length, currentParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    if ((candidateParts[index] ?? 0) !== (currentParts[index] ?? 0)) {
+      return (candidateParts[index] ?? 0) > (currentParts[index] ?? 0);
+    }
+  }
+
+  return false;
 }
 
 type NavidromeConfig = {
@@ -75,6 +99,7 @@ type AppSettings = {
   sidebarPlaylistLimit: number;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
+  updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
   radioStationUrl: string;
@@ -327,6 +352,8 @@ const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
+const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
+const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
 const APP_VERSION = packageJson.version;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
@@ -373,6 +400,7 @@ const defaultSettings: AppSettings = {
   sidebarPlaylistLimit: 8,
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
+  updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
   radioStationUrl: "",
@@ -518,6 +546,7 @@ function loadStoredSettings(): AppSettings {
       sidebarPlaylistLimit: clampNumber(Number(parsed.sidebarPlaylistLimit ?? defaultSettings.sidebarPlaylistLimit), 3, 20),
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
@@ -1538,6 +1567,7 @@ export function App() {
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
@@ -3100,6 +3130,30 @@ export function App() {
   }, [currentIndex, position, queue]);
 
   useEffect(() => {
+    const controller = new AbortController();
+
+    void fetch(PRISM_LATEST_RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to check for updates.");
+        return (await response.json()) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean };
+      })
+      .then((release) => {
+        const version = release.tag_name?.replace(/^v/, "") ?? "";
+        if (!release.draft && !release.prerelease && version && isVersionNewer(version, packageJson.version)) {
+          setAvailableUpdate({ version, releaseUrl: release.html_url || PRISM_RELEASES_URL });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) setAvailableUpdate(null);
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
     if (!config || !currentTrack || !isPlaying) return;
 
     const duration = playerDuration || currentTrack.duration || 0;
@@ -3456,6 +3510,12 @@ export function App() {
         <div className="workspace-viewport">
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
+          ) : null}
+          {availableUpdate && appSettings.updateDismissedVersion !== availableUpdate.version ? (
+            <UpdateBanner
+              update={availableUpdate}
+              onDismiss={() => updateAppSettings({ ...appSettings, updateDismissedVersion: availableUpdate.version })}
+            />
           ) : null}
 
           {activeView === "settings" ? (
@@ -4671,6 +4731,28 @@ function AnalyticsBanner({
         <button className="connect-button compact-button" type="button" onClick={onEnable}>
           Enable
         </button>
+      </div>
+    </section>
+  );
+}
+
+function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismiss: () => void }) {
+  return (
+    <section className="analytics-banner update-banner" aria-label="Prism update available">
+      <div className="analytics-banner-icon" aria-hidden="true">
+        <Download size={18} />
+      </div>
+      <div>
+        <strong>Prism {update.version} is available</strong>
+        <p>You’re using {packageJson.version}. Visit the release page to download the latest build.</p>
+      </div>
+      <div className="analytics-banner-actions">
+        <button className="secondary-button compact-button" type="button" onClick={onDismiss}>
+          Not Now
+        </button>
+        <a className="connect-button compact-button" href={update.releaseUrl} target="_blank" rel="noreferrer">
+          View Release
+        </a>
       </div>
     </section>
   );
