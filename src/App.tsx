@@ -23,7 +23,6 @@ import {
   Plus,
   RadioTower,
   Repeat,
-  Repeat1,
   Search,
   Send,
   Settings,
@@ -3760,7 +3759,7 @@ export function App() {
                   <SkipForward size={16} />
                 </button>
                 <button
-                  className={repeatMode !== "off" ? "active" : ""}
+                  className={`repeat-button ${repeatMode !== "off" ? "active" : ""} ${repeatMode === "one" ? "repeat-one" : ""}`}
                   type="button"
                   aria-label={`Repeat ${repeatMode}`}
                   aria-pressed={repeatMode !== "off"}
@@ -3768,7 +3767,8 @@ export function App() {
                   disabled={!queue.length}
                   title={repeatMode === "off" ? "Repeat off" : repeatMode === "all" ? "Repeat all" : "Repeat one"}
                 >
-                  {repeatMode === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+                  <Repeat size={15} />
+                  {repeatMode === "one" ? <span className="repeat-one-indicator" aria-hidden="true">1</span> : null}
                 </button>
               </>
             )}
