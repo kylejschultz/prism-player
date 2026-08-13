@@ -3424,9 +3424,12 @@ export function App() {
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (isTextInputTarget(target)) return;
 
-        // Song lists own this shortcut through useTrackSelection. Everywhere
-        // else, suppress the browser's document-wide text selection.
-        if (!target?.closest(".track-list, .search-song-list, .listening-history-list")) event.preventDefault();
+        const selector = ".track-list, .search-song-list, .listening-history-list";
+        const trackList = target?.closest<HTMLElement>(selector)
+          ?? Array.from(document.querySelectorAll<HTMLElement>(selector)).find((list) => list.getClientRects().length > 0);
+
+        event.preventDefault();
+        if (trackList) window.dispatchEvent(new CustomEvent<HTMLElement>("prism:select-all-tracks", { detail: trackList }));
         return;
       }
 
@@ -6590,10 +6593,10 @@ function SearchSongList({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
-  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
 
   return (
-    <div className="search-song-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
+    <div className="search-song-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
       {songs.map((song, index) => (
         <div
           className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
@@ -6669,7 +6672,7 @@ function ListeningHistoryView({
   onPlaySong: (song: Song) => void;
   onClear: () => void;
 }) {
-  const { isSelected, selectTrack, handleKeyDown } = useTrackSelection(history.map((entry) => entry.song));
+  const { isSelected, selectTrack, handleKeyDown, listRef } = useTrackSelection(history.map((entry) => entry.song));
 
   if (!history.length) {
     return <EmptyPanel icon={<History size={20} />} text="Play a song for a little while and it will appear here. Your history stays on this device." />;
@@ -6683,7 +6686,7 @@ function ListeningHistoryView({
           Clear history
         </button>
       </div>
-      <div className="listening-history-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Recently played songs">
+      <div className="listening-history-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Recently played songs">
         {history.map((entry, index) => (
           <div
             className={`track-row history-track-row ${isSelected(index) ? "selected" : ""}`}
@@ -6717,6 +6720,12 @@ function ListeningHistoryView({
 function useTrackSelection(songs: Song[]) {
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set());
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  const selectAllTracks = () => {
+    setSelectedIndexes(new Set(songs.map((_, index) => index)));
+    setSelectionAnchor(songs.length ? 0 : null);
+  };
 
   useEffect(() => {
     setSelectedIndexes((current) => {
@@ -6724,6 +6733,15 @@ function useTrackSelection(songs: Song[]) {
       return next.size === current.size ? current : next;
     });
   }, [songs]);
+
+  useEffect(() => {
+    function handleSelectAllTracks(event: Event) {
+      if ((event as CustomEvent<HTMLElement>).detail === listRef.current) selectAllTracks();
+    }
+
+    window.addEventListener("prism:select-all-tracks", handleSelectAllTracks);
+    return () => window.removeEventListener("prism:select-all-tracks", handleSelectAllTracks);
+  });
 
   const selectTrack = (event: MouseEvent<HTMLElement>, index: number) => {
     const song = songs[index];
@@ -6754,8 +6772,7 @@ function useTrackSelection(songs: Song[]) {
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      setSelectedIndexes(new Set(songs.map((_, index) => index)));
-      setSelectionAnchor(songs.length ? 0 : null);
+      selectAllTracks();
     }
   };
 
@@ -6764,6 +6781,7 @@ function useTrackSelection(songs: Song[]) {
     selectedSongs: songs.filter((_, index) => selectedIndexes.has(index)),
     selectTrack,
     handleKeyDown,
+    listRef,
   };
 }
 
@@ -7970,7 +7988,7 @@ function TrackList({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
-  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
 
   if (!songs.length) {
     return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
@@ -7980,7 +7998,7 @@ function TrackList({
   const showDiscHeaders = discGroups.length > 1;
 
   return (
-    <div className="track-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
+    <div className="track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
       {discGroups.map((group) => (
         <div className="disc-group" key={group.discNumber ?? "unknown-disc"}>
           {showDiscHeaders ? (
@@ -8084,7 +8102,7 @@ function EditablePlaylistTrackList({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
-  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
   const displayedSongs = useMemo(() => {
     if (draggedIndex == null || dragOverIndex == null || draggedIndex === dragOverIndex) {
       return songs.map((song, index) => ({ song, index }));
@@ -8106,7 +8124,7 @@ function EditablePlaylistTrackList({
         <p className="eyebrow">Tracks</p>
         {message ? <span className={busy ? "" : "bad"}>{message}</span> : null}
       </div>
-      <div className="track-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Playlist tracks">
+      <div className="track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Playlist tracks">
         {displayedSongs.map(({ song, index }, displayIndex) => (
           <div
             className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""} ${index === draggedIndex ? "dragging" : ""}`}
