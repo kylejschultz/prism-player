@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -57,6 +58,10 @@ type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+
+function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return createPortal(<div className={`modal-backdrop ${className}`.trim()}>{children}</div>, document.body);
+}
 
 type AvailableUpdate = {
   version: string;
@@ -4199,7 +4204,7 @@ export function App() {
         />
       ) : null}
       {playlistCreatorOpen ? (
-        <div className="modal-backdrop">
+        <ViewportModal>
           <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-create-title">
             <div className="modal-heading">
               <div>
@@ -4226,7 +4231,7 @@ export function App() {
               onCancel={closePlaylistCreator}
             />
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
       {songContextMenu ? (
         <SongPlaylistMenu
@@ -4323,7 +4328,7 @@ export function App() {
         />
       ) : null}
       {playlistDeleteTarget ? (
-        <div className="modal-backdrop confirm-backdrop">
+        <ViewportModal className="confirm-backdrop">
           <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="context-playlist-delete-title">
             <div className="confirm-icon" aria-hidden="true">
               <Trash2 size={22} />
@@ -4356,7 +4361,7 @@ export function App() {
               <p className={`confirm-status ${playlistDeleteStatus === "error" ? "bad" : ""}`}>{playlistDeleteMessage}</p>
             ) : null}
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
     </main>
   );
@@ -5426,7 +5431,7 @@ function FirstRunWizard({
   onClose: () => void;
 }) {
   return (
-    <div className="modal-backdrop">
+    <ViewportModal>
       <section className="setup-modal" role="dialog" aria-modal="true" aria-labelledby="setup-title">
         <button className="icon-button close-button" type="button" aria-label="Close setup" onClick={onClose}>
           <X size={18} />
@@ -5470,7 +5475,7 @@ function FirstRunWizard({
 
         <p className={`wizard-status ${status === "error" ? "bad" : ""}`}>{statusMessage}</p>
       </section>
-    </div>
+    </ViewportModal>
   );
 }
 
@@ -7603,7 +7608,7 @@ function PlaylistDetailPanel({
         </div>
       </div>
       {editing ? (
-        <div className="modal-backdrop">
+        <ViewportModal>
           <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-edit-title">
             <div className="modal-heading">
               <div>
@@ -7656,10 +7661,10 @@ function PlaylistDetailPanel({
               </div>
             </form>
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
       {confirmingDelete ? (
-        <div className="modal-backdrop confirm-backdrop">
+        <ViewportModal className="confirm-backdrop">
           <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title">
             <div className="confirm-icon" aria-hidden="true">
               <Trash2 size={22} />
@@ -7680,7 +7685,7 @@ function PlaylistDetailPanel({
             </div>
             {message ? <p className={`confirm-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
       <EditablePlaylistTrackList
         songs={draftSongs}
