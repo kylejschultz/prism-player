@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { createPortal } from "react-dom";
+import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   AlertCircle,
   CalendarDays,
@@ -56,6 +58,10 @@ type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+
+function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return createPortal(<div className={`modal-backdrop ${className}`.trim()}>{children}</div>, document.body);
+}
 
 type AvailableUpdate = {
   version: string;
@@ -217,6 +223,7 @@ type BrowserSnapshot = {
 
 type SongContextMenuState = {
   song: Song;
+  songs: Song[];
   x: number;
   y: number;
 } | null;
@@ -1693,6 +1700,7 @@ export function App() {
   const [playlistDescription, setPlaylistDescription] = useState("");
   const [playlistPublic, setPlaylistPublic] = useState(false);
   const [playlistFromQueue, setPlaylistFromQueue] = useState(true);
+  const [playlistSeedSongs, setPlaylistSeedSongs] = useState<Song[] | null>(null);
   const [playlistCreateStatus, setPlaylistCreateStatus] = useState<"idle" | "saving" | "error">("idle");
   const [playlistCreateMessage, setPlaylistCreateMessage] = useState("");
   const [songContextMenu, setSongContextMenu] = useState<SongContextMenuState>(null);
@@ -2290,7 +2298,7 @@ export function App() {
       return;
     }
 
-    const seedSongs = playlistFromQueue ? queue : [];
+    const seedSongs = playlistSeedSongs ?? (playlistFromQueue ? queue : []);
     const trimmedDescription = playlistDescription.trim();
     setPlaylistCreateStatus("saving");
     setPlaylistCreateMessage("Creating playlist...");
@@ -2321,6 +2329,7 @@ export function App() {
       setPlaylistName("");
       setPlaylistDescription("");
       setPlaylistPublic(false);
+      setPlaylistSeedSongs(null);
       setPlaylistCreatorOpen(false);
       setPlaylistCreateStatus("idle");
       setPlaylistCreateMessage("");
@@ -2400,14 +2409,14 @@ export function App() {
     setDetailSelection({ type: "playlist", data: updatedPlaylist });
   }
 
-  async function addSongToPlaylist(playlist: Playlist, song: Song) {
+  async function addSongsToSelectedPlaylist(playlist: Playlist, songs: Song[]) {
     if (!config || playlistAddStatus === "saving") return;
 
     setPlaylistAddStatus("saving");
-    setPlaylistAddMessage(`Adding to ${playlist.name}...`);
+    setPlaylistAddMessage(`Adding ${songs.length === 1 ? "song" : `${songs.length} songs`} to ${playlist.name}...`);
 
     try {
-      await addSongsToPlaylist(config, playlist.id, [song]);
+      await addSongsToPlaylist(config, playlist.id, songs);
       const [nextLibrary, updatedPlaylist] = await Promise.all([
         fetchLibrary(config),
         detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id
@@ -2422,6 +2431,33 @@ export function App() {
       setPlaylistAddStatus("idle");
       setPlaylistAddMessage("");
       setSongContextMenu(null);
+      setLibraryContextMenu(null);
+    } catch (error) {
+      setPlaylistAddStatus("error");
+      setPlaylistAddMessage(getErrorMessage(error));
+    }
+  }
+
+  async function addAlbumToPlaylist(playlist: Playlist, album: Album) {
+    if (!config) return;
+
+    try {
+      const detail = await fetchAlbumDetail(config, album.id);
+      await addSongsToSelectedPlaylist(playlist, sortAlbumSongs(detail.song ?? []));
+    } catch (error) {
+      setPlaylistAddStatus("error");
+      setPlaylistAddMessage(getErrorMessage(error));
+    }
+  }
+
+  async function addArtistToPlaylist(playlist: Playlist, artist: Artist) {
+    if (!config) return;
+
+    try {
+      const detail = await fetchArtistDetail(config, artist.id);
+      const albums = detail.album ?? [];
+      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => fetchAlbumDetail(config, album.id)));
+      await addSongsToSelectedPlaylist(playlist, albumDetails.flatMap((album) => album.song ?? []));
     } catch (error) {
       setPlaylistAddStatus("error");
       setPlaylistAddMessage(getErrorMessage(error));
@@ -2471,12 +2507,12 @@ export function App() {
     }
   }
 
-  function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song) {
+  function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song, selectedSongs: Song[] = [song]) {
     event.preventDefault();
     setLibraryContextMenu(null);
     setPlaylistAddStatus("idle");
     setPlaylistAddMessage("");
-    setSongContextMenu({ song, x: event.clientX, y: event.clientY });
+    setSongContextMenu({ song, songs: selectedSongs.some((selectedSong) => selectedSong.id === song.id) ? selectedSongs : [song], x: event.clientX, y: event.clientY });
   }
 
   function openLibraryContextMenu(event: MouseEvent<HTMLElement>) {
@@ -2894,6 +2930,18 @@ export function App() {
     setPlaylistName("");
     setPlaylistDescription("");
     setPlaylistPublic(false);
+    setPlaylistSeedSongs(null);
+  }
+
+  function createPlaylistFromSongs(name: string, songs: Song[]) {
+    setPlaylistName(name);
+    setPlaylistDescription("");
+    setPlaylistPublic(false);
+    setPlaylistFromQueue(false);
+    setPlaylistSeedSongs(songs);
+    setSongContextMenu(null);
+    setLibraryContextMenu(null);
+    setPlaylistCreatorOpen(true);
   }
 
   function togglePlayback() {
@@ -3373,6 +3421,14 @@ export function App() {
 
     function handleKeyDown(event: KeyboardEvent) {
       if (isTypingTarget(event.target)) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (!target?.closest(".track-list, .search-song-list, .listening-history-list")) {
+          event.preventDefault();
+        }
+        return;
+      }
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -4148,7 +4204,7 @@ export function App() {
         />
       ) : null}
       {playlistCreatorOpen ? (
-        <div className="modal-backdrop">
+        <ViewportModal>
           <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-create-title">
             <div className="modal-heading">
               <div>
@@ -4175,7 +4231,7 @@ export function App() {
               onCancel={closePlaylistCreator}
             />
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
       {songContextMenu ? (
         <SongPlaylistMenu
@@ -4183,7 +4239,7 @@ export function App() {
           playlists={libraryData.playlists}
           status={playlistAddStatus}
           message={playlistAddMessage}
-          onAdd={(playlist) => void addSongToPlaylist(playlist, songContextMenu.song)}
+          onAdd={(playlist) => void addSongsToSelectedPlaylist(playlist, songContextMenu.songs)}
           onPlayNow={(song) => {
             playSong(song);
             setSongContextMenu(null);
@@ -4207,6 +4263,8 @@ export function App() {
           isFavorite={favoriteIds.songs.has(songContextMenu.song.id)}
           favoriteBusy={favoriteBusyKey === `song:${songContextMenu.song.id}`}
           onToggleFavorite={(favorite) => void toggleFavorite("song", songContextMenu.song.id, favorite)}
+          onCreatePlaylist={() => createPlaylistFromSongs(songContextMenu.song.title, songContextMenu.songs)}
+          onClose={() => setSongContextMenu(null)}
         />
       ) : null}
       {libraryContextMenu ? (
@@ -4252,10 +4310,25 @@ export function App() {
             void toggleFavorite(kind, id, favorite);
             setLibraryContextMenu(null);
           }}
+          playlists={libraryData.playlists}
+          status={playlistAddStatus}
+          onAddAlbum={(playlist, album) => void addAlbumToPlaylist(playlist, album)}
+          onAddArtist={(playlist, artist) => void addArtistToPlaylist(playlist, artist)}
+          onCreateAlbumPlaylist={(album) => {
+            if (!config) return;
+            void fetchAlbumDetail(config, album.id).then((detail) => createPlaylistFromSongs(album.name, sortAlbumSongs(detail.song ?? [])));
+          }}
+          onCreateArtistPlaylist={(artist) => {
+            if (!config) return;
+            void fetchArtistDetail(config, artist.id)
+              .then((detail) => Promise.all((detail.album ?? []).slice(0, 50).map((album) => fetchAlbumDetail(config, album.id))))
+              .then((albums) => createPlaylistFromSongs(artist.name, albums.flatMap((album) => album.song ?? [])));
+          }}
+          onClose={() => setLibraryContextMenu(null)}
         />
       ) : null}
       {playlistDeleteTarget ? (
-        <div className="modal-backdrop confirm-backdrop">
+        <ViewportModal className="confirm-backdrop">
           <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="context-playlist-delete-title">
             <div className="confirm-icon" aria-hidden="true">
               <Trash2 size={22} />
@@ -4288,7 +4361,7 @@ export function App() {
               <p className={`confirm-status ${playlistDeleteStatus === "error" ? "bad" : ""}`}>{playlistDeleteMessage}</p>
             ) : null}
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
     </main>
   );
@@ -5358,7 +5431,7 @@ function FirstRunWizard({
   onClose: () => void;
 }) {
   return (
-    <div className="modal-backdrop">
+    <ViewportModal>
       <section className="setup-modal" role="dialog" aria-modal="true" aria-labelledby="setup-title">
         <button className="icon-button close-button" type="button" aria-label="Close setup" onClick={onClose}>
           <X size={18} />
@@ -5402,7 +5475,7 @@ function FirstRunWizard({
 
         <p className={`wizard-status ${status === "error" ? "bad" : ""}`}>{statusMessage}</p>
       </section>
-    </div>
+    </ViewportModal>
   );
 }
 
@@ -5844,7 +5917,7 @@ function LibraryView({
   searchResults: SearchResults;
   searchStatus: "idle" | "searching" | "error";
   setPlaylistCreatorOpen: (open: boolean) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
   onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
@@ -6250,7 +6323,7 @@ function FavoritesView({
   onPlayArtist: (artist: Artist | ArtistDetail) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const totalFavorites = favorites.artists.length + favorites.albums.length + favorites.songs.length;
 
@@ -6361,7 +6434,7 @@ function SearchResultsView({
   onPlayArtist: (artist: Artist | ArtistDetail) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const trimmedQuery = query.trim();
   const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
@@ -6513,20 +6586,31 @@ function SearchSongList({
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
+
   return (
-    <div className="search-song-list">
-      {songs.map((song) => (
+    <div className="search-song-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
+      {songs.map((song, index) => (
         <div
-          className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""}`}
+          className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
           key={song.id}
-          onContextMenu={(event) => onSongContextMenu(event, song)}
+          onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+          onClick={(event) => selectTrack(event, index)}
         >
-          <button className="track-play" type="button" onClick={() => onPlaySong(song)} aria-label={`Play ${song.title}`}>
+          <button
+            className="track-play"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPlaySong(song);
+            }}
+            aria-label={`Play ${song.title}`}
+          >
             <Play size={14} fill="currentColor" />
           </button>
-          <button className="search-song-main" type="button" onClick={() => onPlaySong(song)}>
+          <button className="search-song-main" type="button" aria-label={`Select ${song.title}`}>
             <strong>{song.title}</strong>
             <small>{[song.artist, song.album].filter(Boolean).join(" - ") || "Song"}</small>
           </button>
@@ -6537,7 +6621,15 @@ function SearchSongList({
             label={song.title}
             onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
           />
-          <button className="track-queue" type="button" onClick={() => onQueueSong(song)} aria-label={`Queue ${song.title}`}>
+          <button
+            className="track-queue"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onQueueSong(song);
+            }}
+            aria-label={`Queue ${song.title}`}
+          >
             <Plus size={14} />
           </button>
         </div>
@@ -6575,6 +6667,8 @@ function ListeningHistoryView({
   onPlaySong: (song: Song) => void;
   onClear: () => void;
 }) {
+  const { isSelected, selectTrack, handleKeyDown } = useTrackSelection(history.map((entry) => entry.song));
+
   if (!history.length) {
     return <EmptyPanel icon={<History size={20} />} text="Play a song for a little while and it will appear here. Your history stays on this device." />;
   }
@@ -6587,13 +6681,26 @@ function ListeningHistoryView({
           Clear history
         </button>
       </div>
-      <div className="listening-history-list">
-        {history.map((entry) => (
-          <div className="track-row history-track-row" key={entry.id}>
-            <button className="track-play" type="button" onClick={() => onPlaySong(entry.song)} aria-label={`Play ${entry.song.title}`}>
+      <div className="listening-history-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Recently played songs">
+        {history.map((entry, index) => (
+          <div
+            className={`track-row history-track-row ${isSelected(index) ? "selected" : ""}`}
+            key={entry.id}
+            onClick={(event) => selectTrack(event, index)}
+            onDoubleClick={() => onPlaySong(entry.song)}
+          >
+            <button
+              className="track-play"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPlaySong(entry.song);
+              }}
+              aria-label={`Play ${entry.song.title}`}
+            >
               <Play size={14} fill="currentColor" />
             </button>
-            <button className="track-name history-track-name" type="button" onClick={() => onPlaySong(entry.song)}>
+            <button className="track-name history-track-name" type="button" aria-label={`Select ${entry.song.title}`}>
               <strong>{entry.song.title}</strong>
             </button>
             <span className="history-track-artist">{entry.song.artist || "Unknown artist"}</span>
@@ -6603,6 +6710,59 @@ function ListeningHistoryView({
       </div>
     </div>
   );
+}
+
+function useTrackSelection(songs: Song[]) {
+  const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set());
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSelectedIndexes((current) => {
+      const next = new Set([...current].filter((index) => index < songs.length));
+      return next.size === current.size ? current : next;
+    });
+  }, [songs]);
+
+  const selectTrack = (event: MouseEvent<HTMLElement>, index: number) => {
+    const song = songs[index];
+    if (!song) return;
+
+    if (event.shiftKey && selectionAnchor != null) {
+      const rangeStart = Math.min(selectionAnchor, index);
+      const rangeEnd = Math.max(selectionAnchor, index);
+      setSelectedIndexes(new Set(songs.slice(rangeStart, rangeEnd + 1).map((_, rangeIndex) => rangeStart + rangeIndex)));
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      setSelectedIndexes((current) => {
+        const next = new Set(current);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+        return next;
+      });
+      setSelectionAnchor(index);
+      return;
+    }
+
+    setSelectedIndexes(new Set([index]));
+    setSelectionAnchor(index);
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      setSelectedIndexes(new Set(songs.map((_, index) => index)));
+      setSelectionAnchor(songs.length ? 0 : null);
+    }
+  };
+
+  return {
+    isSelected: (index: number) => selectedIndexes.has(index),
+    selectedSongs: songs.filter((_, index) => selectedIndexes.has(index)),
+    selectTrack,
+    handleKeyDown,
+  };
 }
 
 function AlbumBrowser({
@@ -7280,7 +7440,7 @@ function PlaylistDetailPanel({
   onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const songs = playlist.entry ?? [];
   const playlistCover =
@@ -7448,7 +7608,7 @@ function PlaylistDetailPanel({
         </div>
       </div>
       {editing ? (
-        <div className="modal-backdrop">
+        <ViewportModal>
           <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-edit-title">
             <div className="modal-heading">
               <div>
@@ -7501,10 +7661,10 @@ function PlaylistDetailPanel({
               </div>
             </form>
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
       {confirmingDelete ? (
-        <div className="modal-backdrop confirm-backdrop">
+        <ViewportModal className="confirm-backdrop">
           <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title">
             <div className="confirm-icon" aria-hidden="true">
               <Trash2 size={22} />
@@ -7525,7 +7685,7 @@ function PlaylistDetailPanel({
             </div>
             {message ? <p className={`confirm-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
           </section>
-        </div>
+        </ViewportModal>
       ) : null}
       <EditablePlaylistTrackList
         songs={draftSongs}
@@ -7596,7 +7756,7 @@ function DetailPanel({
   onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   if (detailStatus === "loading" || detailStatus === "error") {
     return (
@@ -7806,8 +7966,10 @@ function TrackList({
   emptyText?: string;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
+
   if (!songs.length) {
     return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
   }
@@ -7816,7 +7978,7 @@ function TrackList({
   const showDiscHeaders = discGroups.length > 1;
 
   return (
-    <div className="track-list">
+    <div className="track-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
       {discGroups.map((group) => (
         <div className="disc-group" key={group.discNumber ?? "unknown-disc"}>
           {showDiscHeaders ? (
@@ -7825,18 +7987,25 @@ function TrackList({
               <small>{group.songs.length} tracks</small>
             </div>
           ) : null}
-          {group.songs.map((song, index) => (
+          {group.songs.map((song, index) => {
+            const songIndex = songs.findIndex((listSong) => listSong.id === song.id);
+
+            return (
             <div
-              className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`}
+              className={`track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
-              onContextMenu={(event) => onSongContextMenu(event, song)}
+              onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+              onClick={(event) => selectTrack(event, songIndex)}
               onDoubleClick={() => onPlaySong(song)}
             >
               <button
                 className="track-play"
                 type="button"
                 aria-label={`Play ${song.title}`}
-                onClick={() => onPlaySong(song)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPlaySong(song);
+                }}
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <Play size={14} fill="currentColor" />
@@ -7845,8 +8014,7 @@ function TrackList({
               <button
                 className="track-name"
                 type="button"
-                onClick={() => onPlaySong(song)}
-                onDoubleClick={(event) => event.stopPropagation()}
+                aria-label={`Select ${song.title}`}
               >
                 {song.title}
               </button>
@@ -7862,13 +8030,17 @@ function TrackList({
                 className="track-queue"
                 type="button"
                 aria-label={`Queue ${song.title}`}
-                onClick={() => onQueueSong(song)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onQueueSong(song);
+                }}
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <Plus size={14} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       ))}
     </div>
@@ -7908,8 +8080,9 @@ function EditablePlaylistTrackList({
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
   const displayedSongs = useMemo(() => {
     if (draggedIndex == null || dragOverIndex == null || draggedIndex === dragOverIndex) {
       return songs.map((song, index) => ({ song, index }));
@@ -7931,12 +8104,13 @@ function EditablePlaylistTrackList({
         <p className="eyebrow">Tracks</p>
         {message ? <span className={busy ? "" : "bad"}>{message}</span> : null}
       </div>
-      <div className="track-list">
+      <div className="track-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Playlist tracks">
         {displayedSongs.map(({ song, index }, displayIndex) => (
           <div
-            className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${index === draggedIndex ? "dragging" : ""}`}
+            className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""} ${index === draggedIndex ? "dragging" : ""}`}
             key={`${song.id}-${index}`}
-            onContextMenu={(event) => onSongContextMenu(event, song)}
+            onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+            onClick={(event) => selectTrack(event, index)}
             onDoubleClick={() => onPlaySong(song)}
             onDragOver={(event) => {
               event.preventDefault();
@@ -7950,6 +8124,7 @@ function EditablePlaylistTrackList({
               aria-label={`Drag ${song.title} to reorder`}
               draggable
               disabled={busy}
+              onClick={(event) => event.stopPropagation()}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("text/plain", String(index));
@@ -7967,8 +8142,7 @@ function EditablePlaylistTrackList({
             <button
               className="track-name"
               type="button"
-              onClick={() => onPlaySong(song)}
-              onDoubleClick={(event) => event.stopPropagation()}
+              aria-label={`Select ${song.title}`}
             >
               {song.title}
             </button>
@@ -7984,7 +8158,10 @@ function EditablePlaylistTrackList({
               className="track-queue"
               type="button"
               aria-label={`Queue ${song.title}`}
-              onClick={() => onQueueSong(song)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onQueueSong(song);
+              }}
               onDoubleClick={(event) => event.stopPropagation()}
             >
               <Plus size={14} />
@@ -7994,7 +8171,10 @@ function EditablePlaylistTrackList({
               type="button"
               aria-label={`Remove ${song.title} from playlist`}
               disabled={busy}
-              onClick={() => onRemoveTrack(index)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemoveTrack(index);
+              }}
               onDoubleClick={(event) => event.stopPropagation()}
             >
               <Trash2 size={14} />
@@ -8049,6 +8229,13 @@ function LibraryContextMenu({
   onEditPlaylist,
   onDeletePlaylist,
   onToggleFavorite,
+  playlists,
+  status,
+  onAddAlbum,
+  onAddArtist,
+  onCreateAlbumPlaylist,
+  onCreateArtistPlaylist,
+  onClose,
 }: {
   menu: Exclude<LibraryContextMenuState, null>;
   favoriteIds: FavoriteIds;
@@ -8062,20 +8249,25 @@ function LibraryContextMenu({
   onEditPlaylist: (playlist: Playlist) => void;
   onDeletePlaylist: (playlist: Playlist) => void;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  playlists: Playlist[];
+  status: "idle" | "saving" | "error";
+  onAddAlbum: (playlist: Playlist, album: Album) => void;
+  onAddArtist: (playlist: Playlist, artist: Artist) => void;
+  onCreateAlbumPlaylist: (album: Album) => void;
+  onCreateArtistPlaylist: (artist: Artist) => void;
+  onClose: () => void;
 }) {
   const title = menu.item.name;
   const menuLabel = menu.type === "album" ? "Album" : menu.type === "artist" ? "Artist" : "Playlist";
+  const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div
-      className="song-context-menu library-context-menu"
-      style={{
-        left: Math.min(menu.x, window.innerWidth - 280),
-        top: Math.min(menu.y, window.innerHeight - 360),
-      }}
-      role="menu"
-      aria-label={`${menuLabel} actions for ${title}`}
-    >
+    <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <span className="context-menu-anchor" style={{ left: menu.x, top: menu.y }} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="song-context-menu library-context-menu" side="right" align="start" sideOffset={4} collisionPadding={12} aria-label={`${menuLabel} actions for ${title}`}>
       <div className="song-context-heading">
         <div>
           <p className="eyebrow">{menuLabel}</p>
@@ -8106,6 +8298,7 @@ function LibraryContextMenu({
               )}
               {favoriteIds.albums.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
             </button>
+            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddAlbum(playlist, menu.item)} onCreateNew={() => onCreateAlbumPlaylist(menu.item)} />
           </>
         ) : null}
         {menu.type === "artist" ? (
@@ -8131,6 +8324,7 @@ function LibraryContextMenu({
               )}
               {favoriteIds.artists.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
             </button>
+            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddArtist(playlist, menu.item)} onCreateNew={() => onCreateArtistPlaylist(menu.item)} />
           </>
         ) : null}
         {menu.type === "playlist" ? (
@@ -8154,7 +8348,54 @@ function LibraryContextMenu({
           </>
         ) : null}
       </div>
-    </div>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+function AddToPlaylistSubmenu({
+  playlists,
+  status,
+  onAdd,
+  onCreateNew,
+}: {
+  playlists: Playlist[];
+  status: "idle" | "saving" | "error";
+  onAdd: (playlist: Playlist) => void;
+  onCreateNew: () => void;
+}) {
+  return (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
+        <ListMusic size={15} />
+        <span>Add to playlist</span>
+        <ChevronRight size={15} />
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
+          {playlists.length ? (
+            <div className="song-context-list">
+              {playlists.map((playlist) => (
+                <button type="button" role="menuitem" key={playlist.id} onClick={() => onAdd(playlist)} disabled={status === "saving"}>
+                  <ListMusic size={15} />
+                  <span>
+                    <strong>{playlist.name}</strong>
+                    <small>{getPlaylistMeta(playlist)}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="song-context-empty">Create a playlist first.</p>
+          )}
+          <button className="song-context-action new-playlist-action" type="button" onClick={onCreateNew}>
+            <Plus size={15} />
+            Add to new playlist
+          </button>
+        </DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
   );
 }
 
@@ -8172,6 +8413,8 @@ function SongPlaylistMenu({
   isFavorite,
   favoriteBusy,
   onToggleFavorite,
+  onCreatePlaylist,
+  onClose,
 }: {
   menu: Exclude<SongContextMenuState, null>;
   playlists: Playlist[];
@@ -8186,23 +8429,22 @@ function SongPlaylistMenu({
   isFavorite: boolean;
   favoriteBusy: boolean;
   onToggleFavorite: (favorite: boolean) => void;
+  onCreatePlaylist: () => void;
+  onClose: () => void;
 }) {
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div
-      className="song-context-menu"
-      style={{
-        left: Math.min(menu.x, window.innerWidth - 280),
-        top: Math.min(menu.y, window.innerHeight - 440),
-      }}
-      role="menu"
-      aria-label={`Song actions for ${menu.song.title}`}
-    >
+    <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <span className="context-menu-anchor" style={{ left: menu.x, top: menu.y }} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="song-context-menu" side="right" align="start" sideOffset={4} collisionPadding={12} aria-label={`${menu.songs.length === 1 ? "Song" : `${menu.songs.length} selected songs`} actions for ${menu.song.title}`}>
       <div className="song-context-heading">
         <div>
-          <p className="eyebrow">Song</p>
-          <strong>{menu.song.title}</strong>
+          <p className="eyebrow">{menu.songs.length === 1 ? "Song" : `${menu.songs.length} songs selected`}</p>
+          <strong>{menu.songs.length === 1 ? menu.song.title : `${menu.song.title} and ${menu.songs.length - 1} more`}</strong>
         </div>
       </div>
       {message ? <p className={`song-context-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
@@ -8234,29 +8476,45 @@ function SongPlaylistMenu({
           {isFavorite ? "Remove Favorite" : "Add Favorite"}
         </button>
       </div>
-      <div className="song-context-subheading">Add to playlist</div>
-      {sortedPlaylists.length ? (
-        <div className="song-context-list">
-          {sortedPlaylists.map((playlist) => (
-            <button
-              type="button"
-              role="menuitem"
-              key={playlist.id}
-              onClick={() => onAdd(playlist)}
-              disabled={status === "saving"}
-            >
-              <ListMusic size={15} />
-              <span>
-                <strong>{playlist.name}</strong>
-                <small>{getPlaylistMeta(playlist)}</small>
-              </span>
+      <DropdownMenu.Sub>
+        <DropdownMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
+          <ListMusic size={15} />
+          <span>Add to playlist</span>
+          <ChevronRight size={15} />
+        </DropdownMenu.SubTrigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
+            {sortedPlaylists.length ? (
+              <div className="song-context-list">
+                {sortedPlaylists.map((playlist) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    key={playlist.id}
+                    onClick={() => onAdd(playlist)}
+                    disabled={status === "saving"}
+                  >
+                    <ListMusic size={15} />
+                    <span>
+                      <strong>{playlist.name}</strong>
+                      <small>{getPlaylistMeta(playlist)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="song-context-empty">Create a playlist first.</p>
+            )}
+            <button className="song-context-action new-playlist-action" type="button" onClick={onCreatePlaylist}>
+              <Plus size={15} />
+              Add to new playlist
             </button>
-          ))}
-        </div>
-      ) : (
-        <p className="song-context-empty">Create a playlist first.</p>
-      )}
-    </div>
+          </DropdownMenu.SubContent>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Sub>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

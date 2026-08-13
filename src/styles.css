@@ -17,7 +17,7 @@ body {
   min-width: 980px;
   min-height: 640px;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 ::-webkit-scrollbar {
@@ -1877,6 +1877,17 @@ button.similar-chip:hover,
 .track-row.active {
   background: rgba(240, 210, 123, 0.16);
   color: #f8df91;
+}
+
+.track-row.selected,
+.search-song-row.selected {
+  background: rgba(240, 210, 123, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(240, 210, 123, 0.48);
+}
+
+.track-row.active.selected,
+.search-song-row.active.selected {
+  background: rgba(240, 210, 123, 0.2);
 }
 
 .track-play,
@@ -4162,7 +4173,6 @@ button.similar-chip:hover,
 }
 
 .song-context-menu {
-  position: fixed;
   z-index: 30;
   display: grid;
   gap: 8px;
@@ -4174,6 +4184,13 @@ button.similar-chip:hover,
   background: rgba(17, 17, 16, 0.98);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
   overflow: hidden;
+}
+
+.context-menu-anchor {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }
 
 .library-context-menu {
@@ -4202,19 +4219,18 @@ button.similar-chip:hover,
   overflow-y: auto;
 }
 
+.new-playlist-action {
+  width: 100%;
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 8px 8px;
+}
+
 .song-context-section {
   display: grid;
   gap: 2px;
   padding-bottom: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.song-context-subheading {
-  padding: 0 7px;
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
 }
 
 .song-context-action,
@@ -4229,6 +4245,26 @@ button.similar-chip:hover,
   background: transparent;
   color: rgba(244, 241, 236, 0.78);
   text-align: left;
+}
+
+.song-context-submenu-trigger {
+  width: 100%;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+}
+
+.song-context-submenu-trigger > span {
+  min-width: 0;
+}
+
+.song-context-flyout {
+  width: 248px;
+  max-height: min(360px, calc(100vh - 24px));
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(17, 17, 16, 0.98);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
+  overflow: hidden;
 }
 
 .song-context-action:hover:not(:disabled),
