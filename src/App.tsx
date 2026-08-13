@@ -6594,11 +6594,10 @@ function ListeningHistoryView({
               <Play size={14} fill="currentColor" />
             </button>
             <button className="track-name history-track-name" type="button" onClick={() => onPlaySong(entry.song)}>
-              <span>
-                <strong>{entry.song.title}</strong>
-                <small>{entry.song.artist || "Unknown artist"}{entry.song.album ? ` · ${entry.song.album}` : ""}</small>
-              </span>
+              <strong>{entry.song.title}</strong>
             </button>
+            <span className="history-track-artist">{entry.song.artist || "Unknown artist"}</span>
+            <span className="history-track-album">{entry.song.album || "Unknown album"}</span>
           </div>
         ))}
       </div>
