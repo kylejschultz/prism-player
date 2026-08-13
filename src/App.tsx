@@ -3414,21 +3414,23 @@ export function App() {
   }, [isPlaying, currentStreamUrl]);
 
   useEffect(() => {
-    function isTypingTarget(target: EventTarget | null) {
+    function isTextInputTarget(target: EventTarget | null) {
       if (!(target instanceof HTMLElement)) return false;
-      return Boolean(target.closest("input, textarea, select, button, a, [contenteditable='true']"));
+      return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (isTypingTarget(event.target)) return;
-
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
         const target = event.target instanceof HTMLElement ? event.target : null;
-        if (!target?.closest(".track-list, .search-song-list, .listening-history-list")) {
-          event.preventDefault();
-        }
+        if (isTextInputTarget(target)) return;
+
+        // Song lists own this shortcut through useTrackSelection. Everywhere
+        // else, suppress the browser's document-wide text selection.
+        if (!target?.closest(".track-list, .search-song-list, .listening-history-list")) event.preventDefault();
         return;
       }
+
+      if (isTextInputTarget(event.target)) return;
 
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
