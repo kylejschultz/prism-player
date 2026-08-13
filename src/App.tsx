@@ -2424,6 +2424,33 @@ export function App() {
       setPlaylistAddStatus("idle");
       setPlaylistAddMessage("");
       setSongContextMenu(null);
+      setLibraryContextMenu(null);
+    } catch (error) {
+      setPlaylistAddStatus("error");
+      setPlaylistAddMessage(getErrorMessage(error));
+    }
+  }
+
+  async function addAlbumToPlaylist(playlist: Playlist, album: Album) {
+    if (!config) return;
+
+    try {
+      const detail = await fetchAlbumDetail(config, album.id);
+      await addSongsToSelectedPlaylist(playlist, sortAlbumSongs(detail.song ?? []));
+    } catch (error) {
+      setPlaylistAddStatus("error");
+      setPlaylistAddMessage(getErrorMessage(error));
+    }
+  }
+
+  async function addArtistToPlaylist(playlist: Playlist, artist: Artist) {
+    if (!config) return;
+
+    try {
+      const detail = await fetchArtistDetail(config, artist.id);
+      const albums = detail.album ?? [];
+      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => fetchAlbumDetail(config, album.id)));
+      await addSongsToSelectedPlaylist(playlist, albumDetails.flatMap((album) => album.song ?? []));
     } catch (error) {
       setPlaylistAddStatus("error");
       setPlaylistAddMessage(getErrorMessage(error));
@@ -4263,6 +4290,10 @@ export function App() {
             void toggleFavorite(kind, id, favorite);
             setLibraryContextMenu(null);
           }}
+          playlists={libraryData.playlists}
+          status={playlistAddStatus}
+          onAddAlbum={(playlist, album) => void addAlbumToPlaylist(playlist, album)}
+          onAddArtist={(playlist, artist) => void addArtistToPlaylist(playlist, artist)}
           onClose={() => setLibraryContextMenu(null)}
         />
       ) : null}
@@ -8168,6 +8199,10 @@ function LibraryContextMenu({
   onEditPlaylist,
   onDeletePlaylist,
   onToggleFavorite,
+  playlists,
+  status,
+  onAddAlbum,
+  onAddArtist,
   onClose,
 }: {
   menu: Exclude<LibraryContextMenuState, null>;
@@ -8182,10 +8217,15 @@ function LibraryContextMenu({
   onEditPlaylist: (playlist: Playlist) => void;
   onDeletePlaylist: (playlist: Playlist) => void;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  playlists: Playlist[];
+  status: "idle" | "saving" | "error";
+  onAddAlbum: (playlist: Playlist, album: Album) => void;
+  onAddArtist: (playlist: Playlist, artist: Artist) => void;
   onClose: () => void;
 }) {
   const title = menu.item.name;
   const menuLabel = menu.type === "album" ? "Album" : menu.type === "artist" ? "Artist" : "Playlist";
+  const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
@@ -8224,6 +8264,7 @@ function LibraryContextMenu({
               )}
               {favoriteIds.albums.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
             </button>
+            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddAlbum(playlist, menu.item)} />
           </>
         ) : null}
         {menu.type === "artist" ? (
@@ -8249,6 +8290,7 @@ function LibraryContextMenu({
               )}
               {favoriteIds.artists.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
             </button>
+            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddArtist(playlist, menu.item)} />
           </>
         ) : null}
         {menu.type === "playlist" ? (
@@ -8275,6 +8317,45 @@ function LibraryContextMenu({
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
+  );
+}
+
+function AddToPlaylistSubmenu({
+  playlists,
+  status,
+  onAdd,
+}: {
+  playlists: Playlist[];
+  status: "idle" | "saving" | "error";
+  onAdd: (playlist: Playlist) => void;
+}) {
+  return (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
+        <ListMusic size={15} />
+        <span>Add to playlist</span>
+        <ChevronRight size={15} />
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
+          {playlists.length ? (
+            <div className="song-context-list">
+              {playlists.map((playlist) => (
+                <button type="button" role="menuitem" key={playlist.id} onClick={() => onAdd(playlist)} disabled={status === "saving"}>
+                  <ListMusic size={15} />
+                  <span>
+                    <strong>{playlist.name}</strong>
+                    <small>{getPlaylistMeta(playlist)}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="song-context-empty">Create a playlist first.</p>
+          )}
+        </DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
   );
 }
 
