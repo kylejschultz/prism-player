@@ -4220,14 +4220,6 @@ button.similar-chip:hover,
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.song-context-subheading {
-  padding: 0 7px;
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-}
-
 .song-context-action,
 .song-context-list button {
   display: grid;
@@ -4240,6 +4232,39 @@ button.similar-chip:hover,
   background: transparent;
   color: rgba(244, 241, 236, 0.78);
   text-align: left;
+}
+
+.song-context-submenu {
+  position: relative;
+}
+
+.song-context-submenu-trigger {
+  width: 100%;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+}
+
+.song-context-submenu-trigger > span {
+  min-width: 0;
+}
+
+.song-context-flyout {
+  position: absolute;
+  left: calc(100% + 6px);
+  bottom: -10px;
+  z-index: 1;
+  width: 248px;
+  max-height: min(360px, calc(100vh - 24px));
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(17, 17, 16, 0.98);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
+  overflow: hidden;
+}
+
+.song-context-flyout.opens-left {
+  right: calc(100% + 6px);
+  left: auto;
 }
 
 .song-context-action:hover:not(:disabled),

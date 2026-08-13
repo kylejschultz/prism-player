@@ -8296,6 +8296,8 @@ function SongPlaylistMenu({
   onToggleFavorite: (favorite: boolean) => void;
 }) {
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
+  const [playlistFlyoutOpen, setPlaylistFlyoutOpen] = useState(false);
+  const flyoutOpensLeft = menu.x > window.innerWidth - 560;
 
   return (
     <div
@@ -8342,28 +8344,44 @@ function SongPlaylistMenu({
           {isFavorite ? "Remove Favorite" : "Add Favorite"}
         </button>
       </div>
-      <div className="song-context-subheading">Add to playlist</div>
-      {sortedPlaylists.length ? (
-        <div className="song-context-list">
-          {sortedPlaylists.map((playlist) => (
-            <button
-              type="button"
-              role="menuitem"
-              key={playlist.id}
-              onClick={() => onAdd(playlist)}
-              disabled={status === "saving"}
-            >
-              <ListMusic size={15} />
-              <span>
-                <strong>{playlist.name}</strong>
-                <small>{getPlaylistMeta(playlist)}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="song-context-empty">Create a playlist first.</p>
-      )}
+      <div className="song-context-submenu" onMouseEnter={() => setPlaylistFlyoutOpen(true)} onMouseLeave={() => setPlaylistFlyoutOpen(false)}>
+        <button
+          className="song-context-action song-context-submenu-trigger"
+          type="button"
+          onClick={() => setPlaylistFlyoutOpen((open) => !open)}
+          aria-expanded={playlistFlyoutOpen}
+          aria-haspopup="menu"
+        >
+          <ListMusic size={15} />
+          <span>Add to playlist</span>
+          <ChevronRight size={15} />
+        </button>
+        {playlistFlyoutOpen ? (
+          <div className={`song-context-flyout ${flyoutOpensLeft ? "opens-left" : ""}`} role="menu" aria-label="Choose playlist">
+            {sortedPlaylists.length ? (
+              <div className="song-context-list">
+                {sortedPlaylists.map((playlist) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    key={playlist.id}
+                    onClick={() => onAdd(playlist)}
+                    disabled={status === "saving"}
+                  >
+                    <ListMusic size={15} />
+                    <span>
+                      <strong>{playlist.name}</strong>
+                      <small>{getPlaylistMeta(playlist)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="song-context-empty">Create a playlist first.</p>
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
