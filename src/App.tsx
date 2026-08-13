@@ -169,6 +169,15 @@ type Song = {
   discNumber?: number;
 };
 
+type ListeningHistoryEntry = {
+  id: string;
+  song: Song;
+  playedAt: string;
+  playedSeconds: number;
+  completed: boolean;
+  source: "library";
+};
+
 type Playlist = {
   id: string;
   name: string;
@@ -351,6 +360,7 @@ const STORAGE_KEY = "prism-player.navidrome";
 const SETTINGS_KEY = "prism-player.settings";
 const LAST_PLAYED_TRACK_KEY = "prism-player.lastPlayedTrack";
 const PLAYBACK_STATE_KEY = "prism-player.playbackState";
+const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
 const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
@@ -669,6 +679,30 @@ function loadLastPlayedTrack() {
     return typeof parsed.id === "string" && typeof parsed.title === "string" ? (parsed as Song) : null;
   } catch {
     return null;
+  }
+}
+
+function loadListeningHistory(): ListeningHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(LISTENING_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((entry): entry is ListeningHistoryEntry => {
+      if (!entry || typeof entry !== "object") return false;
+      const value = entry as Partial<ListeningHistoryEntry>;
+      return (
+        typeof value.id === "string" &&
+        isStoredSong(value.song) &&
+        typeof value.playedAt === "string" &&
+        Number.isFinite(value.playedSeconds) &&
+        typeof value.completed === "boolean" &&
+        value.source === "library"
+      );
+    });
+  } catch {
+    return [];
   }
 }
 
@@ -1597,6 +1631,7 @@ export function App() {
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
   const [songLibrary, setSongLibrary] = useState<Song[]>([]);
   const [songLibraryStatus, setSongLibraryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [listeningHistory, setListeningHistory] = useState<ListeningHistoryEntry[]>(() => loadListeningHistory());
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -1675,6 +1710,7 @@ export function App() {
   const radioAnalyserRef = useRef<AnalyserNode | null>(null);
   const radioAnalyserSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const scrobbledPlayRef = useRef("");
+  const locallyRecordedPlayRef = useRef("");
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
@@ -1719,6 +1755,46 @@ export function App() {
     };
   }, [isRadioPlaying, radioNowPlayingSongId, radioStationUrl]);
   const currentStreamUrl = config && currentTrack ? buildStreamUrl(config, currentTrack.id) : null;
+
+  function recordListeningHistory(completed = false, seconds = position) {
+    if (!currentTrack || !Number.isFinite(seconds) || seconds < 5) return;
+
+    const playKey = `${currentTrack.id}:${currentStreamUrl ?? ""}`;
+    if (locallyRecordedPlayRef.current.startsWith(`${playKey}:`)) {
+      const entryId = locallyRecordedPlayRef.current.slice(playKey.length + 1);
+      setListeningHistory((previous) => {
+        const next = previous.map((entry) =>
+          entry.id === entryId
+            ? { ...entry, playedSeconds: Math.max(entry.playedSeconds, Math.round(seconds)), completed: entry.completed || completed }
+            : entry,
+        );
+        localStorage.setItem(LISTENING_HISTORY_KEY, JSON.stringify(next));
+        return next;
+      });
+      return;
+    }
+
+    const entry: ListeningHistoryEntry = {
+      id: crypto.randomUUID(),
+      song: currentTrack,
+      playedAt: new Date().toISOString(),
+      playedSeconds: Math.round(seconds),
+      completed,
+      source: "library",
+    };
+    locallyRecordedPlayRef.current = `${playKey}:${entry.id}`;
+
+    setListeningHistory((previous) => {
+      const next = [entry, ...previous].slice(0, 250);
+      localStorage.setItem(LISTENING_HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function clearListeningHistory() {
+    setListeningHistory([]);
+    localStorage.removeItem(LISTENING_HISTORY_KEY);
+  }
   const favoriteIds = useMemo<FavoriteIds>(
     () => ({
       songs: new Set(libraryData.favorites.songs.map((song) => song.id)),
@@ -2528,10 +2604,12 @@ export function App() {
 
   function replaceQueue(songs: Song[], startIndex = 0) {
     if (!songs.length) return;
+    recordListeningHistory();
     tuneOutRadio();
     setActivePlaybackSource("local");
     setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
+    locallyRecordedPlayRef.current = "";
     const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
     const nextQueue = shuffleEnabled
       ? [songs[safeStartIndex], ...shuffled(songs.filter((_, index) => index !== safeStartIndex))]
@@ -2565,6 +2643,7 @@ export function App() {
   }
 
   function playSong(song: Song) {
+    recordListeningHistory();
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     tuneOutRadio();
     setActivePlaybackSource("local");
@@ -2572,6 +2651,7 @@ export function App() {
 
     if (existingIndex >= 0) {
       scrobbledPlayRef.current = "";
+      locallyRecordedPlayRef.current = "";
       setCurrentIndex(existingIndex);
       resetPlaybackPosition();
       setPlayerError("");
@@ -2580,6 +2660,7 @@ export function App() {
     }
 
     scrobbledPlayRef.current = "";
+    locallyRecordedPlayRef.current = "";
     setQueue((currentQueue) => [...currentQueue, song]);
     setSourceQueue((currentSourceQueue) => [...currentSourceQueue, song]);
     setCurrentIndex(queue.length);
@@ -2590,9 +2671,11 @@ export function App() {
 
   function playNext(fromTrackEnd = false) {
     if (!queue.length) return;
+    recordListeningHistory(fromTrackEnd, fromTrackEnd ? playerDuration || currentTrack?.duration || position : position);
 
     if (fromTrackEnd && repeatMode === "one") {
       scrobbledPlayRef.current = "";
+      locallyRecordedPlayRef.current = "";
       seekTo(0);
       pendingResumePositionRef.current = 0;
       setIsPlaying(true);
@@ -2609,9 +2692,11 @@ export function App() {
           const nextQueue = shuffleEnabled ? shuffled(sourceQueue) : sourceQueue;
           setQueue(nextQueue);
           scrobbledPlayRef.current = "";
+          locallyRecordedPlayRef.current = "";
           setCurrentIndex(0);
         } else {
           scrobbledPlayRef.current = "";
+          locallyRecordedPlayRef.current = "";
           seekTo(0);
           void audioRef.current?.play().catch(() => {
             setPlayerError("Playback was blocked by the browser.");
@@ -2630,6 +2715,7 @@ export function App() {
 
     audioRef.current?.pause();
     scrobbledPlayRef.current = "";
+    locallyRecordedPlayRef.current = "";
     setCurrentIndex((index) => Math.min(index + 1, queue.length - 1));
     resetPlaybackPosition();
     setPlayerError("");
@@ -2638,8 +2724,10 @@ export function App() {
 
   function playPrevious() {
     if (!queue.length) return;
+    recordListeningHistory();
     audioRef.current?.pause();
     scrobbledPlayRef.current = "";
+    locallyRecordedPlayRef.current = "";
     setCurrentIndex((index) => Math.max(index - 1, 0));
     resetPlaybackPosition();
     setPlayerError("");
@@ -3233,6 +3321,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!currentTrack || !isPlaying || activePlaybackSource !== "local") return;
+
+    const duration = playerDuration || currentTrack.duration || 0;
+    const threshold = duration > 0 ? Math.min(240, Math.max(30, duration * 0.5)) : 30;
+    if (position >= threshold) recordListeningHistory(false, position);
+  }, [activePlaybackSource, currentTrack, isPlaying, playerDuration, position]);
+
+  useEffect(() => {
     if (!config || !currentTrack || !isPlaying) return;
 
     const duration = playerDuration || currentTrack.duration || 0;
@@ -3676,6 +3772,8 @@ export function App() {
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
+              listeningHistory={listeningHistory}
+              onClearListeningHistory={clearListeningHistory}
               songs={songLibrary}
               songLibraryStatus={songLibraryStatus}
               onRetrySongs={() => void loadSongLibrary()}
@@ -5664,6 +5762,8 @@ function LibraryView({
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
+  listeningHistory,
+  onClearListeningHistory,
   songs,
   songLibraryStatus,
   onRetrySongs,
@@ -5723,6 +5823,8 @@ function LibraryView({
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
+  listeningHistory: ListeningHistoryEntry[];
+  onClearListeningHistory: () => void;
   songs: Song[];
   songLibraryStatus: "idle" | "loading" | "ready" | "error";
   onRetrySongs: () => void;
@@ -5944,18 +6046,7 @@ function LibraryView({
             />
           ) : null}
           {activeView === "recentlyPlayed" ? (
-            <AlbumBrowser
-              viewMode="list"
-              config={config}
-              albums={recentlyPlayedAlbums}
-              favoriteIds={favoriteIds}
-              favoriteBusyKey={favoriteBusyKey}
-              onToggleFavorite={onToggleFavorite}
-              onOpenAlbum={onOpenAlbum}
-              onPlayAlbum={onPlayAlbum}
-              withAlphabetRail={false}
-              emptyText="No listening history yet."
-            />
+            <ListeningHistoryView history={listeningHistory} onPlaySong={onPlaySong} onClear={onClearListeningHistory} />
           ) : null}
           {activeView === "favorites" ? (
             <FavoritesView
@@ -6466,6 +6557,51 @@ function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }
           {letter}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ListeningHistoryView({
+  history,
+  onPlaySong,
+  onClear,
+}: {
+  history: ListeningHistoryEntry[];
+  onPlaySong: (song: Song) => void;
+  onClear: () => void;
+}) {
+  if (!history.length) {
+    return <EmptyPanel icon={<History size={20} />} text="Play a song for a little while and it will appear here. Your history stays on this device." />;
+  }
+
+  return (
+    <div className="listening-history">
+      <div className="listening-history-actions">
+        <p>{history.length} local listening event{history.length === 1 ? "" : "s"}</p>
+        <button className="secondary-button compact-button" type="button" onClick={onClear}>
+          <Trash2 size={15} />
+          Clear history
+        </button>
+      </div>
+      <div className="listening-history-list">
+        {history.map((entry) => (
+          <div className="listening-history-row" key={entry.id}>
+            <button className="listening-history-main" type="button" onClick={() => onPlaySong(entry.song)}>
+              <span className="listening-history-icon"><Music2 size={17} /></span>
+              <span>
+                <strong>{entry.song.title}</strong>
+                <small>{entry.song.artist || "Unknown artist"}{entry.song.album ? ` · ${entry.song.album}` : ""}</small>
+              </span>
+            </button>
+            <span className="listening-history-meta" title={new Date(entry.playedAt).toLocaleString()}>
+              {entry.completed ? "Finished" : `${formatDuration(entry.playedSeconds)} played`} · {new Date(entry.playedAt).toLocaleDateString()}
+            </span>
+            <button className="track-play" type="button" onClick={() => onPlaySong(entry.song)} aria-label={`Play ${entry.song.title}`}>
+              <Play size={14} fill="currentColor" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
