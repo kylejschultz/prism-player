@@ -3381,19 +3381,12 @@ button.similar-chip:hover,
 .listening-history-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
 }
 
-.listening-history-actions p,
-.listening-history-meta,
 .listening-history-main small {
   color: var(--muted);
-}
-
-.listening-history-actions p {
-  margin: 0;
-  font-size: 13px;
 }
 
 .listening-history-list {
@@ -3405,7 +3398,7 @@ button.similar-chip:hover,
 
 .listening-history-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   padding: 10px 12px;
@@ -3438,8 +3431,7 @@ button.similar-chip:hover,
   white-space: nowrap;
 }
 
-.listening-history-main small,
-.listening-history-meta {
+.listening-history-main small {
   font-size: 12px;
 }
 
@@ -3454,17 +3446,9 @@ button.similar-chip:hover,
 }
 
 @media (max-width: 640px) {
-  .listening-history-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .listening-history-meta {
-    grid-column: 1;
-  }
-
   .listening-history-row .track-play {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1;
   }
 }
 

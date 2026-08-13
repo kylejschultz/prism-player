@@ -6582,7 +6582,6 @@ function ListeningHistoryView({
   return (
     <div className="listening-history">
       <div className="listening-history-actions">
-        <p>{history.length} local listening event{history.length === 1 ? "" : "s"}</p>
         <button className="secondary-button compact-button" type="button" onClick={onClear}>
           <Trash2 size={15} />
           Clear history
@@ -6598,9 +6597,6 @@ function ListeningHistoryView({
                 <small>{entry.song.artist || "Unknown artist"}{entry.song.album ? ` · ${entry.song.album}` : ""}</small>
               </span>
             </button>
-            <span className="listening-history-meta" title={new Date(entry.playedAt).toLocaleString()}>
-              {entry.completed ? "Finished" : `${formatDuration(entry.playedSeconds)} played`} · {new Date(entry.playedAt).toLocaleDateString()}
-            </span>
             <button className="track-play" type="button" onClick={() => onPlaySong(entry.song)} aria-label={`Play ${entry.song.title}`}>
               <Play size={14} fill="currentColor" />
             </button>
