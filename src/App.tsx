@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   AlertCircle,
   CalendarDays,
@@ -3375,6 +3376,14 @@ export function App() {
     function handleKeyDown(event: KeyboardEvent) {
       if (isTypingTarget(event.target)) return;
 
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (!target?.closest(".track-list, .search-song-list, .listening-history-list")) {
+          event.preventDefault();
+        }
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSearchFocused(true);
@@ -4208,6 +4217,7 @@ export function App() {
           isFavorite={favoriteIds.songs.has(songContextMenu.song.id)}
           favoriteBusy={favoriteBusyKey === `song:${songContextMenu.song.id}`}
           onToggleFavorite={(favorite) => void toggleFavorite("song", songContextMenu.song.id, favorite)}
+          onClose={() => setSongContextMenu(null)}
         />
       ) : null}
       {libraryContextMenu ? (
@@ -4253,6 +4263,7 @@ export function App() {
             void toggleFavorite(kind, id, favorite);
             setLibraryContextMenu(null);
           }}
+          onClose={() => setLibraryContextMenu(null)}
         />
       ) : null}
       {playlistDeleteTarget ? (
@@ -8157,6 +8168,7 @@ function LibraryContextMenu({
   onEditPlaylist,
   onDeletePlaylist,
   onToggleFavorite,
+  onClose,
 }: {
   menu: Exclude<LibraryContextMenuState, null>;
   favoriteIds: FavoriteIds;
@@ -8170,20 +8182,18 @@ function LibraryContextMenu({
   onEditPlaylist: (playlist: Playlist) => void;
   onDeletePlaylist: (playlist: Playlist) => void;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onClose: () => void;
 }) {
   const title = menu.item.name;
   const menuLabel = menu.type === "album" ? "Album" : menu.type === "artist" ? "Artist" : "Playlist";
 
   return (
-    <div
-      className="song-context-menu library-context-menu"
-      style={{
-        left: Math.min(menu.x, window.innerWidth - 280),
-        top: Math.min(menu.y, window.innerHeight - 360),
-      }}
-      role="menu"
-      aria-label={`${menuLabel} actions for ${title}`}
-    >
+    <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <span className="context-menu-anchor" style={{ left: menu.x, top: menu.y }} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="song-context-menu library-context-menu" side="right" align="start" sideOffset={4} collisionPadding={12} aria-label={`${menuLabel} actions for ${title}`}>
       <div className="song-context-heading">
         <div>
           <p className="eyebrow">{menuLabel}</p>
@@ -8262,7 +8272,9 @@ function LibraryContextMenu({
           </>
         ) : null}
       </div>
-    </div>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
@@ -8280,6 +8292,7 @@ function SongPlaylistMenu({
   isFavorite,
   favoriteBusy,
   onToggleFavorite,
+  onClose,
 }: {
   menu: Exclude<SongContextMenuState, null>;
   playlists: Playlist[];
@@ -8294,21 +8307,17 @@ function SongPlaylistMenu({
   isFavorite: boolean;
   favoriteBusy: boolean;
   onToggleFavorite: (favorite: boolean) => void;
+  onClose: () => void;
 }) {
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
-  const [playlistFlyoutOpen, setPlaylistFlyoutOpen] = useState(false);
-  const flyoutOpensLeft = menu.x > window.innerWidth - 560;
 
   return (
-    <div
-      className="song-context-menu"
-      style={{
-        left: Math.min(menu.x, window.innerWidth - 280),
-        top: Math.min(menu.y, window.innerHeight - 440),
-      }}
-      role="menu"
-      aria-label={`${menu.songs.length === 1 ? "Song" : `${menu.songs.length} selected songs`} actions for ${menu.song.title}`}
-    >
+    <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <span className="context-menu-anchor" style={{ left: menu.x, top: menu.y }} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content className="song-context-menu" side="right" align="start" sideOffset={4} collisionPadding={12} aria-label={`${menu.songs.length === 1 ? "Song" : `${menu.songs.length} selected songs`} actions for ${menu.song.title}`}>
       <div className="song-context-heading">
         <div>
           <p className="eyebrow">{menu.songs.length === 1 ? "Song" : `${menu.songs.length} songs selected`}</p>
@@ -8344,20 +8353,14 @@ function SongPlaylistMenu({
           {isFavorite ? "Remove Favorite" : "Add Favorite"}
         </button>
       </div>
-      <div className="song-context-submenu" onMouseEnter={() => setPlaylistFlyoutOpen(true)} onMouseLeave={() => setPlaylistFlyoutOpen(false)}>
-        <button
-          className="song-context-action song-context-submenu-trigger"
-          type="button"
-          onClick={() => setPlaylistFlyoutOpen((open) => !open)}
-          aria-expanded={playlistFlyoutOpen}
-          aria-haspopup="menu"
-        >
+      <DropdownMenu.Sub>
+        <DropdownMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
           <ListMusic size={15} />
           <span>Add to playlist</span>
           <ChevronRight size={15} />
-        </button>
-        {playlistFlyoutOpen ? (
-          <div className={`song-context-flyout ${flyoutOpensLeft ? "opens-left" : ""}`} role="menu" aria-label="Choose playlist">
+        </DropdownMenu.SubTrigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
             {sortedPlaylists.length ? (
               <div className="song-context-list">
                 {sortedPlaylists.map((playlist) => (
@@ -8379,10 +8382,12 @@ function SongPlaylistMenu({
             ) : (
               <p className="song-context-empty">Create a playlist first.</p>
             )}
-          </div>
-        ) : null}
-      </div>
-    </div>
+          </DropdownMenu.SubContent>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Sub>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

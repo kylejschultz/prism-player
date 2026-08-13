@@ -4173,7 +4173,6 @@ button.similar-chip:hover,
 }
 
 .song-context-menu {
-  position: fixed;
   z-index: 30;
   display: grid;
   gap: 8px;
@@ -4185,6 +4184,13 @@ button.similar-chip:hover,
   background: rgba(17, 17, 16, 0.98);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
   overflow: hidden;
+}
+
+.context-menu-anchor {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }
 
 .library-context-menu {
@@ -4234,10 +4240,6 @@ button.similar-chip:hover,
   text-align: left;
 }
 
-.song-context-submenu {
-  position: relative;
-}
-
 .song-context-submenu-trigger {
   width: 100%;
   grid-template-columns: 20px minmax(0, 1fr) 16px;
@@ -4248,10 +4250,6 @@ button.similar-chip:hover,
 }
 
 .song-context-flyout {
-  position: absolute;
-  left: calc(100% + 6px);
-  bottom: -10px;
-  z-index: 1;
   width: 248px;
   max-height: min(360px, calc(100vh - 24px));
   padding: 8px;
@@ -4260,11 +4258,6 @@ button.similar-chip:hover,
   background: rgba(17, 17, 16, 0.98);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
   overflow: hidden;
-}
-
-.song-context-flyout.opens-left {
-  right: calc(100% + 6px);
-  left: auto;
 }
 
 .song-context-action:hover:not(:disabled),
