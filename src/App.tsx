@@ -1695,6 +1695,7 @@ export function App() {
   const [playlistDescription, setPlaylistDescription] = useState("");
   const [playlistPublic, setPlaylistPublic] = useState(false);
   const [playlistFromQueue, setPlaylistFromQueue] = useState(true);
+  const [playlistSeedSongs, setPlaylistSeedSongs] = useState<Song[] | null>(null);
   const [playlistCreateStatus, setPlaylistCreateStatus] = useState<"idle" | "saving" | "error">("idle");
   const [playlistCreateMessage, setPlaylistCreateMessage] = useState("");
   const [songContextMenu, setSongContextMenu] = useState<SongContextMenuState>(null);
@@ -2292,7 +2293,7 @@ export function App() {
       return;
     }
 
-    const seedSongs = playlistFromQueue ? queue : [];
+    const seedSongs = playlistSeedSongs ?? (playlistFromQueue ? queue : []);
     const trimmedDescription = playlistDescription.trim();
     setPlaylistCreateStatus("saving");
     setPlaylistCreateMessage("Creating playlist...");
@@ -2323,6 +2324,7 @@ export function App() {
       setPlaylistName("");
       setPlaylistDescription("");
       setPlaylistPublic(false);
+      setPlaylistSeedSongs(null);
       setPlaylistCreatorOpen(false);
       setPlaylistCreateStatus("idle");
       setPlaylistCreateMessage("");
@@ -2923,6 +2925,18 @@ export function App() {
     setPlaylistName("");
     setPlaylistDescription("");
     setPlaylistPublic(false);
+    setPlaylistSeedSongs(null);
+  }
+
+  function createPlaylistFromSongs(name: string, songs: Song[]) {
+    setPlaylistName(name);
+    setPlaylistDescription("");
+    setPlaylistPublic(false);
+    setPlaylistFromQueue(false);
+    setPlaylistSeedSongs(songs);
+    setSongContextMenu(null);
+    setLibraryContextMenu(null);
+    setPlaylistCreatorOpen(true);
   }
 
   function togglePlayback() {
@@ -4244,6 +4258,7 @@ export function App() {
           isFavorite={favoriteIds.songs.has(songContextMenu.song.id)}
           favoriteBusy={favoriteBusyKey === `song:${songContextMenu.song.id}`}
           onToggleFavorite={(favorite) => void toggleFavorite("song", songContextMenu.song.id, favorite)}
+          onCreatePlaylist={() => createPlaylistFromSongs(songContextMenu.song.title, songContextMenu.songs)}
           onClose={() => setSongContextMenu(null)}
         />
       ) : null}
@@ -4294,6 +4309,16 @@ export function App() {
           status={playlistAddStatus}
           onAddAlbum={(playlist, album) => void addAlbumToPlaylist(playlist, album)}
           onAddArtist={(playlist, artist) => void addArtistToPlaylist(playlist, artist)}
+          onCreateAlbumPlaylist={(album) => {
+            if (!config) return;
+            void fetchAlbumDetail(config, album.id).then((detail) => createPlaylistFromSongs(album.name, sortAlbumSongs(detail.song ?? [])));
+          }}
+          onCreateArtistPlaylist={(artist) => {
+            if (!config) return;
+            void fetchArtistDetail(config, artist.id)
+              .then((detail) => Promise.all((detail.album ?? []).slice(0, 50).map((album) => fetchAlbumDetail(config, album.id))))
+              .then((albums) => createPlaylistFromSongs(artist.name, albums.flatMap((album) => album.song ?? [])));
+          }}
           onClose={() => setLibraryContextMenu(null)}
         />
       ) : null}
@@ -8203,6 +8228,8 @@ function LibraryContextMenu({
   status,
   onAddAlbum,
   onAddArtist,
+  onCreateAlbumPlaylist,
+  onCreateArtistPlaylist,
   onClose,
 }: {
   menu: Exclude<LibraryContextMenuState, null>;
@@ -8221,6 +8248,8 @@ function LibraryContextMenu({
   status: "idle" | "saving" | "error";
   onAddAlbum: (playlist: Playlist, album: Album) => void;
   onAddArtist: (playlist: Playlist, artist: Artist) => void;
+  onCreateAlbumPlaylist: (album: Album) => void;
+  onCreateArtistPlaylist: (artist: Artist) => void;
   onClose: () => void;
 }) {
   const title = menu.item.name;
@@ -8264,7 +8293,7 @@ function LibraryContextMenu({
               )}
               {favoriteIds.albums.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
             </button>
-            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddAlbum(playlist, menu.item)} />
+            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddAlbum(playlist, menu.item)} onCreateNew={() => onCreateAlbumPlaylist(menu.item)} />
           </>
         ) : null}
         {menu.type === "artist" ? (
@@ -8290,7 +8319,7 @@ function LibraryContextMenu({
               )}
               {favoriteIds.artists.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
             </button>
-            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddArtist(playlist, menu.item)} />
+            <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddArtist(playlist, menu.item)} onCreateNew={() => onCreateArtistPlaylist(menu.item)} />
           </>
         ) : null}
         {menu.type === "playlist" ? (
@@ -8324,10 +8353,12 @@ function AddToPlaylistSubmenu({
   playlists,
   status,
   onAdd,
+  onCreateNew,
 }: {
   playlists: Playlist[];
   status: "idle" | "saving" | "error";
   onAdd: (playlist: Playlist) => void;
+  onCreateNew: () => void;
 }) {
   return (
     <DropdownMenu.Sub>
@@ -8353,6 +8384,10 @@ function AddToPlaylistSubmenu({
           ) : (
             <p className="song-context-empty">Create a playlist first.</p>
           )}
+          <button className="song-context-action new-playlist-action" type="button" onClick={onCreateNew}>
+            <Plus size={15} />
+            Add to new playlist
+          </button>
         </DropdownMenu.SubContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Sub>
@@ -8373,6 +8408,7 @@ function SongPlaylistMenu({
   isFavorite,
   favoriteBusy,
   onToggleFavorite,
+  onCreatePlaylist,
   onClose,
 }: {
   menu: Exclude<SongContextMenuState, null>;
@@ -8388,6 +8424,7 @@ function SongPlaylistMenu({
   isFavorite: boolean;
   favoriteBusy: boolean;
   onToggleFavorite: (favorite: boolean) => void;
+  onCreatePlaylist: () => void;
   onClose: () => void;
 }) {
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
@@ -8463,6 +8500,10 @@ function SongPlaylistMenu({
             ) : (
               <p className="song-context-empty">Create a playlist first.</p>
             )}
+            <button className="song-context-action new-playlist-action" type="button" onClick={onCreatePlaylist}>
+              <Plus size={15} />
+              Add to new playlist
+            </button>
           </DropdownMenu.SubContent>
         </DropdownMenu.Portal>
       </DropdownMenu.Sub>

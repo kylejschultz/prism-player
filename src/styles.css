@@ -4219,6 +4219,13 @@ button.similar-chip:hover,
   overflow-y: auto;
 }
 
+.new-playlist-action {
+  width: 100%;
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 0 8px 8px;
+}
+
 .song-context-section {
   display: grid;
   gap: 2px;
