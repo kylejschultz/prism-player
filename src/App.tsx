@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   AlertCircle,
   CalendarDays,
@@ -6516,10 +6516,10 @@ function SearchSongList({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
-  const { isSelected, selectTrack, selectedSongs } = useTrackSelection(songs);
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
 
   return (
-    <div className="search-song-list">
+    <div className="search-song-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
       {songs.map((song, index) => (
         <div
           className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
@@ -6595,7 +6595,7 @@ function ListeningHistoryView({
   onPlaySong: (song: Song) => void;
   onClear: () => void;
 }) {
-  const { isSelected, selectTrack } = useTrackSelection(history.map((entry) => entry.song));
+  const { isSelected, selectTrack, handleKeyDown } = useTrackSelection(history.map((entry) => entry.song));
 
   if (!history.length) {
     return <EmptyPanel icon={<History size={20} />} text="Play a song for a little while and it will appear here. Your history stays on this device." />;
@@ -6609,7 +6609,7 @@ function ListeningHistoryView({
           Clear history
         </button>
       </div>
-      <div className="listening-history-list">
+      <div className="listening-history-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Recently played songs">
         {history.map((entry, index) => (
           <div
             className={`track-row history-track-row ${isSelected(index) ? "selected" : ""}`}
@@ -6677,10 +6677,19 @@ function useTrackSelection(songs: Song[]) {
     setSelectionAnchor(index);
   };
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      setSelectedIndexes(new Set(songs.map((_, index) => index)));
+      setSelectionAnchor(songs.length ? 0 : null);
+    }
+  };
+
   return {
     isSelected: (index: number) => selectedIndexes.has(index),
     selectedSongs: songs.filter((_, index) => selectedIndexes.has(index)),
     selectTrack,
+    handleKeyDown,
   };
 }
 
@@ -7887,7 +7896,7 @@ function TrackList({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
-  const { isSelected, selectTrack, selectedSongs } = useTrackSelection(songs);
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
 
   if (!songs.length) {
     return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
@@ -7897,7 +7906,7 @@ function TrackList({
   const showDiscHeaders = discGroups.length > 1;
 
   return (
-    <div className="track-list">
+    <div className="track-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
       {discGroups.map((group) => (
         <div className="disc-group" key={group.discNumber ?? "unknown-disc"}>
           {showDiscHeaders ? (
@@ -8001,7 +8010,7 @@ function EditablePlaylistTrackList({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
-  const { isSelected, selectTrack, selectedSongs } = useTrackSelection(songs);
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown } = useTrackSelection(songs);
   const displayedSongs = useMemo(() => {
     if (draggedIndex == null || dragOverIndex == null || draggedIndex === dragOverIndex) {
       return songs.map((song, index) => ({ song, index }));
@@ -8023,7 +8032,7 @@ function EditablePlaylistTrackList({
         <p className="eyebrow">Tracks</p>
         {message ? <span className={busy ? "" : "bad"}>{message}</span> : null}
       </div>
-      <div className="track-list">
+      <div className="track-list" tabIndex={0} onKeyDown={handleKeyDown} aria-label="Playlist tracks">
         {displayedSongs.map(({ song, index }, displayIndex) => (
           <div
             className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""} ${index === draggedIndex ? "dragging" : ""}`}
