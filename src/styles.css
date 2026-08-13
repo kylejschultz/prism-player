@@ -3373,6 +3373,58 @@ button.similar-chip:hover,
   white-space: nowrap;
 }
 
+.listening-history {
+  display: grid;
+  gap: 12px;
+}
+
+.listening-history-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.listening-history-main small {
+  color: var(--muted);
+}
+
+.listening-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.history-track-row {
+  grid-template-columns: 28px minmax(180px, 1.4fr) minmax(150px, 1fr) minmax(170px, 1.15fr);
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px 0 6px;
+}
+
+.history-track-name {
+  min-width: 0;
+}
+
+.history-track-name strong,
+.history-track-artist,
+.history-track-album {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-track-name strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.history-track-artist,
+.history-track-album {
+  font-size: 12px;
+  font-weight: 400;
+  color: rgba(244, 241, 236, 0.48);
+}
+
 .radio-footer-title {
   display: block;
 }
