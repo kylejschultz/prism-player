@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.0](https://github.com/kylejschultz/prism-player/compare/v0.1.0...v0.2.0) (2026-08-13)
+
+
+### Features
+
+* add first radio station from Radio ([88acd85](https://github.com/kylejschultz/prism-player/commit/88acd85dfd1363bc5d7c90a7d6a80e2f2fa25eca), [aca2717](https://github.com/kylejschultz/prism-player/commit/aca2717852d25f165bf34752538a24d6d3e1cf80))
+* add Songs library destination ([07ce2b4](https://github.com/kylejschultz/prism-player/commit/07ce2b4018a42d2276fcb3329acc6e382fc580b2), [fd1457a](https://github.com/kylejschultz/prism-player/commit/fd1457a875943002cb246aa7f75456fe113c2346))
+* add update controls to about settings ([62606ad](https://github.com/kylejschultz/prism-player/commit/62606ad7b80257d5e996d4bb62e1adb7d15207f5))
+* brand macOS installer ([96bf826](https://github.com/kylejschultz/prism-player/commit/96bf826b127e2282b0ebd1c9d75f4395b560f9c6), [d7f19cd](https://github.com/kylejschultz/prism-player/commit/d7f19cd54f28b7fa65fd62e67354e330f06aadf3))
+* refine about update action ([79f152f](https://github.com/kylejschultz/prism-player/commit/79f152f95679ea0bdb9aec41e58564fad1e22fc0))
+* show available updates in app ([eef5535](https://github.com/kylejschultz/prism-player/commit/eef5535b6aea3c3b075ff2e4b542538e864bdcac), [55d55af](https://github.com/kylejschultz/prism-player/commit/55d55af1623f83bd3340e095b8be7a1ee3e5d881))
+* show build SHA in about settings ([865a82e](https://github.com/kylejschultz/prism-player/commit/865a82efdbd0f644eb762a05af06c88a3fe44133))
+
+
+### Bug Fixes
+
+* clear stale radio metadata while tuning ([62a9f53](https://github.com/kylejschultz/prism-player/commit/62a9f53547cde891526a8db992f34539cb339da0), [3ba66f2](https://github.com/kylejschultz/prism-player/commit/3ba66f256a518ce879659462546aca5bcab1acdc))
+* group build sha with installed version ([e4452db](https://github.com/kylejschultz/prism-player/commit/e4452db7929f9b2882e88c50a58d90cddc30855a))
+* route media keys to active radio ([42f9057](https://github.com/kylejschultz/prism-player/commit/42f9057f7e08d80d2ca7625441702a2bd232bd0c), [5664077](https://github.com/kylejschultz/prism-player/commit/5664077445baa0a42ab9c6c9c7383bf083c5fcfc))
+* support announcement-only release recovery ([e651772](https://github.com/kylejschultz/prism-player/commit/e651772fb50e853f7889151e433059847cf4499d))
+* tighten update status layout ([6ee31e2](https://github.com/kylejschultz/prism-player/commit/6ee31e2120a5efece066fbe7305eb2fad5cdd286))
+* unify playback control hierarchy ([2e0ad60](https://github.com/kylejschultz/prism-player/commit/2e0ad60d3abebef151875c3445bc2ca58f93e04a), [1b346e9](https://github.com/kylejschultz/prism-player/commit/1b346e93d354696b4882cc287fbaa2c06dda7d59))
+* use centered arrow in macos installer ([6f69f92](https://github.com/kylejschultz/prism-player/commit/6f69f92cda74ea143103fcbad86a878703aadb02))
+* use supported repository icon ([ab3191b](https://github.com/kylejschultz/prism-player/commit/ab3191beb8049a7fe04f76599b9a115ac729fc48))
+
 ## 0.1.0 (2026-08-10)
 
 
