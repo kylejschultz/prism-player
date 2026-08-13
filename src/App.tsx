@@ -706,6 +706,11 @@ function loadListeningHistory(): ListeningHistoryEntry[] {
   }
 }
 
+function createListeningHistoryId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `listen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function isStoredSong(value: unknown): value is Song {
   return Boolean(
     value &&
@@ -1775,7 +1780,7 @@ export function App() {
     }
 
     const entry: ListeningHistoryEntry = {
-      id: crypto.randomUUID(),
+      id: createListeningHistoryId(),
       song: currentTrack,
       playedAt: new Date().toISOString(),
       playedSeconds: Math.round(seconds),
