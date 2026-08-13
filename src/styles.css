@@ -1879,6 +1879,17 @@ button.similar-chip:hover,
   color: #f8df91;
 }
 
+.track-row.selected,
+.search-song-row.selected {
+  background: rgba(240, 210, 123, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(240, 210, 123, 0.48);
+}
+
+.track-row.active.selected,
+.search-song-row.active.selected {
+  background: rgba(240, 210, 123, 0.2);
+}
+
 .track-play,
 .track-queue,
 .favorite-button {

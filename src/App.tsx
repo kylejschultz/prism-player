@@ -217,6 +217,7 @@ type BrowserSnapshot = {
 
 type SongContextMenuState = {
   song: Song;
+  songs: Song[];
   x: number;
   y: number;
 } | null;
@@ -2400,14 +2401,14 @@ export function App() {
     setDetailSelection({ type: "playlist", data: updatedPlaylist });
   }
 
-  async function addSongToPlaylist(playlist: Playlist, song: Song) {
+  async function addSongsToSelectedPlaylist(playlist: Playlist, songs: Song[]) {
     if (!config || playlistAddStatus === "saving") return;
 
     setPlaylistAddStatus("saving");
-    setPlaylistAddMessage(`Adding to ${playlist.name}...`);
+    setPlaylistAddMessage(`Adding ${songs.length === 1 ? "song" : `${songs.length} songs`} to ${playlist.name}...`);
 
     try {
-      await addSongsToPlaylist(config, playlist.id, [song]);
+      await addSongsToPlaylist(config, playlist.id, songs);
       const [nextLibrary, updatedPlaylist] = await Promise.all([
         fetchLibrary(config),
         detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id
@@ -2471,12 +2472,12 @@ export function App() {
     }
   }
 
-  function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song) {
+  function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song, selectedSongs: Song[] = [song]) {
     event.preventDefault();
     setLibraryContextMenu(null);
     setPlaylistAddStatus("idle");
     setPlaylistAddMessage("");
-    setSongContextMenu({ song, x: event.clientX, y: event.clientY });
+    setSongContextMenu({ song, songs: selectedSongs.some((selectedSong) => selectedSong.id === song.id) ? selectedSongs : [song], x: event.clientX, y: event.clientY });
   }
 
   function openLibraryContextMenu(event: MouseEvent<HTMLElement>) {
@@ -4183,7 +4184,7 @@ export function App() {
           playlists={libraryData.playlists}
           status={playlistAddStatus}
           message={playlistAddMessage}
-          onAdd={(playlist) => void addSongToPlaylist(playlist, songContextMenu.song)}
+          onAdd={(playlist) => void addSongsToSelectedPlaylist(playlist, songContextMenu.songs)}
           onPlayNow={(song) => {
             playSong(song);
             setSongContextMenu(null);
@@ -5844,7 +5845,7 @@ function LibraryView({
   searchResults: SearchResults;
   searchStatus: "idle" | "searching" | "error";
   setPlaylistCreatorOpen: (open: boolean) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
   onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
@@ -6250,7 +6251,7 @@ function FavoritesView({
   onPlayArtist: (artist: Artist | ArtistDetail) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const totalFavorites = favorites.artists.length + favorites.albums.length + favorites.songs.length;
 
@@ -6361,7 +6362,7 @@ function SearchResultsView({
   onPlayArtist: (artist: Artist | ArtistDetail) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const trimmedQuery = query.trim();
   const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
@@ -6513,20 +6514,31 @@ function SearchSongList({
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const { isSelected, selectTrack, selectedSongs } = useTrackSelection(songs);
+
   return (
     <div className="search-song-list">
-      {songs.map((song) => (
+      {songs.map((song, index) => (
         <div
-          className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""}`}
+          className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
           key={song.id}
-          onContextMenu={(event) => onSongContextMenu(event, song)}
+          onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+          onClick={(event) => selectTrack(event, index)}
         >
-          <button className="track-play" type="button" onClick={() => onPlaySong(song)} aria-label={`Play ${song.title}`}>
+          <button
+            className="track-play"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPlaySong(song);
+            }}
+            aria-label={`Play ${song.title}`}
+          >
             <Play size={14} fill="currentColor" />
           </button>
-          <button className="search-song-main" type="button" onClick={() => onPlaySong(song)}>
+          <button className="search-song-main" type="button" aria-label={`Select ${song.title}`}>
             <strong>{song.title}</strong>
             <small>{[song.artist, song.album].filter(Boolean).join(" - ") || "Song"}</small>
           </button>
@@ -6537,7 +6549,15 @@ function SearchSongList({
             label={song.title}
             onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
           />
-          <button className="track-queue" type="button" onClick={() => onQueueSong(song)} aria-label={`Queue ${song.title}`}>
+          <button
+            className="track-queue"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onQueueSong(song);
+            }}
+            aria-label={`Queue ${song.title}`}
+          >
             <Plus size={14} />
           </button>
         </div>
@@ -6575,6 +6595,8 @@ function ListeningHistoryView({
   onPlaySong: (song: Song) => void;
   onClear: () => void;
 }) {
+  const { isSelected, selectTrack } = useTrackSelection(history.map((entry) => entry.song));
+
   if (!history.length) {
     return <EmptyPanel icon={<History size={20} />} text="Play a song for a little while and it will appear here. Your history stays on this device." />;
   }
@@ -6588,12 +6610,25 @@ function ListeningHistoryView({
         </button>
       </div>
       <div className="listening-history-list">
-        {history.map((entry) => (
-          <div className="track-row history-track-row" key={entry.id}>
-            <button className="track-play" type="button" onClick={() => onPlaySong(entry.song)} aria-label={`Play ${entry.song.title}`}>
+        {history.map((entry, index) => (
+          <div
+            className={`track-row history-track-row ${isSelected(index) ? "selected" : ""}`}
+            key={entry.id}
+            onClick={(event) => selectTrack(event, index)}
+            onDoubleClick={() => onPlaySong(entry.song)}
+          >
+            <button
+              className="track-play"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onPlaySong(entry.song);
+              }}
+              aria-label={`Play ${entry.song.title}`}
+            >
               <Play size={14} fill="currentColor" />
             </button>
-            <button className="track-name history-track-name" type="button" onClick={() => onPlaySong(entry.song)}>
+            <button className="track-name history-track-name" type="button" aria-label={`Select ${entry.song.title}`}>
               <strong>{entry.song.title}</strong>
             </button>
             <span className="history-track-artist">{entry.song.artist || "Unknown artist"}</span>
@@ -6603,6 +6638,50 @@ function ListeningHistoryView({
       </div>
     </div>
   );
+}
+
+function useTrackSelection(songs: Song[]) {
+  const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set());
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+
+  useEffect(() => {
+    setSelectedIndexes((current) => {
+      const next = new Set([...current].filter((index) => index < songs.length));
+      return next.size === current.size ? current : next;
+    });
+  }, [songs]);
+
+  const selectTrack = (event: MouseEvent<HTMLElement>, index: number) => {
+    const song = songs[index];
+    if (!song) return;
+
+    if (event.shiftKey && selectionAnchor != null) {
+      const rangeStart = Math.min(selectionAnchor, index);
+      const rangeEnd = Math.max(selectionAnchor, index);
+      setSelectedIndexes(new Set(songs.slice(rangeStart, rangeEnd + 1).map((_, rangeIndex) => rangeStart + rangeIndex)));
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      setSelectedIndexes((current) => {
+        const next = new Set(current);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+        return next;
+      });
+      setSelectionAnchor(index);
+      return;
+    }
+
+    setSelectedIndexes(new Set([index]));
+    setSelectionAnchor(index);
+  };
+
+  return {
+    isSelected: (index: number) => selectedIndexes.has(index),
+    selectedSongs: songs.filter((_, index) => selectedIndexes.has(index)),
+    selectTrack,
+  };
 }
 
 function AlbumBrowser({
@@ -7280,7 +7359,7 @@ function PlaylistDetailPanel({
   onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const songs = playlist.entry ?? [];
   const playlistCover =
@@ -7596,7 +7675,7 @@ function DetailPanel({
   onReorderPlaylist: (playlist: PlaylistDetail, songs: Song[]) => Promise<void>;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   if (detailStatus === "loading" || detailStatus === "error") {
     return (
@@ -7806,8 +7885,10 @@ function TrackList({
   emptyText?: string;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const { isSelected, selectTrack, selectedSongs } = useTrackSelection(songs);
+
   if (!songs.length) {
     return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
   }
@@ -7825,18 +7906,25 @@ function TrackList({
               <small>{group.songs.length} tracks</small>
             </div>
           ) : null}
-          {group.songs.map((song, index) => (
+          {group.songs.map((song, index) => {
+            const songIndex = songs.findIndex((listSong) => listSong.id === song.id);
+
+            return (
             <div
-              className={`track-row ${currentTrack?.id === song.id ? "active" : ""}`}
+              className={`track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
-              onContextMenu={(event) => onSongContextMenu(event, song)}
+              onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+              onClick={(event) => selectTrack(event, songIndex)}
               onDoubleClick={() => onPlaySong(song)}
             >
               <button
                 className="track-play"
                 type="button"
                 aria-label={`Play ${song.title}`}
-                onClick={() => onPlaySong(song)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPlaySong(song);
+                }}
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <Play size={14} fill="currentColor" />
@@ -7845,8 +7933,7 @@ function TrackList({
               <button
                 className="track-name"
                 type="button"
-                onClick={() => onPlaySong(song)}
-                onDoubleClick={(event) => event.stopPropagation()}
+                aria-label={`Select ${song.title}`}
               >
                 {song.title}
               </button>
@@ -7862,13 +7949,17 @@ function TrackList({
                 className="track-queue"
                 type="button"
                 aria-label={`Queue ${song.title}`}
-                onClick={() => onQueueSong(song)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onQueueSong(song);
+                }}
                 onDoubleClick={(event) => event.stopPropagation()}
               >
                 <Plus size={14} />
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       ))}
     </div>
@@ -7908,8 +7999,9 @@ function EditablePlaylistTrackList({
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
-  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const { isSelected, selectTrack, selectedSongs } = useTrackSelection(songs);
   const displayedSongs = useMemo(() => {
     if (draggedIndex == null || dragOverIndex == null || draggedIndex === dragOverIndex) {
       return songs.map((song, index) => ({ song, index }));
@@ -7934,9 +8026,10 @@ function EditablePlaylistTrackList({
       <div className="track-list">
         {displayedSongs.map(({ song, index }, displayIndex) => (
           <div
-            className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${index === draggedIndex ? "dragging" : ""}`}
+            className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""} ${index === draggedIndex ? "dragging" : ""}`}
             key={`${song.id}-${index}`}
-            onContextMenu={(event) => onSongContextMenu(event, song)}
+            onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+            onClick={(event) => selectTrack(event, index)}
             onDoubleClick={() => onPlaySong(song)}
             onDragOver={(event) => {
               event.preventDefault();
@@ -7950,6 +8043,7 @@ function EditablePlaylistTrackList({
               aria-label={`Drag ${song.title} to reorder`}
               draggable
               disabled={busy}
+              onClick={(event) => event.stopPropagation()}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("text/plain", String(index));
@@ -7967,8 +8061,7 @@ function EditablePlaylistTrackList({
             <button
               className="track-name"
               type="button"
-              onClick={() => onPlaySong(song)}
-              onDoubleClick={(event) => event.stopPropagation()}
+              aria-label={`Select ${song.title}`}
             >
               {song.title}
             </button>
@@ -7984,7 +8077,10 @@ function EditablePlaylistTrackList({
               className="track-queue"
               type="button"
               aria-label={`Queue ${song.title}`}
-              onClick={() => onQueueSong(song)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onQueueSong(song);
+              }}
               onDoubleClick={(event) => event.stopPropagation()}
             >
               <Plus size={14} />
@@ -7994,7 +8090,10 @@ function EditablePlaylistTrackList({
               type="button"
               aria-label={`Remove ${song.title} from playlist`}
               disabled={busy}
-              onClick={() => onRemoveTrack(index)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemoveTrack(index);
+              }}
               onDoubleClick={(event) => event.stopPropagation()}
             >
               <Trash2 size={14} />
@@ -8197,12 +8296,12 @@ function SongPlaylistMenu({
         top: Math.min(menu.y, window.innerHeight - 440),
       }}
       role="menu"
-      aria-label={`Song actions for ${menu.song.title}`}
+      aria-label={`${menu.songs.length === 1 ? "Song" : `${menu.songs.length} selected songs`} actions for ${menu.song.title}`}
     >
       <div className="song-context-heading">
         <div>
-          <p className="eyebrow">Song</p>
-          <strong>{menu.song.title}</strong>
+          <p className="eyebrow">{menu.songs.length === 1 ? "Song" : `${menu.songs.length} songs selected`}</p>
+          <strong>{menu.songs.length === 1 ? menu.song.title : `${menu.song.title} and ${menu.songs.length - 1} more`}</strong>
         </div>
       </div>
       {message ? <p className={`song-context-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
