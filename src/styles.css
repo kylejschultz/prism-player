@@ -3391,65 +3391,36 @@ button.similar-chip:hover,
 
 .listening-history-list {
   display: grid;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  overflow: hidden;
+  gap: 6px;
 }
 
-.listening-history-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
+.history-track-row {
+  grid-template-columns: 28px minmax(0, 1fr);
+  min-height: 44px;
 }
 
-.listening-history-row:last-child {
-  border-bottom: 0;
-}
-
-.listening-history-main {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 11px;
-  color: inherit;
-  text-align: left;
-}
-
-.listening-history-main span:last-child {
+.history-track-name {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
-.listening-history-main strong,
-.listening-history-main small {
+.history-track-name strong,
+.history-track-name small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.listening-history-main small {
+.history-track-name strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.history-track-name small {
   font-size: 12px;
-}
-
-.listening-history-icon {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 9px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-}
-
-@media (max-width: 640px) {
-  .listening-history-row .track-play {
-    grid-column: 2;
-    grid-row: 1;
-  }
+  font-weight: 400;
+  color: rgba(244, 241, 236, 0.48);
 }
 
 .radio-footer-title {

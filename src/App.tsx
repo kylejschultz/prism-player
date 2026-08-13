@@ -6589,16 +6589,15 @@ function ListeningHistoryView({
       </div>
       <div className="listening-history-list">
         {history.map((entry) => (
-          <div className="listening-history-row" key={entry.id}>
-            <button className="listening-history-main" type="button" onClick={() => onPlaySong(entry.song)}>
-              <span className="listening-history-icon"><Music2 size={17} /></span>
+          <div className="track-row history-track-row" key={entry.id}>
+            <button className="track-play" type="button" onClick={() => onPlaySong(entry.song)} aria-label={`Play ${entry.song.title}`}>
+              <Play size={14} fill="currentColor" />
+            </button>
+            <button className="track-name history-track-name" type="button" onClick={() => onPlaySong(entry.song)}>
               <span>
                 <strong>{entry.song.title}</strong>
                 <small>{entry.song.artist || "Unknown artist"}{entry.song.album ? ` · ${entry.song.album}` : ""}</small>
               </span>
-            </button>
-            <button className="track-play" type="button" onClick={() => onPlaySong(entry.song)} aria-label={`Play ${entry.song.title}`}>
-              <Play size={14} fill="currentColor" />
             </button>
           </div>
         ))}
