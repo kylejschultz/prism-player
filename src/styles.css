@@ -1980,6 +1980,94 @@ button.similar-chip:hover,
   padding-top: 18px;
 }
 
+.about-panel {
+  align-content: start;
+}
+
+.about-version-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(242, 217, 133, 0.16);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(242, 217, 133, 0.11), rgba(255, 255, 255, 0.035));
+}
+
+.about-version-details {
+  display: grid;
+  gap: 3px;
+}
+
+.about-commit-sha {
+  color: rgba(244, 241, 236, 0.48);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.settings-label {
+  color: rgba(244, 241, 236, 0.56);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.about-version-row strong {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.update-check-status {
+  margin: 0;
+  color: rgba(244, 241, 236, 0.58);
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.update-check-status.bad {
+  color: #ffad9f;
+}
+
+.about-update-action {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.about-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.about-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(244, 241, 236, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.about-links a:hover,
+.about-links a:focus-visible {
+  border-color: rgba(242, 217, 133, 0.3);
+  background: rgba(242, 217, 133, 0.12);
+  color: #f8df91;
+}
+
 .settings-form label,
 .settings-panel label {
   display: grid;
@@ -3234,9 +3322,9 @@ button.similar-chip:hover,
   grid-template-columns: minmax(260px, 0.72fr) minmax(500px, 1.35fr) minmax(260px, 0.68fr);
   grid-template-areas: "now center actions";
   align-items: center;
-  gap: 16px;
-  height: 94px;
-  padding: 10px 18px 12px;
+  gap: 14px;
+  height: 84px;
+  padding: 8px 18px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background:
     linear-gradient(90deg, rgba(240, 210, 123, 0.08), transparent 28%, rgba(63, 145, 133, 0.07)),
@@ -3251,9 +3339,9 @@ button.similar-chip:hover,
 .now-playing {
   grid-area: now;
   display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
+  grid-template-columns: 56px minmax(0, 1fr);
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -3263,8 +3351,8 @@ button.similar-chip:hover,
 
 .player-cover {
   display: block;
-  width: 66px;
-  height: 66px;
+  width: 56px;
+  height: 56px;
   border-radius: 8px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.06);
@@ -3334,11 +3422,11 @@ button.similar-chip:hover,
 .player-center {
   grid-area: center;
   display: grid;
-  grid-template-rows: 38px 22px;
+  grid-template-rows: 42px 18px;
   justify-items: center;
   align-items: center;
   align-self: center;
-  gap: 6px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -3347,15 +3435,15 @@ button.similar-chip:hover,
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 8px;
-  height: 38px;
+  gap: 7px;
+  height: 42px;
 }
 
 .transport button {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
 }
@@ -3366,9 +3454,9 @@ button.similar-chip:hover,
 }
 
 .transport .play-button {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
   background: #f2d985;
   color: #16120a;
 }
@@ -3385,7 +3473,7 @@ button.similar-chip:hover,
 }
 
 .radio-transport {
-  gap: 10px;
+  gap: 7px;
 }
 
 .radio-transport button {
@@ -3400,8 +3488,29 @@ button.similar-chip:hover,
 .radio-transport .play-button {
   width: 42px;
   height: 42px;
-  border-radius: 10px;
+  border-radius: 999px;
   color: #16120a;
+}
+
+.repeat-button {
+  position: relative;
+}
+
+.repeat-one-indicator {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(7, 7, 7, 0.9);
+  border-radius: 999px;
+  background: #f8df91;
+  color: #241d0c;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .radio-control-popover {

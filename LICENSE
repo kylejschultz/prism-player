@@ -1,0 +1,2 @@
+Get "https://api.github.com/repos/kylejschultz/nestview/contents/LICENSE": tls: failed to verify certificate: x509: certificate signed by unknown authority
+

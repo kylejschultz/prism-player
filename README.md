@@ -1,149 +1,102 @@
+<div align="center">
+
 # Prism Player
 
-Prism Player is a focused desktop music player for Navidrome and other Subsonic-compatible libraries. It is built for people who want a fast native-feeling library browser, a proper queue, and a clean listening surface without turning their music server into a web tab.
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/aDEBQq3XtN)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/kylejschultz?label=Sponsor&logo=githubsponsors&color=ea4aaa)](https://github.com/sponsors/kylejschultz)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support%20the%20project-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/kylejschultz)
 
-The app is currently in early active development. The first target platform is macOS, with the codebase set up around Tauri, React, TypeScript, and Vite.
+</div>
 
-## What It Does
+**A desktop player for the music server you already use.**
 
-- Connects to Navidrome/Subsonic servers with a local saved connection.
-- Browses artists, albums, playlists, favorites, recently added, and recently played music.
-- Supports grid and list modes for large album and artist libraries.
-- Plays tracks directly from the server with shuffle, repeat, seeking, volume, and queue persistence.
-- Provides global search across artists, albums, songs, and playlists.
-- Opens album, artist, and playlist detail views with cover art, metadata, and track lists.
-- Creates playlists, edits playlist details, reorders playlist tracks, and removes playlist entries.
-- Stars and unstars songs, albums, and artists through the server API.
-- Shows queue, now-playing details, and lyrics in a collapsible right sidebar.
-- Keeps local preferences for view modes, sidebar state, volume, queue, and analytics consent.
+Prism connects to Navidrome and other Subsonic-compatible servers, so you can play your library, manage the queue, and keep your playlists in one proper desktop app. If you use Subwave too, radio lives right there with the rest of your music.
+
+It is still early, but there are builds for macOS and Windows.
+
+![Prism Player home screen](docs/images/home.png)
+
+> **Need help or want to talk about Prism?** [Join the Discord](https://discord.gg/aDEBQq3XtN). It is the quickest place for questions, ideas, and bug reports.
+
+## Get Prism
+
+Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest).
+
+Prism is pre-1.0 software. The main library and playback experience are in place, but app signing and auto-updates are not yet.
+
+### Important: unsigned builds
+
+The current macOS and Windows builds are *not yet code-signed*, so your operating system may warn you before opening them. That is expected for now.
+
+- On macOS, if Prism is blocked, open it once, then go to *System Settings → Privacy & Security* and choose *Open Anyway* for Prism.
+- On Windows, if Microsoft Defender SmartScreen shows “Windows protected your PC,” select *More info*, then *Run anyway*.
+
+Only bypass these warnings if you downloaded Prism from the releases page above.
+
+## First connection
+
+1. Open Prism.
+2. Enter the address of your Navidrome or other Subsonic-compatible server.
+3. Sign in, then listen to your library.
+
+![Prism's first-run Navidrome connection screen](docs/images/navidrome-first-run.png)
+
+Once you're connected, Prism gives you a simple place to browse the artists, albums, and music already on your server.
+
+![Prism artist view](docs/images/artist.png)
+
+## Subwave Radio
+
+Prism can tune into a Subwave station right alongside your library.
+
+1. Open *Settings* and select *Radio*.
+2. Under *Subwave channels*, add your station address, such as `https://subwave.example.com`.
+3. Return to the *Radio* item in the sidebar, select the station, and choose *Tune In*.
+4. While listening, you can check the schedule and booth feed, request a song, like the current track, or stop the stream.
+
+Prism checks that the address is a Subwave station before connecting. You can save more than one station and switch between them later.
+
+Once you're tuned in, Prism shows what is playing and keeps the station controls close by. Use the request button when you want to send something to the station.
 
 ## Status
 
-Prism is pre-1.0 software. The core Navidrome library and playback loop is in place, but packaging, signing, auto-update, and broader platform support are still being shaped.
+Prism is pre-1.0 software. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
 
-Current release target:
+## Contributing
 
-- macOS DMG builds from GitHub Actions.
-- Conventional commits for change history.
-- release-please for version bumps, changelog entries, tags, and GitHub releases.
+Want to work on Prism? Development setup, branches, tests, and release notes are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Development
+## More screenshots
 
-Requirements:
+<details>
+<summary>Open the screenshot gallery</summary>
 
-- Node.js 22
-- npm
-- Rust stable
-- macOS 13+ for the current bundled desktop target
+Click any screenshot to open it full size.
 
-Install dependencies:
+<a href="docs/images/album.png"><img src="docs/images/album.png" alt="Prism album view" height="180"></a>
+<a href="docs/images/subwave-stations.png"><img src="docs/images/subwave-stations.png" alt="Adding a Subwave station" height="180"></a>
+<a href="docs/images/subwave-tune-in.png"><img src="docs/images/subwave-tune-in.png" alt="Choosing a Subwave station" height="180"></a>
+<a href="docs/images/subwave-radio.png"><img src="docs/images/subwave-radio.png" alt="Subwave radio in Prism" height="180"></a>
+<a href="docs/images/subwave-request.png"><img src="docs/images/subwave-request.png" alt="Subwave song request" height="180"></a>
 
-```sh
-npm ci
-```
+</details>
 
-Run the web preview:
+## Features at a glance
 
-```sh
-npm run dev
-```
+- Navidrome and Subsonic server support.
+- Artists, albums, playlists, favorites, recently added, and recently played views.
+- A proper queue, plus shuffle, repeat, seeking, and volume controls.
+- Search for artists, albums, songs, and playlists.
+- Playlist editing and favorites.
+- Subwave radio with now-playing, schedules, requests, likes, and booth updates.
+- Queue, now-playing details, and lyrics in the sidebar.
 
-Run the Tauri desktop app:
-
-```sh
-npm run tauri:dev
-```
-
-Build the frontend:
-
-```sh
-npm run build
-```
-
-Run pre-release checks:
-
-```sh
-npm test
-```
-
-Build the macOS DMG:
-
-```sh
-npm run tauri:build
-```
-
-## Repository Workflow
-
-Development should happen on short-lived branches and merge through pull requests into `dev`. The `dev` branch is the integration lane for active feature work; `release` is the release branch.
-
-1. Create a branch from `dev`.
-2. Make small, reviewable commits using Conventional Commits.
-3. Open a pull request into `dev`.
-4. Wait for CI and security checks to pass.
-5. Squash or merge using a Conventional Commit-style title.
-6. Let multiple feature branches settle together on `dev`.
-7. When `dev` is ready to ship, open a release-candidate PR from `dev` into `release`.
-8. release-please opens or updates the release PR after changes land on `release`.
-9. Merging the release PR creates the tag and GitHub release.
-10. The release packaging workflow builds and attaches the macOS DMG and Windows installer. Run it manually from Actions for an on-demand development artifact.
-
-Recommended branch names:
-
-- `feat/navidrome-auth`
-- `fix/queue-persistence`
-- `docs/public-readme`
-- `chore/ci-security-release-flow`
-
-PRs directly into `release` are intentionally blocked unless the source branch is `dev` or release-please automation.
-
-## Commit Style
-
-Prism uses Conventional Commits so release notes and semantic versions can be generated automatically.
-
-Common commit types:
-
-- `feat:` for user-facing features
-- `fix:` for bug fixes
-- `docs:` for documentation-only changes
-- `style:` for formatting-only changes
-- `refactor:` for code changes that do not alter behavior
-- `test:` for tests
-- `build:` for packaging, dependencies, or build system changes
-- `ci:` for GitHub Actions and automation
-- `chore:` for maintenance
-
-Examples:
-
-```text
-feat: add playlist detail editing
-fix: preserve queue after refresh
-docs: document release workflow
-ci: add release-please automation
-```
-
-Breaking changes should use `!` or a `BREAKING CHANGE:` footer:
-
-```text
-feat!: require Navidrome token auth
-```
-
-## Releases
-
-Release automation is documented in [docs/RELEASE.md](docs/RELEASE.md).
-
-At a high level:
-
-- Normal feature and fix PRs merge to `dev`.
-- Release-candidate PRs merge from `dev` into `release`.
-- release-please maintains a release PR based on Conventional Commit history.
-- The release PR updates `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `CHANGELOG.md`.
-- Merging the release PR creates a GitHub release.
-- The packaging workflow builds the macOS DMG and Windows installer and uploads them to the release.
 
 ## Privacy
 
-Prism stores your server connection and local playback preferences in browser/app local storage. Optional anonymous analytics are opt-in and limited to install-level app metadata such as app version, install ID, platform, channel, whether the build is a development or release build, and aggregate artist, album, and song counts. Account and playback data are not sent.
+Prism stores your server connection and playback preferences locally. Optional anonymous analytics are opt-in. They only include app and install details, plus aggregate library counts; they do not include your account or playback data.
 
 ## License
 
-License details are not set yet.
+[GNU General Public License v3.0](./LICENSE) — free to use, modify, and share. If you distribute a modified version, it needs to stay under the same license.

@@ -3,14 +3,18 @@ import type { CSSProperties, FormEvent, MouseEvent, PointerEvent as ReactPointer
 import {
   AlertCircle,
   CalendarDays,
+  Code2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Disc3,
+  Download,
+  ExternalLink,
   History,
   Heart,
   Home,
+  Info,
   Library,
   ListMusic,
   Loader2,
@@ -22,8 +26,8 @@ import {
   Play,
   Plus,
   RadioTower,
+  RefreshCw,
   Repeat,
-  Repeat1,
   Search,
   Send,
   Settings,
@@ -34,6 +38,7 @@ import {
   Square,
   Trash2,
   Menu,
+  MessageCircle,
   UserRound,
   Volume2,
   Waves,
@@ -41,9 +46,9 @@ import {
 } from "lucide-react";
 import packageJson from "../package.json";
 
-type LibraryViewMode = "overview" | "albums" | "artists" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
+type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "radio" | "search" | "settings";
-type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "advanced";
+type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type AlbumViewMode = "art" | "list";
@@ -52,6 +57,11 @@ type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
+type AvailableUpdate = {
+  version: string;
+  releaseUrl: string;
+};
+
 function shuffled<T>(items: T[]) {
   const next = [...items];
   for (let index = next.length - 1; index > 0; index -= 1) {
@@ -59,6 +69,24 @@ function shuffled<T>(items: T[]) {
     [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
   }
   return next;
+}
+
+function versionParts(version: string) {
+  return version.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+}
+
+function isVersionNewer(candidate: string, current: string) {
+  const candidateParts = versionParts(candidate);
+  const currentParts = versionParts(current);
+  const length = Math.max(candidateParts.length, currentParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    if ((candidateParts[index] ?? 0) !== (currentParts[index] ?? 0)) {
+      return (candidateParts[index] ?? 0) > (currentParts[index] ?? 0);
+    }
+  }
+
+  return false;
 }
 
 type NavidromeConfig = {
@@ -75,6 +103,7 @@ type AppSettings = {
   sidebarPlaylistLimit: number;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
+  updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
   radioStationUrl: string;
@@ -327,7 +356,12 @@ const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
+const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
+const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
+const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
+const PRISM_DISCORD_URL = "https://discord.gg/aDEBQq3XtN";
 const APP_VERSION = packageJson.version;
+const APP_COMMIT_SHA = __APP_COMMIT_SHA__;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
 const CLIENT_ID = "PrismPlayer";
 const HAVE_FUTURE_DATA = 3;
@@ -373,6 +407,7 @@ const defaultSettings: AppSettings = {
   sidebarPlaylistLimit: 8,
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
+  updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
   radioStationUrl: "",
@@ -411,6 +446,7 @@ function getViewLabel(view: View) {
     overview: "Home",
     albums: "Albums",
     artists: "Artists",
+    songs: "Songs",
     playlists: "Playlists",
     recentlyAdded: "Recently Added",
     recentlyPlayed: "Recently Played",
@@ -430,6 +466,7 @@ function getSettingsTabLabel(tab: SettingsTab) {
     appearance: "Appearance",
     radio: "Radio",
     privacy: "Privacy",
+    about: "About",
     advanced: "Advanced",
   };
 
@@ -518,6 +555,7 @@ function loadStoredSettings(): AppSettings {
       sidebarPlaylistLimit: clampNumber(Number(parsed.sidebarPlaylistLimit ?? defaultSettings.sidebarPlaylistLimit), 3, 20),
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
@@ -1344,6 +1382,19 @@ async function fetchAlbumDetail(config: NavidromeConfig, albumId: string): Promi
   return response.album;
 }
 
+async function fetchSongLibrary(config: NavidromeConfig, albums: Album[]) {
+  const songs: Song[] = [];
+  const batchSize = 10;
+
+  for (let index = 0; index < albums.length; index += batchSize) {
+    const batch = albums.slice(index, index + batchSize);
+    const details = await Promise.all(batch.map((album) => fetchAlbumDetail(config, album.id)));
+    songs.push(...details.flatMap((album) => album.song ?? []));
+  }
+
+  return songs.sort((left, right) => `${left.title}\u0000${left.artist ?? ""}`.localeCompare(`${right.title}\u0000${right.artist ?? ""}`));
+}
+
 async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Promise<ArtistDetail> {
   const [artistResponse, infoResponse] = await Promise.all([
     navidromeRequest<{ artist: ArtistDetail }>(config, "getArtist", { id: artistId }),
@@ -1538,10 +1589,14 @@ export function App() {
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "checking" | "up-to-date" | "available" | "error">("idle");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
+  const [songLibrary, setSongLibrary] = useState<Song[]>([]);
+  const [songLibraryStatus, setSongLibraryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -1561,6 +1616,7 @@ export function App() {
   const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activePlaybackSource, setActivePlaybackSource] = useState<"local" | "radio">("local");
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
@@ -1589,6 +1645,7 @@ export function App() {
   const [radioLikeStatus, setRadioLikeStatus] = useState<RadioLikeStatus | null>(null);
   const [radioLikeBusy, setRadioLikeBusy] = useState(false);
   const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
+  const [isRadioTuning, setIsRadioTuning] = useState(false);
   const [draggedQueueIndex, setDraggedQueueIndex] = useState<number | null>(null);
   const [dragOverQueueIndex, setDragOverQueueIndex] = useState<number | null>(null);
   const [playlistCreatorOpen, setPlaylistCreatorOpen] = useState(false);
@@ -1631,9 +1688,10 @@ export function App() {
   const radioUpcoming = upcomingRadioTracks(radioStationState);
   const radioHistory = previousRadioTracks(radioStationState);
   const isRadioPlaying = radioStatus === "playing";
+  const isRadioPresentation = isRadioPlaying || isRadioTuning;
   const radioElapsed = isRadioPlaying ? radioTrackElapsedSeconds(radioNowPlaying, radioStationState, radioClockNow) : 0;
   const radioCoverUrl = buildRadioCoverUrl(radioStationUrl, radioNowPlaying);
-  const footerTrack = isRadioPlaying || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
+  const footerTrack = isRadioPresentation || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   const coverWashUrl = appSettings.coverWashEnabled && visualEffectsEnabled
@@ -1865,12 +1923,13 @@ export function App() {
     radioRetryCountRef.current = 0;
     if (audio) closeRadioStream(audio);
     setSuppressLocalFooter(true);
+    setIsRadioTuning(false);
     setRadioStatus(radioStationState ? "ready" : "idle");
     setRadioMessage(message);
   }
 
-  async function tuneInRadio() {
-    const origin = normalizeStationUrl(radioStationInput || appSettings.radioStationUrl);
+  async function tuneInRadio(nextUrl?: string) {
+    const origin = normalizeStationUrl(nextUrl || radioStationInput || appSettings.radioStationUrl);
     const radioAudio = radioAudioRef.current;
     if (!origin || !radioAudio) {
       setRadioStatus("error");
@@ -1878,10 +1937,20 @@ export function App() {
       return;
     }
 
-    if (!radioStationState || origin !== radioStationUrl) {
-      const nextState = await refreshRadio(origin);
-      if (!nextState) return;
-    }
+    // A previous station's state must never be presented as the next station
+    // is connecting. The footer has a dedicated tuning state until fresh
+    // metadata arrives from this connection.
+    setSuppressLocalFooter(true);
+    setRadioStationState(null);
+    setRadioSession(null);
+    setRadioBoothHistory([]);
+    setRadioSchedule(null);
+    setIsRadioTuning(true);
+    setRadioStatus("checking");
+    setRadioMessage("Tuning in...");
+
+    const nextState = await refreshRadio(origin);
+    if (!nextState) return;
 
     audioRef.current?.pause();
     setIsPlaying(false);
@@ -1890,15 +1959,14 @@ export function App() {
     clearRadioWatchdog();
     radioAudio.src = buildRadioPlaybackUrl(origin);
     radioAudio.volume = radioVolume;
-    setRadioStatus("checking");
-    setRadioMessage("Tuning in...");
-
     try {
       await radioAudio.play();
       setSuppressLocalFooter(false);
+      setIsRadioTuning(false);
       setRadioStatus("playing");
       setRadioMessage("");
     } catch {
+      setIsRadioTuning(false);
       setRadioStatus("error");
       setRadioMessage("The stream could not start.");
     }
@@ -2391,6 +2459,18 @@ export function App() {
     pushBrowserHistory();
     clearDetail();
     setActiveView(view);
+    if (view === "songs" && config && songLibraryStatus !== "ready" && songLibraryStatus !== "loading") void loadSongLibrary();
+  }
+
+  async function loadSongLibrary() {
+    if (!config) return;
+    setSongLibraryStatus("loading");
+    try {
+      setSongLibrary(await fetchSongLibrary(config, libraryData.albums));
+      setSongLibraryStatus("ready");
+    } catch {
+      setSongLibraryStatus("error");
+    }
   }
 
   function openSettings(tab: SettingsTab = "connection") {
@@ -2449,6 +2529,7 @@ export function App() {
   function replaceQueue(songs: Song[], startIndex = 0) {
     if (!songs.length) return;
     tuneOutRadio();
+    setActivePlaybackSource("local");
     setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
     const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
@@ -2486,6 +2567,7 @@ export function App() {
   function playSong(song: Song) {
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     tuneOutRadio();
+    setActivePlaybackSource("local");
     setSuppressLocalFooter(false);
 
     if (existingIndex >= 0) {
@@ -2722,8 +2804,19 @@ export function App() {
   }
 
   function togglePlayback() {
-    if (isRadioPlaying) {
-      tuneOutRadio();
+    if (activePlaybackSource === "radio" && radioStationUrl) {
+      const radioAudio = radioAudioRef.current;
+      if (isRadioPlaying) {
+        radioAudio?.pause();
+        setRadioMessage("Radio paused.");
+      } else if (radioAudio?.src) {
+        void radioAudio.play().catch(() => {
+          setRadioStatus("error");
+          setRadioMessage("The stream could not resume.");
+        });
+      } else {
+        void tuneInRadio();
+      }
       return;
     }
 
@@ -2762,6 +2855,8 @@ export function App() {
     setConfig(null);
     setForm(emptyConfig);
     setLibraryData(emptyLibraryData);
+    setSongLibrary([]);
+    setSongLibraryStatus("idle");
     setDetailSelection(null);
     setBackStack([]);
     setForwardStack([]);
@@ -2908,6 +3003,7 @@ export function App() {
       radioRetryCountRef.current += 1;
       audio.src = buildRadioPlaybackUrl(radioStationUrl);
       audio.volume = radioVolume;
+      setIsRadioTuning(true);
       setRadioStatus("checking");
       setRadioMessage("Reconnecting radio...");
 
@@ -2915,6 +3011,7 @@ export function App() {
         if (radioGenerationRef.current !== myGeneration) return;
         radioRetryCountRef.current = 0;
         setSuppressLocalFooter(false);
+        setIsRadioTuning(false);
         setRadioStatus("playing");
         setRadioMessage("");
       }).catch(() => {
@@ -2935,6 +3032,7 @@ export function App() {
     function handlePlaying() {
       clearRadioWatchdog();
       radioRetryCountRef.current = 0;
+      setIsRadioTuning(false);
       setRadioStatus("playing");
       setRadioMessage("");
     }
@@ -3099,6 +3197,41 @@ export function App() {
     };
   }, [currentIndex, position, queue]);
 
+  async function checkForUpdates(signal?: AbortSignal) {
+    setUpdateCheckStatus("checking");
+
+    try {
+      const response = await fetch(PRISM_LATEST_RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json" },
+        signal,
+      });
+      if (!response.ok) throw new Error("Unable to check for updates.");
+
+      const release = (await response.json()) as { tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean };
+      const version = release.tag_name?.replace(/^v/, "") ?? "";
+      if (!release.draft && !release.prerelease && version && isVersionNewer(version, packageJson.version)) {
+        setAvailableUpdate({ version, releaseUrl: release.html_url || PRISM_RELEASES_URL });
+        setUpdateCheckStatus("available");
+        return;
+      }
+
+      setAvailableUpdate(null);
+      setUpdateCheckStatus("up-to-date");
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setAvailableUpdate(null);
+        setUpdateCheckStatus("error");
+      }
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void checkForUpdates(controller.signal);
+
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     if (!config || !currentTrack || !isPlaying) return;
 
@@ -3199,7 +3332,16 @@ export function App() {
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
-    if (currentTrack) {
+    const controlsRadio = activePlaybackSource === "radio" && Boolean(radioStationUrl);
+
+    if (controlsRadio && radioNowPlaying) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: radioNowPlaying.title ?? "Subwave Radio",
+        artist: radioNowPlaying.artist ?? "Subwave",
+        album: radioNowPlaying.album ?? "Live radio",
+        artwork: radioCoverUrl ? [{ src: radioCoverUrl, sizes: "160x160", type: "image/jpeg" }] : [],
+      });
+    } else if (currentTrack) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.artist ?? "Unknown artist",
@@ -3210,16 +3352,35 @@ export function App() {
       navigator.mediaSession.metadata = null;
     }
 
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-    navigator.mediaSession.setActionHandler("play", () => setIsPlaying(true));
+    navigator.mediaSession.playbackState = controlsRadio ? (isRadioPlaying ? "playing" : "paused") : isPlaying ? "playing" : "paused";
+    navigator.mediaSession.setActionHandler("play", () => {
+      if (controlsRadio) {
+        const radioAudio = radioAudioRef.current;
+        if (radioAudio?.src) {
+          void radioAudio.play().catch(() => {
+            setRadioStatus("error");
+            setRadioMessage("The stream could not resume.");
+          });
+        } else {
+          void tuneInRadio();
+        }
+        return;
+      }
+      setIsPlaying(true);
+    });
     navigator.mediaSession.setActionHandler("pause", () => {
+      if (controlsRadio) {
+        radioAudioRef.current?.pause();
+        setRadioMessage("Radio paused.");
+        return;
+      }
       audioRef.current?.pause();
       setIsPlaying(false);
     });
-    navigator.mediaSession.setActionHandler("previoustrack", playPrevious);
-    navigator.mediaSession.setActionHandler("nexttrack", () => playNext(false));
-    navigator.mediaSession.setActionHandler("seekbackward", () => seekTo(Math.max(0, position - 10)));
-    navigator.mediaSession.setActionHandler("seekforward", () => seekTo(Math.min((playerDuration || currentTrack?.duration || 0), position + 10)));
+    navigator.mediaSession.setActionHandler("previoustrack", controlsRadio ? null : playPrevious);
+    navigator.mediaSession.setActionHandler("nexttrack", controlsRadio ? null : () => playNext(false));
+    navigator.mediaSession.setActionHandler("seekbackward", controlsRadio ? null : () => seekTo(Math.max(0, position - 10)));
+    navigator.mediaSession.setActionHandler("seekforward", controlsRadio ? null : () => seekTo(Math.min((playerDuration || currentTrack?.duration || 0), position + 10)));
 
     return () => {
       navigator.mediaSession.setActionHandler("play", null);
@@ -3229,7 +3390,7 @@ export function App() {
       navigator.mediaSession.setActionHandler("seekbackward", null);
       navigator.mediaSession.setActionHandler("seekforward", null);
     };
-  }, [currentTrack, currentTrackCoverUrl, isPlaying, playerDuration, position]);
+  }, [activePlaybackSource, currentTrack, currentTrackCoverUrl, isPlaying, isRadioPlaying, playerDuration, position, radioCoverUrl, radioNowPlaying, radioStationUrl]);
 
   useEffect(() => {
     const trimmedQuery = searchQuery.trim();
@@ -3352,6 +3513,14 @@ export function App() {
             <Disc3 size={18} />
             Albums
           </button>
+          <button
+            className={`nav-item nav-child ${activeView === "songs" ? "active" : ""}`}
+            type="button"
+            onClick={() => selectView("songs")}
+          >
+            <Music2 size={18} />
+            Songs
+          </button>
           <div className="nav-parent-row">
             <button
               className={`nav-item nav-child nav-parent ${activeView === "playlists" ? "active" : ""}`}
@@ -3457,6 +3626,12 @@ export function App() {
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
           ) : null}
+          {availableUpdate && appSettings.updateDismissedVersion !== availableUpdate.version ? (
+            <UpdateBanner
+              update={availableUpdate}
+              onDismiss={() => updateAppSettings({ ...appSettings, updateDismissedVersion: availableUpdate.version })}
+            />
+          ) : null}
 
           {activeView === "settings" ? (
             <SettingsView
@@ -3474,6 +3649,9 @@ export function App() {
               resetAppSettings={resetAppSettings}
               setAlbumViewMode={setAlbumViewMode}
               setArtistViewMode={setArtistViewMode}
+              availableUpdate={availableUpdate}
+              updateCheckStatus={updateCheckStatus}
+              onCheckForUpdates={() => void checkForUpdates()}
               onSave={saveConnection}
               onReset={resetConnection}
             />
@@ -3493,10 +3671,14 @@ export function App() {
               radioMessage={radioMessage}
               radioWaveformBars={radioWaveformBars}
               tuneInRadio={tuneInRadio}
+              onAddFirstRadioStation={tuneInRadio}
               libraryItems={libraryItems}
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
+              songs={songLibrary}
+              songLibraryStatus={songLibraryStatus}
+              onRetrySongs={() => void loadSongLibrary()}
               favorites={libraryData.favorites}
               playlists={libraryData.playlists}
               albumViewMode={albumViewMode}
@@ -3542,6 +3724,7 @@ export function App() {
         <audio
           ref={audioRef}
           preload="auto"
+          onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget.duration)}
           onEnded={() => playNext(true)}
@@ -3556,7 +3739,11 @@ export function App() {
           ref={radioAudioRef}
           crossOrigin="anonymous"
           preload="none"
-          onPlay={() => setRadioStatus("playing")}
+          onPlay={() => {
+            setIsRadioTuning(false);
+            setActivePlaybackSource("radio");
+            setRadioStatus("playing");
+          }}
           onPause={() => setRadioStatus(radioStationState ? "ready" : "idle")}
           onError={() => {
             if (!radioAudioRef.current?.src) return;
@@ -3565,10 +3752,10 @@ export function App() {
           }}
         />
 
-        <div className={`now-playing ${footerTrack || isRadioPlaying ? "" : "empty"}`}>
-          {isRadioPlaying ? (
+        <div className={`now-playing ${footerTrack || isRadioPresentation ? "" : "empty"}`}>
+          {isRadioPresentation ? (
             radioCoverUrl ? (
-              <CoverArt src={radioCoverUrl} label={radioNowPlaying?.title ?? "Radio"} className="player-cover" fallbackIcon={<RadioTower size={20} />} />
+              <CoverArt src={isRadioTuning ? null : radioCoverUrl} label={isRadioTuning ? "Tuning In" : radioNowPlaying?.title ?? "Radio"} className="player-cover" fallbackIcon={<RadioTower size={20} />} />
             ) : (
               <CoverArt src={null} label="Radio" className="player-cover" fallbackIcon={<RadioTower size={20} />} />
             )
@@ -3576,13 +3763,13 @@ export function App() {
             <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
           ) : null}
           <div className="now-playing-copy">
-            {isRadioPlaying ? (
+            {isRadioPresentation ? (
               <>
-                <span className="track-title radio-footer-title">{footerRadioTitle}</span>
+                <span className="track-title radio-footer-title">{isRadioTuning ? "Tuning In" : footerRadioTitle}</span>
                 <p className="track-meta">
-                  <span>{footerRadioMeta}</span>
+                  <span>{isRadioTuning ? "Connecting to station…" : footerRadioMeta}</span>
                 </p>
-                {radioNowPlaying?.album ? <p className="track-album">{radioNowPlaying.album}</p> : null}
+                {!isRadioTuning && radioNowPlaying?.album ? <p className="track-album">{radioNowPlaying.album}</p> : null}
               </>
             ) : footerTrack ? (
               <>
@@ -3698,7 +3885,7 @@ export function App() {
                   <SkipForward size={16} />
                 </button>
                 <button
-                  className={repeatMode !== "off" ? "active" : ""}
+                  className={`repeat-button ${repeatMode !== "off" ? "active" : ""} ${repeatMode === "one" ? "repeat-one" : ""}`}
                   type="button"
                   aria-label={`Repeat ${repeatMode}`}
                   aria-pressed={repeatMode !== "off"}
@@ -3706,7 +3893,8 @@ export function App() {
                   disabled={!queue.length}
                   title={repeatMode === "off" ? "Repeat off" : repeatMode === "all" ? "Repeat all" : "Repeat one"}
                 >
-                  {repeatMode === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+                  <Repeat size={15} />
+                  {repeatMode === "one" ? <span className="repeat-one-indicator" aria-hidden="true">1</span> : null}
                 </button>
               </>
             )}
@@ -4676,6 +4864,28 @@ function AnalyticsBanner({
   );
 }
 
+function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismiss: () => void }) {
+  return (
+    <section className="analytics-banner update-banner" aria-label="Prism update available">
+      <div className="analytics-banner-icon" aria-hidden="true">
+        <Download size={18} />
+      </div>
+      <div>
+        <strong>Prism {update.version} is available</strong>
+        <p>You’re using {packageJson.version}. Visit the release page to download the latest build.</p>
+      </div>
+      <div className="analytics-banner-actions">
+        <button className="secondary-button compact-button" type="button" onClick={onDismiss}>
+          Not Now
+        </button>
+        <a className="connect-button compact-button" href={update.releaseUrl} target="_blank" rel="noreferrer">
+          View Release
+        </a>
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({
   form,
   setForm,
@@ -4691,6 +4901,9 @@ function SettingsView({
   resetAppSettings,
   setAlbumViewMode,
   setArtistViewMode,
+  availableUpdate,
+  updateCheckStatus,
+  onCheckForUpdates,
   onSave,
   onReset,
 }: {
@@ -4708,6 +4921,9 @@ function SettingsView({
   resetAppSettings: () => void;
   setAlbumViewMode: (mode: AlbumViewMode) => void;
   setArtistViewMode: (mode: ArtistViewMode) => void;
+  availableUpdate: AvailableUpdate | null;
+  updateCheckStatus: "idle" | "checking" | "up-to-date" | "available" | "error";
+  onCheckForUpdates: () => void;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
@@ -4741,6 +4957,7 @@ function SettingsView({
           { id: "appearance", label: "Appearance", icon: <Waves size={15} /> },
           { id: "radio", label: "Radio", icon: <RadioTower size={15} /> },
           { id: "privacy", label: "Privacy", icon: <CheckCircle2 size={15} /> },
+          { id: "about", label: "About", icon: <Info size={15} /> },
           { id: "advanced", label: "Advanced", icon: <Settings size={15} /> },
         ].map((tab) => (
           <button
@@ -4964,6 +5181,44 @@ function SettingsView({
         <p className="settings-note">
           Sends a periodic Beacon ping with app version, install id, platform, channel, dev/release flag, and aggregate artist, album, and song counts. No account or playback data is sent.
         </p>
+      </section> : null}
+
+      {activeTab === "about" ? <section className="settings-panel about-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Prism Player</p>
+            <h3>About</h3>
+          </div>
+          <Info size={18} />
+        </div>
+        <div className="about-version-row">
+          <div className="about-version-details">
+            <span className="settings-label">Installed version</span>
+            <strong>v{APP_VERSION}</strong>
+            <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
+          </div>
+          <div className="about-update-action">
+            {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
+              <Download size={15} />
+              Update available
+            </a> : <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
+              {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+              Check for updates
+            </button>}
+            <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
+              {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
+              {updateCheckStatus === "up-to-date" ? "You’re up to date." : null}
+              {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
+              {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
+              {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
+            </p>
+          </div>
+        </div>
+        <div className="about-links" aria-label="Prism links">
+          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
+          <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
+          <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
+        </div>
       </section> : null}
 
       {activeTab === "advanced" ? <section className="settings-panel">
@@ -5206,6 +5461,7 @@ function RadioView({
   message,
   waveformBars,
   tuneIn,
+  onAddFirstStation,
 }: {
   appSettings: AppSettings;
   onSelectStation: (stationUrl: string) => void;
@@ -5217,9 +5473,11 @@ function RadioView({
   message: string;
   waveformBars: number[];
   tuneIn: () => Promise<void>;
+  onAddFirstStation: (stationUrl: string) => Promise<void>;
 }) {
   const stationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const savedStations = appSettings.radioStationUrls;
+  const [firstStationUrl, setFirstStationUrl] = useState("");
   const isPlaying = status === "playing";
   const isTuning = status === "checking";
   const selectedStationLabel = stationUrl ? stationUrl.replace(/^https?:\/\//, "") : "No station selected";
@@ -5233,28 +5491,43 @@ function RadioView({
           </div>
           <div className="radio-tune-copy">
             <p className="eyebrow">Radio</p>
-            <h3>Tune into Subwave</h3>
-            <span>{selectedStationLabel}</span>
+            <h3>{savedStations.length ? "Tune into Subwave" : "Add your Subwave station"}</h3>
+            <span>{savedStations.length ? selectedStationLabel : "Paste your station URL to connect and start listening."}</span>
           </div>
 
           <div className="radio-tune-controls">
-            <label className="radio-channel-select radio-tune-select">
-              <span>Channel</span>
-              <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={!savedStations.length || isTuning}>
-                {savedStations.length ? (
-                  savedStations.map((savedStationUrl) => (
+            {savedStations.length ? (
+              <label className="radio-channel-select radio-tune-select">
+                <span>Channel</span>
+                <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={isTuning}>
+                  {savedStations.map((savedStationUrl) => (
                     <option value={savedStationUrl} key={savedStationUrl}>
                       {savedStationUrl.replace(/^https?:\/\//, "")}
                     </option>
-                  ))
-                ) : (
-                  <option value="">No saved stations</option>
-                )}
-              </select>
-            </label>
-            <button className="connect-button radio-tune-button" type="button" onClick={() => void tuneIn()} disabled={!stationUrl || isTuning}>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <label className="radio-channel-select radio-tune-select">
+                <span>Station URL</span>
+                <input
+                  type="url"
+                  value={firstStationUrl}
+                  onChange={(event) => setFirstStationUrl(event.target.value)}
+                  placeholder="https://radio.example.com"
+                  autoComplete="url"
+                  disabled={isTuning}
+                />
+              </label>
+            )}
+            <button
+              className="connect-button radio-tune-button"
+              type="button"
+              onClick={() => void (savedStations.length ? tuneIn() : onAddFirstStation(firstStationUrl))}
+              disabled={isTuning || (!savedStations.length && !firstStationUrl.trim())}
+            >
               {isTuning ? <Loader2 size={18} /> : <Play size={18} fill="currentColor" />}
-              {isTuning ? "Tuning In" : "Tune In"}
+              {isTuning ? "Tuning In" : savedStations.length ? "Tune In" : "Add & Tune In"}
             </button>
             <button className="secondary-button compact-button" type="button" onClick={onOpenSettings}>
               <Settings size={15} />
@@ -5386,10 +5659,14 @@ function LibraryView({
   radioMessage,
   radioWaveformBars,
   tuneInRadio,
+  onAddFirstRadioStation,
   libraryItems,
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
+  songs,
+  songLibraryStatus,
+  onRetrySongs,
   favorites,
   playlists,
   albumViewMode,
@@ -5441,10 +5718,14 @@ function LibraryView({
   radioMessage: string;
   radioWaveformBars: number[];
   tuneInRadio: () => Promise<void>;
+  onAddFirstRadioStation: (stationUrl: string) => Promise<void>;
   libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
+  songs: Song[];
+  songLibraryStatus: "idle" | "loading" | "ready" | "error";
+  onRetrySongs: () => void;
   favorites: LibraryData["favorites"];
   playlists: Playlist[];
   albumViewMode: AlbumViewMode;
@@ -5495,6 +5776,7 @@ function LibraryView({
         message={radioMessage}
         waveformBars={radioWaveformBars}
         tuneIn={tuneInRadio}
+        onAddFirstStation={onAddFirstRadioStation}
       />
     );
   }
@@ -5625,6 +5907,24 @@ function LibraryView({
               onOpenArtist={onOpenArtist}
               onPlayArtist={onPlayArtist}
             />
+          ) : null}
+          {activeView === "songs" ? (
+            songLibraryStatus === "loading" ? (
+              <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading your songs…" />
+            ) : songLibraryStatus === "error" ? (
+              <StateNotice tone="bad" icon={<AlertCircle size={16} />} title="Songs could not load" text="Try again to reload your library tracks." actionLabel="Retry" onAction={onRetrySongs} />
+            ) : (
+              <SearchSongList
+                songs={songs}
+                currentTrack={currentTrack}
+                favoriteIds={favoriteIds}
+                favoriteBusyKey={favoriteBusyKey}
+                onToggleFavorite={onToggleFavorite}
+                onPlaySong={onPlaySong}
+                onQueueSong={onQueueSong}
+                onSongContextMenu={onSongContextMenu}
+              />
+            )
           ) : null}
           {activeView === "playlists" ? (
             <PlaylistBrowser playlists={playlists} onOpenPlaylist={onOpenPlaylist} onPlayPlaylist={onPlayPlaylist} />

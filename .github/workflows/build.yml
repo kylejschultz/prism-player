@@ -4,6 +4,29 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Published release tag to build and announce, for example v0.1.0
+        required: false
+        type: string
+      source_ref:
+        description: Git ref to build for a manual test artifact (does not publish a release asset)
+        required: false
+        type: string
+      announce_only:
+        description: Send the Discord announcement without rebuilding release artifacts
+        required: false
+        default: false
+        type: boolean
+      platform:
+        description: Build target for manual test builds
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
 
 permissions:
   contents: write
@@ -15,17 +38,22 @@ concurrency:
 jobs:
   macos:
     name: macOS DMG
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'windows')
     runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
         run: |
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            suffix="${{ github.event.release.tag_name }}"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            suffix="$RELEASE_TAG"
           else
             suffix="${GITHUB_REF_NAME}"
           fi
@@ -41,11 +69,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Build macOS app
-        run: npm run tauri:build
+      - name: Install macOS packaging dependency
+        run: python -m pip install --disable-pip-version-check dmgbuild
+
+      - name: Build macOS installer
+        run: npm run tauri:build:installer
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
@@ -56,28 +92,34 @@ jobs:
           retention-days: ${{ github.event_name == 'release' && 90 || 14 }}
 
       - name: Attach DMG to GitHub release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.ref != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
         run: |
           for dmg in src-tauri/target/release/bundle/dmg/*.dmg; do
-            gh release upload "${{ github.event.release.tag_name }}" "$dmg" --clobber
+            gh release upload "$RELEASE_TAG" "$dmg" --clobber
           done
 
   windows:
     name: Windows installer
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'macos')
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
         run: |
-          if ("${{ github.event_name }}" -eq "release") {
-            $suffix = "${{ github.event.release.tag_name }}"
+          if ($env:RELEASE_TAG) {
+            $suffix = $env:RELEASE_TAG
           } else {
             $suffix = "${{ github.ref_name }}"
           }
@@ -108,19 +150,20 @@ jobs:
           retention-days: ${{ github.event_name == 'release' && 90 || 14 }}
 
       - name: Attach installer to GitHub release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.ref != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
         run: |
           for installer in src-tauri/target/release/bundle/nsis/*.exe; do
-            gh release upload "${{ github.event.release.tag_name }}" "$installer" --clobber
+            gh release upload "$RELEASE_TAG" "$installer" --clobber
           done
 
   announce-discord:
     name: Discord release announcement
     needs: [macos, windows]
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: always() && (github.event_name == 'release' || inputs.ref != '') && vars.DISABLE_DISCORD_RELEASE_ANNOUNCEMENT != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -129,30 +172,82 @@ jobs:
       - name: Post release announcement
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-          RELEASE_NAME: ${{ github.event.release.name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
-          RELEASE_BODY: ${{ github.event.release.body }}
+          DISCORD_ANNOUNCEMENT_ROLE_ID: ${{ vars.DISCORD_ANNOUNCEMENT_ROLE_ID }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
         run: |
           if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
             echo "::error::Set the DISCORD_RELEASE_WEBHOOK_URL repository secret before publishing a release."
             exit 1
           fi
 
-          description="${RELEASE_BODY:-Initial alpha release.}"
-          if (( ${#description} > 3900 )); then
-            description="${description:0:3897}..."
-          fi
+          export RELEASE_JSON="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json name,url,body,assets)"
+          python3 <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
 
-          payload="$(jq -n \
-            --arg content '<@&1536269011468419072>' \
-            --arg title "${RELEASE_NAME:-Prism Player $RELEASE_TAG}" \
-            --arg url "$RELEASE_URL" \
-            --arg description "$description" \
-            --argjson allowed_mentions '{"parse":["roles"]}' \
-            '{content: $content, allowed_mentions: $allowed_mentions, embeds: [{title: $title, url: $url, description: $description, color: 5934141, footer: {text: "Prism Player release"}}]}')"
+          webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
+          release = json.loads(os.environ["RELEASE_JSON"])
+          role_id = os.environ.get("DISCORD_ANNOUNCEMENT_ROLE_ID", "").strip()
 
-          curl --fail --retry 3 --retry-all-errors --silent --show-error \
-            -H 'Content-Type: application/json' \
-            --data "$payload" \
-            "$DISCORD_WEBHOOK_URL"
+          def asset_url(suffix):
+              for asset in release.get("assets", []):
+                  if asset["name"].lower().endswith(suffix):
+                      return asset["url"]
+              return None
+
+          def post(payload, components=False):
+              separator = "&" if "?" in webhook_url else "?"
+              url = f"{webhook_url}{separator}with_components=true" if components else webhook_url
+              request = urllib.request.Request(
+                  url,
+                  data=json.dumps(payload).encode("utf-8"),
+                  headers={"Content-Type": "application/json", "User-Agent": "prism-player-release-bot/1.0"},
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      if response.status not in (200, 204):
+                          raise RuntimeError(f"Discord webhook returned HTTP {response.status}")
+              except urllib.error.HTTPError as exc:
+                  print(exc.read().decode("utf-8", "replace"))
+                  raise
+
+          if role_id:
+              post({
+                  "username": "Prism Player Releases",
+                  "content": f"<@&{role_id}>",
+                  "allowed_mentions": {"parse": [], "roles": [role_id]},
+              })
+
+          notes = (release.get("body") or "See the GitHub release for the full notes.").strip()
+          if len(notes) > 1800:
+              notes = notes[:1797].rstrip() + "..."
+
+          buttons = []
+          macos_url = asset_url(".dmg")
+          windows_url = asset_url(".exe")
+          if macos_url:
+              buttons.append({"type": 2, "style": 5, "label": "Download for macOS", "url": macos_url})
+          if windows_url:
+              buttons.append({"type": 2, "style": 5, "label": "Download for Windows", "url": windows_url})
+          buttons.append({"type": 2, "style": 5, "label": "View GitHub Release", "url": release["url"]})
+
+          card_components = [
+              {"type": 10, "content": f"# Prism Player {release.get('name') or os.environ['RELEASE_TAG']}\nA new Prism Player release is ready."},
+              {"type": 14, "divider": True, "spacing": 1},
+              {"type": 10, "content": f"## What changed\n{notes}"},
+              {"type": 14, "divider": True, "spacing": 1},
+              {"type": 10, "content": "## Downloads"},
+              {"type": 1, "components": buttons},
+              {"type": 14, "divider": True, "spacing": 1},
+              {"type": 10, "content": "_Prism Player release_"},
+          ]
+          post({
+              "username": "Prism Player Releases",
+              "flags": 32768,
+              "components": [{"type": 17, "accent_color": 5934141, "components": card_components}],
+          }, components=True)
+          PY
