@@ -1835,6 +1835,12 @@ button.similar-chip:hover,
   background: rgba(255, 255, 255, 0.032);
 }
 
+/* Keep the hover surface consistent over both alternating row colors. */
+.track-list > .track-row:hover,
+.disc-group > .track-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .song-browser-row {
   grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
 }
