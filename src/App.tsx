@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -60,6 +61,7 @@ type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
 
@@ -1825,6 +1827,7 @@ export function App() {
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
+  const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
@@ -3163,10 +3166,12 @@ export function App() {
     if (!isTauriDesktopApp()) return;
 
     if (!appSettings.discordPresenceEnabled || activePlaybackSource !== "local" || !currentTrack) {
+      setDiscordPresenceStatus("idle");
       void invoke("clear_discord_presence").catch(() => undefined);
       return;
     }
 
+    setDiscordPresenceStatus("connecting");
     void invoke("update_discord_presence", {
       presence: {
         title: currentTrack.title,
@@ -3180,6 +3185,19 @@ export function App() {
 
   useEffect(() => () => {
     if (isTauriDesktopApp()) void invoke("clear_discord_presence").catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    let unlisten: (() => void) | undefined;
+    void listen<{ state: DiscordPresenceStatus }>("discord-presence-status", (event) => {
+      setDiscordPresenceStatus(event.payload.state);
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
+    return () => unlisten?.();
   }, []);
 
   useEffect(() => {
@@ -4027,6 +4045,7 @@ export function App() {
               status={status}
               statusMessage={statusMessage}
               appSettings={appSettings}
+              discordPresenceStatus={discordPresenceStatus}
               activeTab={settingsTab}
               setActiveTab={selectSettingsTab}
               updateAppSettings={updateAppSettings}
@@ -5311,6 +5330,7 @@ function SettingsView({
   status,
   statusMessage,
   appSettings,
+  discordPresenceStatus,
   activeTab,
   setActiveTab,
   updateAppSettings,
@@ -5331,6 +5351,7 @@ function SettingsView({
   status: ConnectionStatus;
   statusMessage: string;
   appSettings: AppSettings;
+  discordPresenceStatus: DiscordPresenceStatus;
   activeTab: SettingsTab;
   setActiveTab: (tab: SettingsTab) => void;
   updateAppSettings: (settings: AppSettings) => void;
@@ -5579,6 +5600,12 @@ function SettingsView({
         <p className="settings-note">
           Desktop only. Prism sends the current track, artist, album, and playback state directly to the Discord app running on this device. Nothing is sent to Prism or a Discord bot.
         </p>
+        {appSettings.discordPresenceEnabled ? <p className={`settings-note ${discordPresenceStatus === "unavailable" ? "bad" : ""}`}>
+          {discordPresenceStatus === "connecting" ? "Connecting to Discord…" : null}
+          {discordPresenceStatus === "connected" ? "Connected to Discord." : null}
+          {discordPresenceStatus === "unavailable" ? "Discord is unavailable. Keep the desktop app open and try again." : null}
+          {discordPresenceStatus === "idle" ? "Start local playback to update Discord." : null}
+        </p> : null}
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Analytics</p>

@@ -1,5 +1,6 @@
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 
 const DISCORD_CLIENT_ID: &str = "1537904664740364418";
 
@@ -13,16 +14,34 @@ struct DiscordPresence {
     started_at: Option<i64>,
 }
 
-#[tauri::command]
-fn update_discord_presence(presence: DiscordPresence) {
-    tauri::async_runtime::spawn_blocking(move || publish_discord_presence(presence));
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscordPresenceStatus {
+    state: &'static str,
+    message: String,
 }
 
-fn publish_discord_presence(presence: DiscordPresence) {
+#[tauri::command]
+fn update_discord_presence(app: tauri::AppHandle, presence: DiscordPresence) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = match publish_discord_presence(presence) {
+            Ok(()) => DiscordPresenceStatus {
+                state: "connected",
+                message: "Connected to Discord.".to_string(),
+            },
+            Err(error) => DiscordPresenceStatus {
+                state: "unavailable",
+                message: format!("Discord unavailable: {error}"),
+            },
+        };
+
+        let _ = app.emit("discord-presence-status", status);
+    });
+}
+
+fn publish_discord_presence(presence: DiscordPresence) -> Result<(), String> {
     let mut client = DiscordIpcClient::new(DISCORD_CLIENT_ID);
-    if client.connect().is_err() {
-        return;
-    }
+    client.connect().map_err(|error| error.to_string())?;
 
     let state = presence.album.filter(|album| !album.trim().is_empty()).map_or_else(
         || presence.artist.clone(),
@@ -48,8 +67,9 @@ fn publish_discord_presence(presence: DiscordPresence) {
         }
     }
 
-    let _ = client.set_activity(activity);
+    client.set_activity(activity).map_err(|error| error.to_string())?;
     let _ = client.close();
+    Ok(())
 }
 
 #[tauri::command]
