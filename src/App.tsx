@@ -852,6 +852,48 @@ function buildRadioCoverUrl(stationUrl: string, track: RadioTrack | null) {
   return coverId ? `${origin}/api/cover/${encodeURIComponent(coverId)}` : null;
 }
 
+function normalizeRadioTrackMetadata(track: RadioTrack): RadioTrack {
+  const artist = track.artist?.trimEnd();
+  const title = track.title?.trim();
+
+  // Some station metadata sources split a parenthesized feature credit at its
+  // opening parenthesis, producing `Artist (` and `Title feat. Guest)`. Put
+  // that credit back with the artist before rendering it anywhere in Prism.
+  const splitFeature = artist?.endsWith("(") && title?.match(/^(.+?)\s+((?:feat\.?|ft\.?|featuring)\s+.+)\)$/i);
+  if (!splitFeature) return track;
+
+  return {
+    ...track,
+    artist: `${artist} ${splitFeature[2]})`,
+    title: splitFeature[1]?.trim() ?? title,
+  };
+}
+
+function normalizeRadioTracks(tracks: RadioTrack[] | undefined) {
+  return tracks?.map(normalizeRadioTrackMetadata);
+}
+
+function normalizeRadioStateMetadata(state: RadioStationState): RadioStationState {
+  return {
+    ...state,
+    nowPlaying: state.nowPlaying ? normalizeRadioTrackMetadata(state.nowPlaying) : state.nowPlaying,
+    now_playing: state.now_playing ? normalizeRadioTrackMetadata(state.now_playing) : state.now_playing,
+    current: state.current ? normalizeRadioTrackMetadata(state.current) : state.current,
+    track: state.track ? normalizeRadioTrackMetadata(state.track) : state.track,
+    upcoming: normalizeRadioTracks(state.upcoming),
+    history: normalizeRadioTracks(state.history),
+    queue: Array.isArray(state.queue)
+      ? normalizeRadioTracks(state.queue)
+      : state.queue
+        ? {
+            ...state.queue,
+            current: state.queue.current ? normalizeRadioTrackMetadata(state.queue.current) : state.queue.current,
+            upcoming: normalizeRadioTracks(state.queue.upcoming),
+          }
+        : state.queue,
+  };
+}
+
 function firstRadioTrack(state: RadioStationState | null): RadioTrack | null {
   if (!state) return null;
   if (state.nowPlayingKnown) return state.nowPlaying ?? null;
@@ -1294,13 +1336,13 @@ async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
     fetchRadioJson<RadioNowPlayingResponse>(origin, "now-playing").catch(() => null),
   ]);
 
-  if (!nowPlayingResponse) return state;
+  if (!nowPlayingResponse) return normalizeRadioStateMetadata(state);
 
   const stateTrack = firstRadioTrack(state);
   const nowPlaying = nowPlayingResponse.nowPlaying ?? null;
   const mergedNowPlaying = nowPlaying && stateTrack && sameRadioTrack(stateTrack, nowPlaying) ? { ...stateTrack, ...nowPlaying } : nowPlaying;
 
-  return {
+  return normalizeRadioStateMetadata({
     ...state,
     nowPlaying: mergedNowPlaying,
     nowPlayingKnown: true,
@@ -1310,7 +1352,7 @@ async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
     listeners: nowPlayingResponse.listeners ?? state.listeners,
     stream: nowPlayingResponse.stream ?? state.stream,
     streamOnline: nowPlayingResponse.streamOnline ?? state.streamOnline,
-  };
+  });
 }
 
 async function navidromeRequest<T>(
