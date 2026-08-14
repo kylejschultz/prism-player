@@ -447,6 +447,18 @@ function alphaSectionId(prefix: string, letter: string) {
   return `${prefix}-${letter === "#" ? "num" : letter}`;
 }
 
+function scrollElementWithin(container: HTMLElement, target: HTMLElement, block: "start" | "center" = "start") {
+  const containerRect = container.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const targetTop = targetRect.top - containerRect.top + container.scrollTop;
+  const offset = block === "center" ? (container.clientHeight - targetRect.height) / 2 : 52;
+
+  container.scrollTo({
+    top: Math.max(0, targetTop - offset),
+    behavior: "smooth",
+  });
+}
+
 function getAlphaKey(value: string) {
   const first = value.trim().charAt(0).toUpperCase();
   return /^[A-Z]$/.test(first) ? first : "#";
@@ -4645,6 +4657,7 @@ function RightSidebar({
   const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const recentRadioHistory = radioHistory.slice(0, 5).reverse();
+  const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const latestDragOverQueueIndexRef = useRef<number | null>(dragOverQueueIndex);
   const [queueDragGhost, setQueueDragGhost] = useState<{
@@ -4671,8 +4684,8 @@ function RightSidebar({
   }, [lyricsLines, position]);
 
   useEffect(() => {
-    if (tab !== "lyrics" || activeLyricIndex < 0) return;
-    activeLyricRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (tab !== "lyrics" || activeLyricIndex < 0 || !lyricsScrollRef.current || !activeLyricRef.current) return;
+    scrollElementWithin(lyricsScrollRef.current, activeLyricRef.current, "center");
   }, [activeLyricIndex, tab]);
 
   useEffect(() => {
@@ -4975,7 +4988,7 @@ function RightSidebar({
               {lyricsStatus === "loading" ? (
                 <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />
               ) : lyricsLines.length ? (
-                <div className="lyrics-lines">
+                <div className="lyrics-lines" ref={lyricsScrollRef}>
                   {lyricsLines.map((line, index) => (
                     <p
                       className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
@@ -6862,6 +6875,13 @@ function SongListHeader({
 function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }) {
   const available = new Set(letters);
 
+  function jumpToLetter(letter: string) {
+    const target = document.getElementById(alphaSectionId(prefix, letter));
+    const browserPanel = target?.closest<HTMLElement>(".browser-panel");
+
+    if (target && browserPanel) scrollElementWithin(browserPanel, target);
+  }
+
   return (
     <div className="alphabet-rail" aria-label="Alphabet jump">
       {ALPHABET.map((letter) => (
@@ -6869,7 +6889,7 @@ function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }
           type="button"
           key={letter}
           disabled={!available.has(letter)}
-          onClick={() => document.getElementById(alphaSectionId(prefix, letter))?.scrollIntoView({ block: "start", behavior: "smooth" })}
+          onClick={() => jumpToLetter(letter)}
           aria-label={`Jump to ${letter}`}
         >
           {letter}
