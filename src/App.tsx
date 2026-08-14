@@ -22,6 +22,8 @@ import {
   Mic2,
   Music2,
   Pause,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Play,
@@ -371,6 +373,10 @@ const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
 const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
+const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
+const SIDEBAR_MIN_WIDTH = 208;
+const SIDEBAR_MAX_WIDTH = 360;
+const SIDEBAR_DEFAULT_WIDTH = 248;
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
@@ -749,6 +755,15 @@ function loadStoredBoolean(key: string, fallback: boolean) {
     const raw = localStorage.getItem(key);
     if (raw == null) return fallback;
     return raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function loadStoredNumber(key: string, fallback: number, min: number, max: number) {
+  try {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) ? clampNumber(value, min, max) : fallback;
   } catch {
     return fallback;
   }
@@ -1712,6 +1727,12 @@ export function App() {
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
   const [searchFocused, setSearchFocused] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadStoredBoolean(SIDEBAR_COLLAPSED_KEY, false));
+  const [sidebarWidth, setSidebarWidth] = useState(() => loadStoredNumber(
+    SIDEBAR_WIDTH_KEY,
+    SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    SIDEBAR_MAX_WIDTH,
+  ));
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
@@ -2150,6 +2171,39 @@ export function App() {
   function setSidebarCollapsedState(collapsed: boolean) {
     setSidebarCollapsed(collapsed);
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+  }
+
+  function setSidebarWidthState(nextWidth: number) {
+    const width = clampNumber(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+    setSidebarWidth(width);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+  }
+
+  function beginSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sidebarCollapsed) return;
+
+    event.preventDefault();
+    const initialWidth = sidebarWidth;
+    const startX = event.clientX;
+    let nextWidth = initialWidth;
+
+    document.body.classList.add("sidebar-resizing");
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      nextWidth = clampNumber(initialWidth + moveEvent.clientX - startX, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      setSidebarWidth(nextWidth);
+    };
+    const handleEnd = () => {
+      document.body.classList.remove("sidebar-resizing");
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd, { once: true });
+    window.addEventListener("pointercancel", handleEnd, { once: true });
   }
 
   function setAnalyticsConsent(enabled: boolean) {
@@ -3669,23 +3723,10 @@ export function App() {
       className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${coverWashUrl ? "with-cover-wash" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
       {coverWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${coverWashUrl})` }} aria-hidden="true" /> : null}
-
-      {sidebarCollapsed ? (
-        <div className="sidebar-rail sidebar-rail-left" aria-label="Collapsed sidebar">
-          <button
-            className="sidebar-edge-button sidebar-edge-button-left"
-            type="button"
-            aria-label="Show sidebar"
-            title="Show sidebar"
-            onClick={() => setSidebarCollapsedState(false)}
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      ) : null}
 
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
@@ -3695,16 +3736,6 @@ export function App() {
             <h1>Player</h1>
           </div>
         </div>
-        <button
-          className="sidebar-edge-button sidebar-edge-button-left"
-          type="button"
-          aria-label="Hide sidebar"
-          title="Hide sidebar"
-          onClick={() => setSidebarCollapsedState(true)}
-        >
-          <ChevronLeft size={16} />
-        </button>
-
         <nav className="nav-list">
           <button
             className={`nav-item nav-home ${activeView === "overview" ? "active" : ""}`}
@@ -3865,7 +3896,46 @@ export function App() {
             <Settings size={18} />
             Settings
           </button>
+          <button
+            className="player-panel-toggle sidebar-collapse-toggle"
+            type="button"
+            aria-label="Hide left sidebar"
+            aria-pressed={true}
+            title="Hide sidebar"
+            onClick={() => setSidebarCollapsedState(true)}
+          >
+            <PanelLeftClose size={17} />
+          </button>
         </div>
+        <div
+          className="sidebar-resize-handle"
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={beginSidebarResize}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setSidebarWidthState(sidebarWidth - 16);
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setSidebarWidthState(sidebarWidth + 16);
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              setSidebarWidthState(SIDEBAR_MIN_WIDTH);
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              setSidebarWidthState(SIDEBAR_MAX_WIDTH);
+            }
+          }}
+        />
       </aside> : null}
 
       <section className="workspace" aria-label="Music workspace">
@@ -4026,6 +4096,18 @@ export function App() {
           }}
         />
 
+        {sidebarCollapsed ? (
+          <button
+            className="player-panel-toggle player-sidebar-toggle"
+            type="button"
+            aria-label="Show left sidebar"
+            aria-pressed={false}
+            title="Show sidebar"
+            onClick={() => setSidebarCollapsedState(false)}
+          >
+            <PanelLeftOpen size={17} />
+          </button>
+        ) : null}
         <div className={`now-playing ${footerTrack || isRadioPresentation ? "" : "empty"}`}>
           {isRadioPresentation ? (
             radioCoverUrl ? (
