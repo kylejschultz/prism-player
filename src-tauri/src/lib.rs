@@ -15,6 +15,10 @@ struct DiscordPresence {
 
 #[tauri::command]
 fn update_discord_presence(presence: DiscordPresence) {
+    tauri::async_runtime::spawn_blocking(move || publish_discord_presence(presence));
+}
+
+fn publish_discord_presence(presence: DiscordPresence) {
     let mut client = DiscordIpcClient::new(DISCORD_CLIENT_ID);
     if client.connect().is_err() {
         return;
@@ -50,6 +54,10 @@ fn update_discord_presence(presence: DiscordPresence) {
 
 #[tauri::command]
 fn clear_discord_presence() {
+    tauri::async_runtime::spawn_blocking(clear_discord_presence_in_background);
+}
+
+fn clear_discord_presence_in_background() {
     let mut client = DiscordIpcClient::new(DISCORD_CLIENT_ID);
     if client.connect().is_err() {
         return;
