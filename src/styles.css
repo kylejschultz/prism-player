@@ -1839,6 +1839,10 @@ button.similar-chip:hover,
   grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
 }
 
+.album-track-row {
+  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 42px 28px 28px;
+}
+
 .song-list-header {
   display: grid;
   grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px;
@@ -1850,6 +1854,10 @@ button.similar-chip:hover,
 
 .song-browser-list > .song-list-header {
   grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
+}
+
+.album-track-list > .song-list-header {
+  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 42px 28px 28px;
 }
 
 .song-list-header button,
@@ -1951,6 +1959,29 @@ button.similar-chip:hover,
   height: 24px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
+}
+
+.track-row .track-play {
+  opacity: 0;
+}
+
+.track-row:hover .track-play,
+.track-row:focus-within .track-play {
+  opacity: 1;
+}
+
+.track-index {
+  display: grid;
+  place-items: center;
+}
+
+.track-index > * {
+  grid-area: 1 / 1;
+}
+
+.album-track-row:hover .track-number,
+.album-track-row:focus-within .track-number {
+  opacity: 0;
 }
 
 .favorite-button {

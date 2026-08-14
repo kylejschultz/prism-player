@@ -6707,11 +6707,15 @@ function SearchSongList({
 }
 
 function SongListHeader({
+  showAlbum = true,
+  showPlayColumn = true,
   showTrackNumber = true,
   sortKey,
   sortDirection,
   onSort,
 }: {
+  showAlbum?: boolean;
+  showPlayColumn?: boolean;
   showTrackNumber?: boolean;
   sortKey?: SongSortKey;
   sortDirection?: SongSortDirection;
@@ -6724,12 +6728,12 @@ function SongListHeader({
 
   return (
     <div className="song-list-header" aria-label="Sort songs">
-      <span aria-hidden="true" />
+      {showPlayColumn ? <span aria-hidden="true" /> : null}
       {showTrackNumber ? <span aria-hidden="true" /> : null}
       {column("title", "Title")}
       {column("artist", "Artist")}
-      {column("album", "Album")}
-      {column("duration", "Length")}
+      {showAlbum ? column("album", "Album") : null}
+      <span aria-hidden="true" />
       <span aria-hidden="true" />
       <span aria-hidden="true" />
     </div>
@@ -8094,8 +8098,8 @@ function TrackList({
   const showDiscHeaders = discGroups.length > 1;
 
   return (
-    <div className="track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
-      <SongListHeader sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+    <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
+      <SongListHeader showAlbum={false} showPlayColumn={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />
@@ -8112,25 +8116,27 @@ function TrackList({
 
             return (
             <div
-              className={`track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
+              className={`track-row album-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
               onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
               onClick={(event) => selectTrack(event, songIndex)}
               onDoubleClick={() => onPlaySong(song)}
             >
-              <button
-                className="track-play"
-                type="button"
-                aria-label={`Play ${song.title}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onPlaySong(song);
-                }}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                <Play size={14} fill="currentColor" />
-              </button>
-              <span className="track-number">{song.track ?? index + 1}</span>
+              <span className="track-index">
+                <span className="track-number">{song.track ?? index + 1}</span>
+                <button
+                  className="track-play"
+                  type="button"
+                  aria-label={`Play ${song.title}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPlaySong(song);
+                  }}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  <Play size={14} fill="currentColor" />
+                </button>
+              </span>
               <button
                 className="track-name"
                 type="button"
@@ -8139,7 +8145,6 @@ function TrackList({
                 {song.title}
               </button>
               <span className="track-artist">{song.artist || "Unknown artist"}</span>
-              <span className="track-album">{song.album || "Unknown album"}</span>
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
