@@ -6654,7 +6654,7 @@ function SearchSongList({
 
   return (
     <div className="track-list song-browser-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
-      <SongListHeader sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+      <SongListHeader showTrackNumber={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />
@@ -6707,10 +6707,12 @@ function SearchSongList({
 }
 
 function SongListHeader({
+  showTrackNumber = true,
   sortKey,
   sortDirection,
   onSort,
 }: {
+  showTrackNumber?: boolean;
   sortKey?: SongSortKey;
   sortDirection?: SongSortDirection;
   onSort?: (key: SongSortKey) => void;
@@ -6723,7 +6725,7 @@ function SongListHeader({
   return (
     <div className="song-list-header" aria-label="Sort songs">
       <span aria-hidden="true" />
-      <span aria-hidden="true" />
+      {showTrackNumber ? <span aria-hidden="true" /> : null}
       {column("title", "Title")}
       {column("artist", "Artist")}
       {column("album", "Album")}

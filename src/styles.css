@@ -1748,12 +1748,12 @@ button.similar-chip:hover,
 .album-stack,
 .track-list {
   display: grid;
-  gap: 6px;
+  gap: 0;
 }
 
 .disc-group {
   display: grid;
-  gap: 6px;
+  gap: 0;
 }
 
 .disc-heading {
@@ -1825,8 +1825,18 @@ button.similar-chip:hover,
   gap: 6px;
   min-height: 34px;
   padding: 0 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.track-list > .track-row:nth-child(even),
+.disc-group > .track-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.song-browser-row {
+  grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
 }
 
 .song-list-header {
@@ -1836,6 +1846,10 @@ button.similar-chip:hover,
   gap: 6px;
   min-height: 28px;
   padding: 0 6px;
+}
+
+.song-browser-list > .song-list-header {
+  grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
 }
 
 .song-list-header button,
