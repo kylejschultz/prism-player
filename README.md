@@ -2,7 +2,7 @@
 
 # Prism Player
 
-[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/aDEBQq3XtN)
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/hzeAqu7EwF)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/kylejschultz?label=Sponsor&logo=githubsponsors&color=ea4aaa)](https://github.com/sponsors/kylejschultz)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support%20the%20project-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/kylejschultz)
@@ -17,7 +17,7 @@ It is still early, but there are builds for macOS and Windows.
 
 ![Prism Player home screen](docs/images/home.png)
 
-> **Need help or want to talk about Prism?** [Join the Discord](https://discord.gg/aDEBQq3XtN). It is the quickest place for questions, ideas, and bug reports.
+> **Need help or want to talk about Prism?** [Join the Discord](https://discord.gg/hzeAqu7EwF). It is the quickest place for questions, ideas, and bug reports.
 
 ## Get Prism
 
