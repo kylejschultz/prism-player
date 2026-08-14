@@ -3538,7 +3538,7 @@ button.similar-chip:hover,
   grid-template-areas: "now center actions";
   align-items: center;
   gap: 14px;
-  height: 84px;
+  height: 100%;
   padding: 8px 18px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background:

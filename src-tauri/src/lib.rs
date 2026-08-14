@@ -80,6 +80,10 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
         .status_display_type(activity::StatusDisplayType::Details)
         .details(details)
         .state(state)
+        .buttons(vec![
+            activity::Button::new("Get Prism", "https://prismplayer.app"),
+            activity::Button::new("Join the Discord", "https://discord.gg/hzeAqu7EwF"),
+        ])
         .assets(
             activity::Assets::new()
                 .large_image("prism-player")
