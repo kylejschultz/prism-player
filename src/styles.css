@@ -521,7 +521,7 @@ h1 {
   z-index: 30;
   display: grid;
   gap: 6px;
-  width: 252px;
+  width: min(380px, calc(100vw - 24px));
   max-height: min(420px, calc(100vh - 24px));
   padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -533,12 +533,12 @@ h1 {
 .sidebar-playlist-menu-all,
 .sidebar-playlist-menu-list button {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 20px minmax(0, 1fr) max-content;
+  align-items: start;
   gap: 8px;
   width: 100%;
   min-height: 36px;
-  padding: 0 9px;
+  padding: 8px 9px;
   border-radius: 7px;
   background: transparent;
   color: rgba(244, 241, 236, 0.78);
@@ -561,14 +561,27 @@ h1 {
   overflow: auto;
 }
 
-.sidebar-playlist-menu-list button span,
-.sidebar-playlist-menu-list button small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sidebar-playlist-menu-heading {
+  margin: 8px 9px 2px;
+  color: rgba(244, 241, 236, 0.46);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar-playlist-menu-list button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .sidebar-playlist-menu-list button small {
+  align-self: center;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: rgba(244, 241, 236, 0.42);
   font-size: 10px;
 }

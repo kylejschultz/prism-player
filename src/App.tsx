@@ -109,6 +109,7 @@ type AppSettings = {
   updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
+  showSharedPlaylists: boolean;
   radioStationUrl: string;
   radioStationUrls: string[];
 };
@@ -422,6 +423,7 @@ const defaultSettings: AppSettings = {
   updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
+  showSharedPlaylists: true,
   radioStationUrl: "",
   radioStationUrls: [],
 };
@@ -568,6 +570,7 @@ function loadStoredSettings(): AppSettings {
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
+      showSharedPlaylists: parsed.showSharedPlaylists ?? defaultSettings.showSharedPlaylists,
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
       radioStationUrls,
     };
@@ -1777,6 +1780,18 @@ export function App() {
   const footerTrack = isRadioPresentation || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
+  const personalPlaylists = useMemo(
+    () => libraryData.playlists
+      .filter((playlist) => !playlist.owner || playlist.owner.localeCompare(config?.username ?? "", undefined, { sensitivity: "accent" }) === 0)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [config?.username, libraryData.playlists],
+  );
+  const sharedPlaylists = useMemo(
+    () => libraryData.playlists
+      .filter((playlist) => playlist.owner && playlist.owner.localeCompare(config?.username ?? "", undefined, { sensitivity: "accent" }) !== 0)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [config?.username, libraryData.playlists],
+  );
   const coverWashUrl = appSettings.coverWashEnabled && visualEffectsEnabled
     ? isRadioPlaying
       ? radioCoverUrl
@@ -3745,10 +3760,8 @@ export function App() {
                 </DropdownMenu.Item>
                 {libraryData.playlists.length ? (
                   <div className="sidebar-playlist-menu-list">
-                    {libraryData.playlists
-                      .slice()
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((playlist) => (
+                    {personalPlaylists.length ? <p className="sidebar-playlist-menu-heading">Your playlists</p> : null}
+                    {personalPlaylists.map((playlist) => (
                         <DropdownMenu.Item asChild key={playlist.id}>
                           <button
                             className={detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""}
@@ -3763,6 +3776,24 @@ export function App() {
                           </button>
                         </DropdownMenu.Item>
                       ))}
+                    {appSettings.showSharedPlaylists && sharedPlaylists.length ? <>
+                      <p className="sidebar-playlist-menu-heading">Shared playlists</p>
+                      {sharedPlaylists.map((playlist) => (
+                        <DropdownMenu.Item asChild key={playlist.id}>
+                          <button
+                            className={detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""}
+                            type="button"
+                            data-context-kind="playlist"
+                            data-context-id={playlist.id}
+                            onClick={() => void openPlaylist(playlist)}
+                          >
+                            <ListMusic size={15} />
+                            <span>{playlist.name}</span>
+                            <small>{getPlaylistMeta(playlist)}</small>
+                          </button>
+                        </DropdownMenu.Item>
+                      ))}
+                    </> : null}
                   </div>
                 ) : (
                   <p className="sidebar-playlist-menu-empty">No playlists yet.</p>
@@ -5288,6 +5319,14 @@ function SettingsView({
             <option value="list">List</option>
             <option value="art">Art</option>
           </select>
+        </label>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.showSharedPlaylists}
+            onChange={(event) => updateAppSettings({ ...appSettings, showSharedPlaylists: event.target.checked })}
+          />
+          <span>Show shared playlists in the Playlists menu</span>
         </label>
       </section> : null}
 
