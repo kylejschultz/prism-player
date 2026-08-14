@@ -1820,13 +1820,51 @@ button.similar-chip:hover,
 
 .track-row {
   display: grid;
-  grid-template-columns: 28px 26px minmax(0, 1fr) 38px 28px 28px;
+  grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px;
   align-items: center;
   gap: 6px;
   min-height: 34px;
   padding: 0 6px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
+}
+
+.song-list-header {
+  display: grid;
+  grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 6px;
+}
+
+.song-list-header button,
+.song-list-header > span {
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  color: rgba(244, 241, 236, 0.46);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.song-list-header button:hover,
+.song-list-header button:focus-visible {
+  color: #f2d985;
+}
+
+.track-artist,
+.track-album {
+  overflow: hidden;
+  color: rgba(244, 241, 236, 0.58);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .playlist-track-editor {
@@ -1853,7 +1891,7 @@ button.similar-chip:hover,
 }
 
 .track-row.playlist-track-row {
-  grid-template-columns: 28px 26px minmax(0, 1fr) 38px 28px 28px 28px;
+  grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px 28px;
 }
 
 .track-row.playlist-track-row.dragging {
