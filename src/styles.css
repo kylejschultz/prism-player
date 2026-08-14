@@ -93,7 +93,7 @@ textarea {
 .app-shell {
   position: relative;
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 248px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) 94px;
   width: 100vw;
   height: 100vh;
@@ -137,23 +137,23 @@ textarea {
 }
 
 .app-shell.with-right-panel {
-  grid-template-columns: 212px minmax(0, 1fr) 338px;
+  grid-template-columns: var(--sidebar-width, 248px) minmax(0, 1fr) 338px;
 }
 
 .app-shell.right-panel-collapsed {
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 248px) minmax(0, 1fr);
 }
 
 .app-shell.sidebar-collapsed {
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .app-shell.sidebar-collapsed.with-right-panel {
-  grid-template-columns: 26px minmax(0, 1fr) 338px;
+  grid-template-columns: 0 minmax(0, 1fr) 338px;
 }
 
 .app-shell.sidebar-collapsed.right-panel-collapsed {
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .sidebar {
@@ -167,6 +167,48 @@ textarea {
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(12, 12, 12, 0.56);
   backdrop-filter: blur(24px);
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 8;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize-handle::after {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 2px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(244, 241, 236, 0.34);
+  content: "";
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+.sidebar:hover .sidebar-resize-handle::after,
+.sidebar-resize-handle:focus-visible::after,
+body.sidebar-resizing .sidebar-resize-handle::after {
+  opacity: 1;
+}
+
+.sidebar-resize-handle:focus-visible::after,
+body.sidebar-resizing .sidebar-resize-handle::after {
+  background: #f8df91;
+}
+
+body.sidebar-resizing,
+body.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .brand {
@@ -3499,6 +3541,18 @@ button.similar-chip:hover,
   backdrop-filter: blur(20px);
 }
 
+.player-sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  left: 18px;
+  z-index: 2;
+  transform: translateY(-50%);
+}
+
+.player-sidebar-toggle + .now-playing {
+  padding-left: 42px;
+}
+
 .player-bar audio {
   display: none;
 }
@@ -4476,27 +4530,27 @@ button.similar-chip:hover,
   }
 
   .app-shell {
-    grid-template-columns: 188px minmax(0, 1fr);
+    grid-template-columns: min(var(--sidebar-width, 248px), 188px) minmax(0, 1fr);
   }
 
   .app-shell.with-right-panel {
-    grid-template-columns: 188px minmax(0, 1fr) 300px;
+    grid-template-columns: min(var(--sidebar-width, 248px), 188px) minmax(0, 1fr) 300px;
   }
 
   .app-shell.right-panel-collapsed {
-    grid-template-columns: 188px minmax(0, 1fr);
+    grid-template-columns: min(var(--sidebar-width, 248px), 188px) minmax(0, 1fr);
   }
 
   .app-shell.sidebar-collapsed {
-    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-columns: 0 minmax(0, 1fr);
   }
 
   .app-shell.sidebar-collapsed.with-right-panel {
-    grid-template-columns: 26px minmax(0, 1fr) 300px;
+    grid-template-columns: 0 minmax(0, 1fr) 300px;
   }
 
   .app-shell.sidebar-collapsed.right-panel-collapsed {
-    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-columns: 0 minmax(0, 1fr);
   }
 
   .sidebar {
@@ -4600,27 +4654,27 @@ button.similar-chip:hover,
   }
 
   .app-shell {
-    grid-template-columns: 172px minmax(0, 1fr);
+    grid-template-columns: min(var(--sidebar-width, 248px), 172px) minmax(0, 1fr);
   }
 
   .app-shell.with-right-panel {
-    grid-template-columns: 172px minmax(0, 1fr) 280px;
+    grid-template-columns: min(var(--sidebar-width, 248px), 172px) minmax(0, 1fr) 280px;
   }
 
   .app-shell.right-panel-collapsed {
-    grid-template-columns: 172px minmax(0, 1fr);
+    grid-template-columns: min(var(--sidebar-width, 248px), 172px) minmax(0, 1fr);
   }
 
   .app-shell.sidebar-collapsed {
-    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-columns: 0 minmax(0, 1fr);
   }
 
   .app-shell.sidebar-collapsed.with-right-panel {
-    grid-template-columns: 26px minmax(0, 1fr) 280px;
+    grid-template-columns: 0 minmax(0, 1fr) 280px;
   }
 
   .app-shell.sidebar-collapsed.right-panel-collapsed {
-    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-columns: 0 minmax(0, 1fr);
   }
 
   .brand-mark {
