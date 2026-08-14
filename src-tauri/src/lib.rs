@@ -76,6 +76,8 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
         format!("Paused · {}", presence.title)
     };
     let mut activity = activity::Activity::new()
+        .activity_type(activity::ActivityType::Listening)
+        .status_display_type(activity::StatusDisplayType::Details)
         .details(details)
         .state(state)
         .assets(
