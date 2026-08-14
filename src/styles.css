@@ -1748,12 +1748,12 @@ button.similar-chip:hover,
 .album-stack,
 .track-list {
   display: grid;
-  gap: 6px;
+  gap: 0;
 }
 
 .disc-group {
   display: grid;
-  gap: 6px;
+  gap: 0;
 }
 
 .disc-heading {
@@ -1820,13 +1820,79 @@ button.similar-chip:hover,
 
 .track-row {
   display: grid;
-  grid-template-columns: 28px 26px minmax(0, 1fr) 38px 28px 28px;
+  grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px;
   align-items: center;
   gap: 6px;
   min-height: 34px;
   padding: 0 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.track-list > .track-row:nth-child(even),
+.disc-group > .track-row:nth-child(even) {
+  background: rgba(255, 255, 255, 0.032);
+}
+
+/* Keep the hover surface consistent over both alternating row colors. */
+.track-list > .track-row:hover,
+.disc-group > .track-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.song-browser-row {
+  grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
+}
+
+.album-track-row {
+  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 52px 28px;
+}
+
+.song-list-header {
+  display: grid;
+  grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 6px;
+}
+
+.song-browser-list > .song-list-header {
+  grid-template-columns: 28px minmax(200px, 2fr) minmax(130px, 1fr) minmax(150px, 1.15fr) 42px 28px 28px;
+}
+
+.album-track-list > .song-list-header {
+  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 52px 28px;
+}
+
+.song-list-header button,
+.song-list-header > span {
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  color: rgba(244, 241, 236, 0.46);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.song-list-header button:hover,
+.song-list-header button:focus-visible {
+  color: #f2d985;
+}
+
+.track-artist,
+.track-album {
+  overflow: hidden;
+  color: rgba(244, 241, 236, 0.58);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .playlist-track-editor {
@@ -1853,7 +1919,7 @@ button.similar-chip:hover,
 }
 
 .track-row.playlist-track-row {
-  grid-template-columns: 28px 26px minmax(0, 1fr) 38px 28px 28px 28px;
+  grid-template-columns: 28px 26px minmax(140px, 1.5fr) minmax(112px, 1fr) minmax(112px, 1fr) 42px 28px 28px 28px;
 }
 
 .track-row.playlist-track-row.dragging {
@@ -1899,6 +1965,29 @@ button.similar-chip:hover,
   height: 24px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
+}
+
+.track-row .track-play {
+  opacity: 0;
+}
+
+.track-row:hover .track-play,
+.track-row:focus-within .track-play {
+  opacity: 1;
+}
+
+.track-index {
+  display: grid;
+  place-items: center;
+}
+
+.track-index > * {
+  grid-area: 1 / 1;
+}
+
+.album-track-row:hover .track-number,
+.album-track-row:focus-within .track-number {
+  opacity: 0;
 }
 
 .favorite-button {

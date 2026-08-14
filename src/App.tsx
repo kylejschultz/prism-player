@@ -58,6 +58,8 @@ type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
+type SongSortDirection = "asc" | "desc";
 
 function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
   return createPortal(<div className={`modal-backdrop ${className}`.trim()}>{children}</div>, document.body);
@@ -1607,6 +1609,23 @@ function formatDuration(seconds?: number) {
   const minutes = Math.floor(wholeSeconds / 60);
   const remainingSeconds = wholeSeconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+}
+
+function sortSongs(songs: Song[], key: SongSortKey, direction: SongSortDirection) {
+  const factor = direction === "asc" ? 1 : -1;
+  return [...songs].sort((left, right) => {
+    if (key === "duration") return ((left.duration ?? 0) - (right.duration ?? 0)) * factor;
+    if (key === "track") {
+      return (
+        getSongDisc(left) - getSongDisc(right)
+        || getSongTrack(left) - getSongTrack(right)
+        || left.title.localeCompare(right.title)
+      ) * factor;
+    }
+    const leftValue = key === "title" ? left.title : left[key] ?? "";
+    const rightValue = key === "title" ? right.title : right[key] ?? "";
+    return leftValue.localeCompare(rightValue, undefined, { sensitivity: "base" }) * factor;
+  });
 }
 
 function getSongDisc(song: Song) {
@@ -6636,12 +6655,21 @@ function SearchSongList({
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
+  const [sortKey, setSortKey] = useState<SongSortKey>("title");
+  const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
+  const sortedSongs = useMemo(() => sortSongs(songs, sortKey, sortDirection), [songs, sortKey, sortDirection]);
 
   return (
-    <div className="search-song-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
-      {songs.map((song, index) => (
+    <div className="track-list song-browser-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
+      <SongListHeader showTrackNumber={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+        setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
+        setSortKey(key);
+      }} />
+      {sortedSongs.map((song) => {
+        const index = songs.findIndex((listSong) => listSong.id === song.id);
+        return (
         <div
-          className={`search-song-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
+          className={`track-row song-browser-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
           key={song.id}
           onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
           onClick={(event) => selectTrack(event, index)}
@@ -6655,13 +6683,12 @@ function SearchSongList({
             }}
             aria-label={`Play ${song.title}`}
           >
-            <Play size={14} fill="currentColor" />
+            <Play size={15} strokeWidth={1.6} />
           </button>
-          <button className="search-song-main" type="button" aria-label={`Select ${song.title}`}>
-            <strong>{song.title}</strong>
-            <small>{[song.artist, song.album].filter(Boolean).join(" - ") || "Song"}</small>
-          </button>
-          <small>{formatDuration(song.duration)}</small>
+          <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
+          <span className="track-artist">{song.artist || "Unknown artist"}</span>
+          <span className="track-album">{song.album || "Unknown album"}</span>
+          <span className="track-duration">{formatDuration(song.duration)}</span>
           <FavoriteButton
             active={favoriteIds.songs.has(song.id)}
             busy={favoriteBusyKey === `song:${song.id}`}
@@ -6680,7 +6707,44 @@ function SearchSongList({
             <Plus size={14} />
           </button>
         </div>
-      ))}
+        );
+      })}
+    </div>
+  );
+}
+
+function SongListHeader({
+  showAlbum = true,
+  showPlayColumn = true,
+  showTrackNumber = true,
+  showQueueColumn = true,
+  sortKey,
+  sortDirection,
+  onSort,
+}: {
+  showAlbum?: boolean;
+  showPlayColumn?: boolean;
+  showTrackNumber?: boolean;
+  showQueueColumn?: boolean;
+  sortKey?: SongSortKey;
+  sortDirection?: SongSortDirection;
+  onSort?: (key: SongSortKey) => void;
+}) {
+  const label = (key: SongSortKey, text: string) => `${text}${sortKey === key ? `, sorted ${sortDirection === "asc" ? "ascending" : "descending"}` : ""}`;
+  const column = (key: SongSortKey, text: string) => onSort ? (
+    <button type="button" onClick={() => onSort(key)} aria-label={label(key, `Sort by ${text.toLocaleLowerCase()}`)}>{text}</button>
+  ) : <span>{text}</span>;
+
+  return (
+    <div className="song-list-header" aria-label="Sort songs">
+      {showPlayColumn ? <span aria-hidden="true" /> : null}
+      {showTrackNumber ? <span aria-hidden="true" /> : null}
+      {column("title", "Title")}
+      {column("artist", "Artist")}
+      {showAlbum ? column("album", "Album") : null}
+      {column("duration", "Length")}
+      <span aria-hidden="true" />
+      {showQueueColumn ? <span aria-hidden="true" /> : null}
     </div>
   );
 }
@@ -6745,7 +6809,7 @@ function ListeningHistoryView({
               }}
               aria-label={`Play ${entry.song.title}`}
             >
-              <Play size={14} fill="currentColor" />
+              <Play size={15} strokeWidth={1.6} />
             </button>
             <button className="track-name history-track-name" type="button" aria-label={`Select ${entry.song.title}`}>
               <strong>{entry.song.title}</strong>
@@ -7017,7 +7081,7 @@ function AlbumList({
       <div className="album-list">
         {albums.map((album) => {
           const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
-          const detailParts = [album.year, album.songCount ? `${album.songCount} tracks` : null].filter(Boolean);
+          const detailParts = [album.artist, album.year, album.songCount ? `${album.songCount} tracks` : null].filter(Boolean);
 
           return (
             <div className="album-list-row" key={album.id} data-context-kind="album" data-context-id={album.id}>
@@ -7029,7 +7093,7 @@ function AlbumList({
                 </span>
               </button>
               <button className="track-play" type="button" onClick={() => onPlayAlbum(album)} aria-label={`Play ${album.name}`}>
-                <Play size={14} fill="currentColor" />
+                <Play size={15} strokeWidth={1.6} />
               </button>
               <FavoriteButton
                 active={favoriteIds.albums.has(album.id)}
@@ -7065,7 +7129,7 @@ function AlbumList({
                       </span>
                     </button>
                     <button className="track-play" type="button" onClick={() => onPlayAlbum(album)} aria-label={`Play ${album.name}`}>
-                      <Play size={14} fill="currentColor" />
+                      <Play size={15} strokeWidth={1.6} />
                     </button>
                     <FavoriteButton
                       active={favoriteIds.albums.has(album.id)}
@@ -7286,7 +7350,7 @@ function ArtistList({
               <small>{artist.albumCount ?? 0} albums</small>
             </button>
             <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
-              <Play size={14} fill="currentColor" />
+              <Play size={15} strokeWidth={1.6} />
             </button>
             <FavoriteButton
               active={favoriteIds.artists.has(artist.id)}
@@ -7317,7 +7381,7 @@ function ArtistList({
                     <small>{artist.albumCount ?? 0} albums</small>
                   </button>
                   <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
-                    <Play size={14} fill="currentColor" />
+                    <Play size={15} strokeWidth={1.6} />
                   </button>
                   <FavoriteButton
                     active={favoriteIds.artists.has(artist.id)}
@@ -7453,7 +7517,7 @@ function PlaylistBrowser({
             </span>
           </button>
           <button className="track-play" type="button" onClick={() => onPlayPlaylist(playlist)} aria-label={`Play ${playlist.name}`}>
-            <Play size={14} fill="currentColor" />
+            <Play size={15} strokeWidth={1.6} />
           </button>
         </div>
       ))}
@@ -8002,7 +8066,6 @@ function DetailPanel({
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
         onPlaySong={(song) => onReplaceQueue(songs, Math.max(0, songs.findIndex((albumSong) => albumSong.id === song.id)))}
-        onQueueSong={onQueueSong}
         onSongContextMenu={onSongContextMenu}
       />
     </section>
@@ -8017,7 +8080,6 @@ function TrackList({
   onToggleFavorite,
   emptyText = "No tracks available for this album.",
   onPlaySong,
-  onQueueSong,
   onSongContextMenu,
 }: {
   songs: Song[];
@@ -8027,20 +8089,26 @@ function TrackList({
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   emptyText?: string;
   onPlaySong: (song: Song) => void;
-  onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
+  const [sortKey, setSortKey] = useState<SongSortKey>("track");
+  const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
 
   if (!songs.length) {
     return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
   }
 
-  const discGroups = groupSongsByDisc(songs);
+  const sortedSongs = sortSongs(songs, sortKey, sortDirection);
+  const discGroups = groupSongsByDisc(sortedSongs);
   const showDiscHeaders = discGroups.length > 1;
 
   return (
-    <div className="track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
+    <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
+      <SongListHeader showAlbum={false} showPlayColumn={false} showQueueColumn={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+        setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
+        setSortKey(key);
+      }} />
       {discGroups.map((group) => (
         <div className="disc-group" key={group.discNumber ?? "unknown-disc"}>
           {showDiscHeaders ? (
@@ -8054,25 +8122,27 @@ function TrackList({
 
             return (
             <div
-              className={`track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
+              className={`track-row album-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
               onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
               onClick={(event) => selectTrack(event, songIndex)}
               onDoubleClick={() => onPlaySong(song)}
             >
-              <button
-                className="track-play"
-                type="button"
-                aria-label={`Play ${song.title}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onPlaySong(song);
-                }}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                <Play size={14} fill="currentColor" />
-              </button>
-              <span className="track-number">{song.track ?? index + 1}</span>
+              <span className="track-index">
+                <span className="track-number">{song.track ?? index + 1}</span>
+                <button
+                  className="track-play"
+                  type="button"
+                  aria-label={`Play ${song.title}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPlaySong(song);
+                  }}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  <Play size={15} strokeWidth={1.6} />
+                </button>
+              </span>
               <button
                 className="track-name"
                 type="button"
@@ -8080,6 +8150,7 @@ function TrackList({
               >
                 {song.title}
               </button>
+              <span className="track-artist">{song.artist || "Unknown artist"}</span>
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
@@ -8088,18 +8159,6 @@ function TrackList({
                 onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
                 onDoubleClick={(event) => event.stopPropagation()}
               />
-              <button
-                className="track-queue"
-                type="button"
-                aria-label={`Queue ${song.title}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onQueueSong(song);
-                }}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                <Plus size={14} />
-              </button>
             </div>
             );
           })}
@@ -8167,6 +8226,7 @@ function EditablePlaylistTrackList({
         {message ? <span className={busy ? "" : "bad"}>{message}</span> : null}
       </div>
       <div className="track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Playlist tracks">
+        <SongListHeader />
         {displayedSongs.map(({ song, index }, displayIndex) => (
           <div
             className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""} ${index === draggedIndex ? "dragging" : ""}`}
@@ -8208,6 +8268,8 @@ function EditablePlaylistTrackList({
             >
               {song.title}
             </button>
+            <span className="track-artist">{song.artist || "Unknown artist"}</span>
+            <span className="track-album">{song.album || "Unknown album"}</span>
             <span className="track-duration">{formatDuration(song.duration)}</span>
             <FavoriteButton
               active={favoriteIds.songs.has(song.id)}
