@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -98,6 +99,10 @@ function isVersionNewer(candidate: string, current: string) {
   return false;
 }
 
+function isTauriDesktopApp() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 type NavidromeConfig = {
   serverUrl: string;
   username: string;
@@ -110,6 +115,7 @@ type AppSettings = {
   defaultArtistView: ArtistViewMode;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
+  discordPresenceEnabled: boolean;
   updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
@@ -428,6 +434,7 @@ const defaultSettings: AppSettings = {
   defaultArtistView: "list",
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
+  discordPresenceEnabled: false,
   updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
@@ -587,6 +594,7 @@ function loadStoredSettings(): AppSettings {
       defaultArtistView: parsed.defaultArtistView === "art" ? "art" : "list",
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      discordPresenceEnabled: Boolean(parsed.discordPresenceEnabled),
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
@@ -1816,6 +1824,7 @@ export function App() {
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
+  const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
@@ -2913,6 +2922,7 @@ export function App() {
     if (!audio || !Number.isFinite(nextPosition)) return;
     audio.currentTime = nextPosition;
     setPosition(nextPosition);
+    setDiscordPresenceSyncNonce((nonce) => nonce + 1);
   }
 
   function handleLoadedMetadata(duration: number) {
@@ -3148,6 +3158,29 @@ export function App() {
     setSetupOpen(true);
     setActiveView("settings");
   }
+
+  useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    if (!appSettings.discordPresenceEnabled || activePlaybackSource !== "local" || !currentTrack) {
+      void invoke("clear_discord_presence").catch(() => undefined);
+      return;
+    }
+
+    void invoke("update_discord_presence", {
+      presence: {
+        title: currentTrack.title,
+        artist: currentTrack.artist ?? "Unknown artist",
+        album: currentTrack.album ?? null,
+        playing: isPlaying,
+        startedAt: isPlaying ? Date.now() - Math.round(position * 1000) : null,
+      },
+    }).catch(() => undefined);
+  }, [activePlaybackSource, appSettings.discordPresenceEnabled, currentTrack?.id, discordPresenceSyncNonce, isPlaying]);
+
+  useEffect(() => () => {
+    if (isTauriDesktopApp()) void invoke("clear_discord_presence").catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (config) {
@@ -5528,6 +5561,24 @@ function SettingsView({
       </section> : null}
 
       {activeTab === "privacy" ? <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Discord</p>
+            <h3>Rich Presence</h3>
+          </div>
+          <MessageCircle size={18} />
+        </div>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.discordPresenceEnabled}
+            onChange={(event) => updateAppSettings({ ...appSettings, discordPresenceEnabled: event.target.checked })}
+          />
+          <span>Show what I’m playing on Discord</span>
+        </label>
+        <p className="settings-note">
+          Desktop only. Prism sends the current track, artist, album, and playback state directly to the Discord app running on this device. Nothing is sent to Prism or a Discord bot.
+        </p>
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Analytics</p>
