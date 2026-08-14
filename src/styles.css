@@ -660,15 +660,21 @@ h1 {
 }
 
 .sidebar-actions {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 6px;
   margin-top: auto;
   padding-top: 12px;
 }
 
 .sidebar-settings {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   color: rgba(244, 241, 236, 0.66);
+}
+
+.sidebar-collapse-toggle {
+  flex: 0 0 auto;
 }
 
 .workspace {

@@ -3896,6 +3896,16 @@ export function App() {
             <Settings size={18} />
             Settings
           </button>
+          <button
+            className="player-panel-toggle sidebar-collapse-toggle"
+            type="button"
+            aria-label="Hide left sidebar"
+            aria-pressed={true}
+            title="Hide sidebar"
+            onClick={() => setSidebarCollapsedState(true)}
+          >
+            <PanelLeftClose size={17} />
+          </button>
         </div>
         <div
           className="sidebar-resize-handle"
@@ -4086,16 +4096,18 @@ export function App() {
           }}
         />
 
-        <button
-          className={`player-panel-toggle player-sidebar-toggle ${sidebarCollapsed ? "" : "active"}`}
-          type="button"
-          aria-label={sidebarCollapsed ? "Show left sidebar" : "Hide left sidebar"}
-          aria-pressed={!sidebarCollapsed}
-          title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-          onClick={() => setSidebarCollapsedState(!sidebarCollapsed)}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-        </button>
+        {sidebarCollapsed ? (
+          <button
+            className="player-panel-toggle player-sidebar-toggle"
+            type="button"
+            aria-label="Show left sidebar"
+            aria-pressed={false}
+            title="Show sidebar"
+            onClick={() => setSidebarCollapsedState(false)}
+          >
+            <PanelLeftOpen size={17} />
+          </button>
+        ) : null}
         <div className={`now-playing ${footerTrack || isRadioPresentation ? "" : "empty"}`}>
           {isRadioPresentation ? (
             radioCoverUrl ? (
