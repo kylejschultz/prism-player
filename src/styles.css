@@ -521,7 +521,9 @@ h1 {
   z-index: 30;
   display: grid;
   gap: 6px;
-  width: min(380px, calc(100vw - 24px));
+  width: fit-content;
+  min-width: 280px;
+  max-width: min(420px, calc(100vw - 24px));
   max-height: min(420px, calc(100vh - 24px));
   padding: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
