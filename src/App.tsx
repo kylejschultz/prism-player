@@ -3771,8 +3771,10 @@ export function App() {
                             onClick={() => void openPlaylist(playlist)}
                           >
                             <ListMusic size={15} />
-                            <span>{playlist.name}</span>
-                            <small>{getPlaylistMeta(playlist)}</small>
+                            <span className="sidebar-playlist-menu-copy">
+                              <strong>{playlist.name}</strong>
+                              <small>{getSidebarPlaylistMeta(playlist)}</small>
+                            </span>
                           </button>
                         </DropdownMenu.Item>
                       ))}
@@ -3788,8 +3790,10 @@ export function App() {
                             onClick={() => void openPlaylist(playlist)}
                           >
                             <ListMusic size={15} />
-                            <span>{playlist.name}</span>
-                            <small>{getPlaylistMeta(playlist)}</small>
+                            <span className="sidebar-playlist-menu-copy">
+                              <strong>{playlist.name}</strong>
+                              <small>{getSidebarPlaylistMeta(playlist, true)}</small>
+                            </span>
                           </button>
                         </DropdownMenu.Item>
                       ))}
@@ -3798,6 +3802,12 @@ export function App() {
                 ) : (
                   <p className="sidebar-playlist-menu-empty">No playlists yet.</p>
                 )}
+                <DropdownMenu.Item asChild>
+                  <button className="sidebar-playlist-menu-create" type="button" onClick={() => setPlaylistCreatorOpen(true)}>
+                    <Plus size={15} />
+                    New playlist
+                  </button>
+                </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
@@ -7487,6 +7497,26 @@ function getPlaylistMeta(playlist: Playlist) {
   ].filter(Boolean);
 
   return parts.join(" - ") || "Playlist";
+}
+
+function formatPlaylistDuration(seconds?: number) {
+  if (!seconds || !Number.isFinite(seconds)) return null;
+  const totalMinutes = Math.floor(Math.max(0, seconds) / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours) return `${hours}h${minutes ? ` ${minutes}m` : ""}`;
+  return `${Math.max(1, totalMinutes)}m`;
+}
+
+function getSidebarPlaylistMeta(playlist: Playlist, includeOwner = false) {
+  const parts = [
+    includeOwner && playlist.owner ? `by ${playlist.owner}` : null,
+    playlist.songCount != null ? `${playlist.songCount} songs` : null,
+    formatPlaylistDuration(playlist.duration),
+  ].filter(Boolean);
+
+  return parts.join(" · ") || "Playlist";
 }
 
 function PlaylistDetailPanel({
