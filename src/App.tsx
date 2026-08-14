@@ -6683,7 +6683,7 @@ function SearchSongList({
             }}
             aria-label={`Play ${song.title}`}
           >
-            <Play size={14} fill="currentColor" />
+            <Play size={15} strokeWidth={1.6} />
           </button>
           <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
           <span className="track-artist">{song.artist || "Unknown artist"}</span>
@@ -6807,7 +6807,7 @@ function ListeningHistoryView({
               }}
               aria-label={`Play ${entry.song.title}`}
             >
-              <Play size={14} fill="currentColor" />
+              <Play size={15} strokeWidth={1.6} />
             </button>
             <button className="track-name history-track-name" type="button" aria-label={`Select ${entry.song.title}`}>
               <strong>{entry.song.title}</strong>
@@ -7091,7 +7091,7 @@ function AlbumList({
                 </span>
               </button>
               <button className="track-play" type="button" onClick={() => onPlayAlbum(album)} aria-label={`Play ${album.name}`}>
-                <Play size={14} fill="currentColor" />
+                <Play size={15} strokeWidth={1.6} />
               </button>
               <FavoriteButton
                 active={favoriteIds.albums.has(album.id)}
@@ -7127,7 +7127,7 @@ function AlbumList({
                       </span>
                     </button>
                     <button className="track-play" type="button" onClick={() => onPlayAlbum(album)} aria-label={`Play ${album.name}`}>
-                      <Play size={14} fill="currentColor" />
+                      <Play size={15} strokeWidth={1.6} />
                     </button>
                     <FavoriteButton
                       active={favoriteIds.albums.has(album.id)}
@@ -7348,7 +7348,7 @@ function ArtistList({
               <small>{artist.albumCount ?? 0} albums</small>
             </button>
             <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
-              <Play size={14} fill="currentColor" />
+              <Play size={15} strokeWidth={1.6} />
             </button>
             <FavoriteButton
               active={favoriteIds.artists.has(artist.id)}
@@ -7379,7 +7379,7 @@ function ArtistList({
                     <small>{artist.albumCount ?? 0} albums</small>
                   </button>
                   <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
-                    <Play size={14} fill="currentColor" />
+                    <Play size={15} strokeWidth={1.6} />
                   </button>
                   <FavoriteButton
                     active={favoriteIds.artists.has(artist.id)}
@@ -7515,7 +7515,7 @@ function PlaylistBrowser({
             </span>
           </button>
           <button className="track-play" type="button" onClick={() => onPlayPlaylist(playlist)} aria-label={`Play ${playlist.name}`}>
-            <Play size={14} fill="currentColor" />
+            <Play size={15} strokeWidth={1.6} />
           </button>
         </div>
       ))}
@@ -8141,7 +8141,7 @@ function TrackList({
                   }}
                   onDoubleClick={(event) => event.stopPropagation()}
                 >
-                  <Play size={14} fill="currentColor" />
+                  <Play size={15} strokeWidth={1.6} />
                 </button>
               </span>
               <button
