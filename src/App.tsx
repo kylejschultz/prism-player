@@ -6,7 +6,6 @@ import {
   AlertCircle,
   CalendarDays,
   Code2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -105,8 +104,6 @@ type AppSettings = {
   lastVolume: number;
   defaultAlbumView: AlbumViewMode;
   defaultArtistView: ArtistViewMode;
-  showSidebarPlaylists: boolean;
-  sidebarPlaylistLimit: number;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
   updateDismissedVersion: string;
@@ -420,8 +417,6 @@ const defaultSettings: AppSettings = {
   lastVolume: 0.82,
   defaultAlbumView: "art",
   defaultArtistView: "list",
-  showSidebarPlaylists: true,
-  sidebarPlaylistLimit: 8,
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
   updateDismissedVersion: "",
@@ -568,8 +563,6 @@ function loadStoredSettings(): AppSettings {
       lastVolume: clampNumber(Number(parsed.lastVolume ?? parsed.defaultVolume ?? defaultSettings.lastVolume), 0, 1),
       defaultAlbumView: parsed.defaultAlbumView === "list" ? "list" : "art",
       defaultArtistView: parsed.defaultArtistView === "art" ? "art" : "list",
-      showSidebarPlaylists: parsed.showSidebarPlaylists ?? defaultSettings.showSidebarPlaylists,
-      sidebarPlaylistLimit: clampNumber(Number(parsed.sidebarPlaylistLimit ?? defaultSettings.sidebarPlaylistLimit), 3, 20),
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
@@ -1697,7 +1690,6 @@ export function App() {
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
   const [searchFocused, setSearchFocused] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadStoredBoolean(SIDEBAR_COLLAPSED_KEY, false));
-  const [sidebarPlaylistsOpen, setSidebarPlaylistsOpen] = useState(true);
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
@@ -1914,7 +1906,6 @@ export function App() {
     return {
       ...nextSettings,
       lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
-      sidebarPlaylistLimit: Math.round(clampNumber(nextSettings.sidebarPlaylistLimit, 3, 20)),
       radioStationUrl: activeStation,
       radioStationUrls: radioStationUrls.includes(activeStation) ? radioStationUrls : normalizeRadioStationList([activeStation, ...radioStationUrls]),
     };
@@ -3725,43 +3716,60 @@ export function App() {
             <Music2 size={18} />
             Songs
           </button>
-          <div className="nav-parent-row">
-            <button
-              className={`nav-item nav-child nav-parent ${activeView === "playlists" ? "active" : ""}`}
-              type="button"
-              onClick={() => selectView("playlists")}
-            >
-              <ListMusic size={18} />
-              <span>Playlists</span>
-            </button>
-            <button
-              className={`nav-toggle ${sidebarPlaylistsOpen ? "open" : ""}`}
-              type="button"
-              onClick={() => setSidebarPlaylistsOpen((value) => !value)}
-              aria-label={`${sidebarPlaylistsOpen ? "Collapse" : "Expand"} playlists`}
-              aria-expanded={sidebarPlaylistsOpen}
-            >
-              {sidebarPlaylistsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </button>
-          </div>
-          {appSettings.showSidebarPlaylists && sidebarPlaylistsOpen && libraryData.playlists.length ? (
-            <div className="nav-playlist-list" aria-label="Playlist shortcuts">
-              {libraryData.playlists.slice(0, appSettings.sidebarPlaylistLimit).map((playlist) => (
-                <button
-                  className={`nav-item nav-child nav-playlist ${
-                    detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""
-                  }`}
-                  type="button"
-                  key={playlist.id}
-                  data-context-kind="playlist"
-                  data-context-id={playlist.id}
-                  onClick={() => void openPlaylist(playlist)}
-                >
-                  <span>{playlist.name}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <DropdownMenu.Root modal={false}>
+            <DropdownMenu.Trigger asChild>
+              <button
+                className={`nav-item nav-child nav-parent nav-playlist-trigger ${activeView === "playlists" ? "active" : ""}`}
+                type="button"
+                aria-label="Open playlists"
+              >
+                <ListMusic size={18} />
+                <span>Playlists</span>
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="sidebar-playlist-menu"
+                side="right"
+                align="start"
+                sideOffset={10}
+                collisionPadding={12}
+                aria-label="Playlists"
+              >
+                <DropdownMenu.Item asChild>
+                  <button className="sidebar-playlist-menu-all" type="button" onClick={() => selectView("playlists")}>
+                    <ListMusic size={15} />
+                    <span>All playlists</span>
+                  </button>
+                </DropdownMenu.Item>
+                {libraryData.playlists.length ? (
+                  <div className="sidebar-playlist-menu-list">
+                    {libraryData.playlists
+                      .slice()
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((playlist) => (
+                        <DropdownMenu.Item asChild key={playlist.id}>
+                          <button
+                            className={detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""}
+                            type="button"
+                            data-context-kind="playlist"
+                            data-context-id={playlist.id}
+                            onClick={() => void openPlaylist(playlist)}
+                          >
+                            <ListMusic size={15} />
+                            <span>{playlist.name}</span>
+                            <small>{getPlaylistMeta(playlist)}</small>
+                          </button>
+                        </DropdownMenu.Item>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="sidebar-playlist-menu-empty">No playlists yet.</p>
+                )}
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
           <button
             className={`nav-item nav-child ${activeView === "recentlyAdded" ? "active" : ""}`}
             type="button"
@@ -5280,35 +5288,6 @@ function SettingsView({
             <option value="list">List</option>
             <option value="art">Art</option>
           </select>
-        </label>
-      </section> : null}
-
-      {activeTab === "library" ? <section className="settings-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Sidebar</p>
-            <h3>Playlist shortcuts</h3>
-          </div>
-          <ListMusic size={18} />
-        </div>
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
-            checked={appSettings.showSidebarPlaylists}
-            onChange={(event) => updateAppSettings({ ...appSettings, showSidebarPlaylists: event.target.checked })}
-          />
-          <span>Show playlists</span>
-        </label>
-        <label>
-          Playlist count
-          <input
-            type="number"
-            min="3"
-            max="20"
-            value={appSettings.sidebarPlaylistLimit}
-            disabled={!appSettings.showSidebarPlaylists}
-            onChange={(event) => updateAppSettings({ ...appSettings, sidebarPlaylistLimit: Number(event.target.value) })}
-          />
         </label>
       </section> : null}
 
