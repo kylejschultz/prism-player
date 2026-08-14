@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/kylejschultz/prism-player/compare/v0.2.0...v0.3.0) (2026-08-14)
+
+
+### Features
+
+* Add a sidebar playlist flyout ([#72](https://github.com/kylejschultz/prism-player/issues/72)) ([22a42c3](https://github.com/kylejschultz/prism-player/commit/22a42c32083b04a7afba56ea333a91f66512f940))
+* Add local listening history and recently played tracks ([#57](https://github.com/kylejschultz/prism-player/issues/57)) ([fbccaa6](https://github.com/kylejschultz/prism-player/commit/fbccaa6ff2350201e06905de639c35efe3a83c75))
+* Unify library track list layouts ([#67](https://github.com/kylejschultz/prism-player/issues/67)) ([ed42607](https://github.com/kylejschultz/prism-player/commit/ed426075a09e75158644293c5a5ed82e81eeb536))
+
+
+### Bug Fixes
+
+* Keep Select All scoped to track lists ([#65](https://github.com/kylejschultz/prism-player/issues/65)) ([10dca1d](https://github.com/kylejschultz/prism-player/commit/10dca1d81a299824af97e44c0205fba29902d695))
+* Let library tracks be selected before playback ([#62](https://github.com/kylejschultz/prism-player/issues/62)) ([0050129](https://github.com/kylejschultz/prism-player/commit/005012912f6d94208aa39dd8ac7f87eb25935dd6))
+* Preserve parenthesized radio feature credits ([#66](https://github.com/kylejschultz/prism-player/issues/66)) ([703a53d](https://github.com/kylejschultz/prism-player/commit/703a53de53c47cb002fccde98ec832714a3e2fc8))
+
 ## [0.2.0](https://github.com/kylejschultz/prism-player/compare/v0.1.0...v0.2.0) (2026-08-13)
 
 
