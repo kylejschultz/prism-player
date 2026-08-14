@@ -1846,7 +1846,7 @@ button.similar-chip:hover,
 }
 
 .album-track-row {
-  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 42px 28px 28px;
+  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 42px 28px;
 }
 
 .song-list-header {
@@ -1863,7 +1863,7 @@ button.similar-chip:hover,
 }
 
 .album-track-list > .song-list-header {
-  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 42px 28px 28px;
+  grid-template-columns: 26px minmax(200px, 2fr) minmax(140px, 1fr) 42px 28px;
 }
 
 .song-list-header button,

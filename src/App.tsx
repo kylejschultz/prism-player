@@ -6717,6 +6717,7 @@ function SongListHeader({
   showAlbum = true,
   showPlayColumn = true,
   showTrackNumber = true,
+  showQueueColumn = true,
   sortKey,
   sortDirection,
   onSort,
@@ -6724,6 +6725,7 @@ function SongListHeader({
   showAlbum?: boolean;
   showPlayColumn?: boolean;
   showTrackNumber?: boolean;
+  showQueueColumn?: boolean;
   sortKey?: SongSortKey;
   sortDirection?: SongSortDirection;
   onSort?: (key: SongSortKey) => void;
@@ -6740,9 +6742,9 @@ function SongListHeader({
       {column("title", "Title")}
       {column("artist", "Artist")}
       {showAlbum ? column("album", "Album") : null}
+      {column("duration", "Length")}
       <span aria-hidden="true" />
-      <span aria-hidden="true" />
-      <span aria-hidden="true" />
+      {showQueueColumn ? <span aria-hidden="true" /> : null}
     </div>
   );
 }
@@ -8064,7 +8066,6 @@ function DetailPanel({
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
         onPlaySong={(song) => onReplaceQueue(songs, Math.max(0, songs.findIndex((albumSong) => albumSong.id === song.id)))}
-        onQueueSong={onQueueSong}
         onSongContextMenu={onSongContextMenu}
       />
     </section>
@@ -8079,7 +8080,6 @@ function TrackList({
   onToggleFavorite,
   emptyText = "No tracks available for this album.",
   onPlaySong,
-  onQueueSong,
   onSongContextMenu,
 }: {
   songs: Song[];
@@ -8089,7 +8089,6 @@ function TrackList({
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   emptyText?: string;
   onPlaySong: (song: Song) => void;
-  onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
@@ -8106,7 +8105,7 @@ function TrackList({
 
   return (
     <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
-      <SongListHeader showAlbum={false} showPlayColumn={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+      <SongListHeader showAlbum={false} showPlayColumn={false} showQueueColumn={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />
@@ -8160,18 +8159,6 @@ function TrackList({
                 onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
                 onDoubleClick={(event) => event.stopPropagation()}
               />
-              <button
-                className="track-queue"
-                type="button"
-                aria-label={`Queue ${song.title}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onQueueSong(song);
-                }}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                <Plus size={14} />
-              </button>
             </div>
             );
           })}
