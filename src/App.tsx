@@ -58,7 +58,7 @@ type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
-type SongSortKey = "title" | "artist" | "album" | "duration";
+type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
 
 function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -1615,6 +1615,13 @@ function sortSongs(songs: Song[], key: SongSortKey, direction: SongSortDirection
   const factor = direction === "asc" ? 1 : -1;
   return [...songs].sort((left, right) => {
     if (key === "duration") return ((left.duration ?? 0) - (right.duration ?? 0)) * factor;
+    if (key === "track") {
+      return (
+        getSongDisc(left) - getSongDisc(right)
+        || getSongTrack(left) - getSongTrack(right)
+        || left.title.localeCompare(right.title)
+      ) * factor;
+    }
     const leftValue = key === "title" ? left.title : left[key] ?? "";
     const rightValue = key === "title" ? right.title : right[key] ?? "";
     return leftValue.localeCompare(rightValue, undefined, { sensitivity: "base" }) * factor;
@@ -8086,7 +8093,7 @@ function TrackList({
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
-  const [sortKey, setSortKey] = useState<SongSortKey>("title");
+  const [sortKey, setSortKey] = useState<SongSortKey>("track");
   const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
 
   if (!songs.length) {
