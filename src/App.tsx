@@ -3165,23 +3165,36 @@ export function App() {
   useEffect(() => {
     if (!isTauriDesktopApp()) return;
 
-    if (!appSettings.discordPresenceEnabled || activePlaybackSource !== "local" || !currentTrack) {
+    if (!appSettings.discordPresenceEnabled) {
       setDiscordPresenceStatus("idle");
       void invoke("clear_discord_presence").catch(() => undefined);
       return;
     }
 
+    const radioPresence = activePlaybackSource === "radio" && isRadioPlaying && radioNowPlaying;
+    const localPresence = activePlaybackSource === "local" && currentTrack;
+
+    if (!radioPresence && !localPresence) {
+      setDiscordPresenceStatus("idle");
+      void invoke("clear_discord_presence").catch(() => undefined);
+      return;
+    }
+
+    const track = radioPresence || localPresence;
+    if (!track) return;
+
     setDiscordPresenceStatus("connecting");
     void invoke("update_discord_presence", {
       presence: {
-        title: currentTrack.title,
-        artist: currentTrack.artist ?? "Unknown artist",
-        album: currentTrack.album ?? null,
-        playing: isPlaying,
-        startedAt: isPlaying ? Date.now() - Math.round(position * 1000) : null,
+        title: track.title ?? "Live radio",
+        artist: track.artist ?? (radioPresence ? "Subwave" : "Unknown artist"),
+        album: track.album ?? null,
+        station: radioPresence ? radioStationName(radioStationState, radioStationUrl) : null,
+        playing: radioPresence ? true : isPlaying,
+        startedAt: radioPresence || !isPlaying ? null : Date.now() - Math.round(position * 1000),
       },
     }).catch(() => undefined);
-  }, [activePlaybackSource, appSettings.discordPresenceEnabled, currentTrack?.id, discordPresenceSyncNonce, isPlaying]);
+  }, [activePlaybackSource, appSettings.discordPresenceEnabled, currentTrack?.id, discordPresenceSyncNonce, isPlaying, isRadioPlaying, radioNowPlaying?.artist, radioNowPlaying?.album, radioNowPlaying?.title, radioStationState, radioStationUrl]);
 
   useEffect(() => () => {
     if (isTauriDesktopApp()) void invoke("clear_discord_presence").catch(() => undefined);

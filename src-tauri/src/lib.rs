@@ -11,6 +11,7 @@ struct DiscordPresence {
     title: String,
     artist: String,
     album: Option<String>,
+    station: Option<String>,
     playing: bool,
     started_at: Option<i64>,
 }
@@ -70,14 +71,18 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
         || presence.artist.clone(),
         |album| format!("{} · {album}", presence.artist),
     );
+    let title = presence.title;
     let details = if presence.playing {
-        presence.title
+        presence
+            .station
+            .filter(|station| !station.trim().is_empty())
+            .map_or(title.clone(), |station| format!("{title} · Live on {station}"))
     } else {
-        format!("Paused · {}", presence.title)
+        format!("Paused · {title}")
     };
     let mut activity = activity::Activity::new()
         .activity_type(activity::ActivityType::Listening)
-        .status_display_type(activity::StatusDisplayType::Details)
+        .status_display_type(activity::StatusDisplayType::State)
         .details(details)
         .state(state)
         .buttons(vec![

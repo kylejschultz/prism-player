@@ -97,7 +97,7 @@ Click any screenshot to open it full size.
 
 Prism stores your server connection and playback preferences locally. Optional anonymous analytics are opt-in. They only include app and install details, plus aggregate library counts; they do not include your account or playback data.
 
-Discord Rich Presence is also opt-in and desktop-only. When enabled, Prism sends the current track, artist, album, and playback state directly to the Discord app running on the same device. Prism does not use a Discord bot, server integration, account token, or client secret.
+Discord Rich Presence is also opt-in and desktop-only. When enabled, Prism sends the current local track or Subwave radio track, artist, album, station, and playback state directly to the Discord app running on the same device. Prism does not use a Discord bot, server integration, account token, or client secret.
 
 ## License
 
