@@ -66,17 +66,18 @@ fn publish_discord_presence(app: &tauri::AppHandle, presence: DiscordPresence) -
 }
 
 fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'static> {
-
-    let state = presence.album.filter(|album| !album.trim().is_empty()).map_or_else(
-        || presence.artist.clone(),
-        |album| format!("{} · {album}", presence.artist),
-    );
+    let station = presence.station.filter(|station| !station.trim().is_empty());
+    let state = if let Some(station) = station {
+        format!("{} · Live on {station}", presence.artist)
+    } else {
+        presence
+            .album
+            .filter(|album| !album.trim().is_empty())
+            .map_or_else(|| presence.artist.clone(), |album| format!("{} · {album}", presence.artist))
+    };
     let title = presence.title;
     let details = if presence.playing {
-        presence
-            .station
-            .filter(|station| !station.trim().is_empty())
-            .map_or(title.clone(), |station| format!("{title} · Live on {station}"))
+        title.clone()
     } else {
         format!("Paused · {title}")
     };
