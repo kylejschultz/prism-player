@@ -67,6 +67,7 @@ fn publish_discord_presence(app: &tauri::AppHandle, presence: DiscordPresence) -
 
 fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'static> {
     let station = presence.station.filter(|station| !station.trim().is_empty());
+    let is_radio = station.is_some();
     let state = if let Some(station) = station {
         format!("{} · Live on {station}", presence.artist)
     } else {
@@ -76,14 +77,23 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
             .map_or_else(|| presence.artist.clone(), |album| format!("{} · {album}", presence.artist))
     };
     let title = presence.title;
-    let details = if presence.playing {
-        title.clone()
+    let track_details = if is_radio {
+        format!("{title} · {}", presence.artist)
     } else {
-        format!("Paused · {title}")
+        title.clone()
+    };
+    let details = if presence.playing {
+        track_details
+    } else {
+        format!("Paused · {track_details}")
     };
     let mut activity = activity::Activity::new()
         .activity_type(activity::ActivityType::Listening)
-        .status_display_type(activity::StatusDisplayType::State)
+        .status_display_type(if is_radio {
+            activity::StatusDisplayType::Details
+        } else {
+            activity::StatusDisplayType::State
+        })
         .details(details)
         .state(state)
         .buttons(vec![
