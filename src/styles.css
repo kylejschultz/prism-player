@@ -3547,18 +3547,6 @@ button.similar-chip:hover,
   backdrop-filter: blur(20px);
 }
 
-.player-sidebar-toggle {
-  position: absolute;
-  top: 50%;
-  left: 18px;
-  z-index: 2;
-  transform: translateY(-50%);
-}
-
-.player-sidebar-toggle + .now-playing {
-  padding-left: 42px;
-}
-
 .player-bar audio {
   display: none;
 }
