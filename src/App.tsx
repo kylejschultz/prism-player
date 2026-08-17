@@ -4008,7 +4008,7 @@ export function App() {
             onPlaySong={playSong}
           />
           <button
-            className={`icon-button topbar-right-sidebar-toggle ${rightPanelOpen ? "active" : ""}`}
+            className="icon-button topbar-right-sidebar-toggle"
             type="button"
             aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
             aria-pressed={rightPanelOpen}

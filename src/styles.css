@@ -908,11 +908,6 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   width: auto;
 }
 
-.topbar-right-sidebar-toggle.active {
-  background: rgba(242, 217, 133, 0.18);
-  color: #f8df91;
-}
-
 .workspace-viewport {
   display: flex;
   flex-direction: column;
