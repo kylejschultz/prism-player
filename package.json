@@ -19,7 +19,7 @@
   "dependencies": {
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@tauri-apps/api": "^2.8.0",
-    "lucide-react": "^1.30.0",
+    "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
