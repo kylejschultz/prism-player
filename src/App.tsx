@@ -377,6 +377,10 @@ const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
 const SIDEBAR_MIN_WIDTH = 208;
 const SIDEBAR_MAX_WIDTH = 360;
 const SIDEBAR_DEFAULT_WIDTH = 248;
+const RIGHT_SIDEBAR_WIDTH_KEY = "prism-player.rightSidebarWidth";
+const RIGHT_SIDEBAR_MIN_WIDTH = 280;
+const RIGHT_SIDEBAR_MAX_WIDTH = 520;
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 338;
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
@@ -1745,6 +1749,12 @@ export function App() {
     SIDEBAR_MIN_WIDTH,
     SIDEBAR_MAX_WIDTH,
   ));
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(() => loadStoredNumber(
+    RIGHT_SIDEBAR_WIDTH_KEY,
+    RIGHT_SIDEBAR_DEFAULT_WIDTH,
+    RIGHT_SIDEBAR_MIN_WIDTH,
+    RIGHT_SIDEBAR_MAX_WIDTH,
+  ));
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
@@ -2191,6 +2201,12 @@ export function App() {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
   }
 
+  function setRightSidebarWidthState(nextWidth: number) {
+    const width = clampNumber(nextWidth, RIGHT_SIDEBAR_MIN_WIDTH, RIGHT_SIDEBAR_MAX_WIDTH);
+    setRightSidebarWidth(width);
+    localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(width));
+  }
+
   function beginSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
     if (sidebarCollapsed) return;
 
@@ -2208,6 +2224,31 @@ export function App() {
     const handleEnd = () => {
       document.body.classList.remove("sidebar-resizing");
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd, { once: true });
+    window.addEventListener("pointercancel", handleEnd, { once: true });
+  }
+
+  function beginRightSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const initialWidth = rightSidebarWidth;
+    const startX = event.clientX;
+    let nextWidth = initialWidth;
+
+    document.body.classList.add("right-sidebar-resizing");
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      nextWidth = clampNumber(initialWidth + startX - moveEvent.clientX, RIGHT_SIDEBAR_MIN_WIDTH, RIGHT_SIDEBAR_MAX_WIDTH);
+      setRightSidebarWidth(nextWidth);
+    };
+    const handleEnd = () => {
+      document.body.classList.remove("right-sidebar-resizing");
+      localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(nextWidth));
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleEnd);
       window.removeEventListener("pointercancel", handleEnd);
@@ -3735,7 +3776,7 @@ export function App() {
       className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${coverWashUrl ? "with-cover-wash" : ""}`}
-      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
       {coverWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${coverWashUrl})` }} aria-hidden="true" /> : null}
@@ -3966,6 +4007,16 @@ export function App() {
             onOpenPlaylist={openPlaylist}
             onPlaySong={playSong}
           />
+          <button
+            className={`icon-button topbar-right-sidebar-toggle ${rightPanelOpen ? "active" : ""}`}
+            type="button"
+            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
+            aria-pressed={rightPanelOpen}
+            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
+            onClick={() => setRightPanelState(!rightPanelOpen)}
+          >
+            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+          </button>
         </header>
 
         <div className="workspace-viewport">
@@ -4329,16 +4380,6 @@ export function App() {
               aria-label="Volume"
             />
           </div>
-          <button
-            className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
-            type="button"
-            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
-            aria-pressed={rightPanelOpen}
-            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
-            onClick={() => setRightPanelState(!rightPanelOpen)}
-          >
-            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </button>
         </div>
       </footer>
 
@@ -4364,7 +4405,10 @@ export function App() {
           dragOverQueueIndex={dragOverQueueIndex}
           setDraggedQueueIndex={setDraggedQueueIndex}
           setDragOverQueueIndex={setDragOverQueueIndex}
-      onDropQueueItem={dropQueueItem}
+          rightSidebarWidth={rightSidebarWidth}
+          onResizeRightSidebar={beginRightSidebarResize}
+          onSetRightSidebarWidth={setRightSidebarWidthState}
+          onDropQueueItem={dropQueueItem}
           onSelectQueueTrack={selectQueueTrack}
           onRemoveQueueItem={removeQueueItem}
           onClearQueue={clearQueue}
@@ -4566,6 +4610,9 @@ function RightSidebar({
   dragOverQueueIndex,
   setDraggedQueueIndex,
   setDragOverQueueIndex,
+  rightSidebarWidth,
+  onResizeRightSidebar,
+  onSetRightSidebarWidth,
   onDropQueueItem,
   onSelectQueueTrack,
   onRemoveQueueItem,
@@ -4591,6 +4638,9 @@ function RightSidebar({
   dragOverQueueIndex: number | null;
   setDraggedQueueIndex: (index: number | null) => void;
   setDragOverQueueIndex: (index: number | null) => void;
+  rightSidebarWidth: number;
+  onResizeRightSidebar: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onSetRightSidebarWidth: (width: number) => void;
   onDropQueueItem: (toIndex: number, fromIndex?: number) => void;
   onSelectQueueTrack: (index: number) => void;
   onRemoveQueueItem: (index: number) => void;
@@ -4868,6 +4918,35 @@ function RightSidebar({
           <small>{formatDuration(queueDragGhost.song.duration)}</small>
         </div>
       ) : null}
+      <div
+        className="right-sidebar-resize-handle"
+        role="separator"
+        aria-label="Resize right sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={RIGHT_SIDEBAR_MIN_WIDTH}
+        aria-valuemax={RIGHT_SIDEBAR_MAX_WIDTH}
+        aria-valuenow={rightSidebarWidth}
+        tabIndex={0}
+        onPointerDown={onResizeRightSidebar}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            onSetRightSidebarWidth(rightSidebarWidth + 16);
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            onSetRightSidebarWidth(rightSidebarWidth - 16);
+          }
+          if (event.key === "Home") {
+            event.preventDefault();
+            onSetRightSidebarWidth(RIGHT_SIDEBAR_MIN_WIDTH);
+          }
+          if (event.key === "End") {
+            event.preventDefault();
+            onSetRightSidebarWidth(RIGHT_SIDEBAR_MAX_WIDTH);
+          }
+        }}
+      />
     </aside>
   );
 }
