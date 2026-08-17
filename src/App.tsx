@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -22,6 +24,8 @@ import {
   Mic2,
   Music2,
   Pause,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Play,
@@ -55,8 +59,9 @@ type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
-type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
+type RightPanelTab = "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
 
@@ -96,6 +101,10 @@ function isVersionNewer(candidate: string, current: string) {
   return false;
 }
 
+function isTauriDesktopApp() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 type NavidromeConfig = {
   serverUrl: string;
   username: string;
@@ -108,6 +117,7 @@ type AppSettings = {
   defaultArtistView: ArtistViewMode;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
+  discordPresenceEnabled: boolean;
   updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
@@ -371,12 +381,20 @@ const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
 const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
+const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
+const SIDEBAR_MIN_WIDTH = 208;
+const SIDEBAR_MAX_WIDTH = 360;
+const SIDEBAR_DEFAULT_WIDTH = 248;
+const RIGHT_SIDEBAR_WIDTH_KEY = "prism-player.rightSidebarWidth";
+const RIGHT_SIDEBAR_MIN_WIDTH = 280;
+const RIGHT_SIDEBAR_MAX_WIDTH = 520;
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 338;
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
 const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
 const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
-const PRISM_DISCORD_URL = "https://discord.gg/aDEBQq3XtN";
+const PRISM_DISCORD_URL = "https://discord.gg/hzeAqu7EwF";
 const APP_VERSION = packageJson.version;
 const APP_COMMIT_SHA = __APP_COMMIT_SHA__;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
@@ -422,6 +440,7 @@ const defaultSettings: AppSettings = {
   defaultArtistView: "list",
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
+  discordPresenceEnabled: false,
   updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
@@ -439,6 +458,18 @@ type AlphaGroup<T> = {
 
 function alphaSectionId(prefix: string, letter: string) {
   return `${prefix}-${letter === "#" ? "num" : letter}`;
+}
+
+function scrollElementWithin(container: HTMLElement, target: HTMLElement, block: "start" | "center" = "start") {
+  const containerRect = container.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const targetTop = targetRect.top - containerRect.top + container.scrollTop;
+  const offset = block === "center" ? (container.clientHeight - targetRect.height) / 2 : 52;
+
+  container.scrollTo({
+    top: Math.max(0, targetTop - offset),
+    behavior: "smooth",
+  });
 }
 
 function getAlphaKey(value: string) {
@@ -569,6 +600,7 @@ function loadStoredSettings(): AppSettings {
       defaultArtistView: parsed.defaultArtistView === "art" ? "art" : "list",
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      discordPresenceEnabled: Boolean(parsed.discordPresenceEnabled),
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
@@ -754,10 +786,19 @@ function loadStoredBoolean(key: string, fallback: boolean) {
   }
 }
 
+function loadStoredNumber(key: string, fallback: number, min: number, max: number) {
+  try {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) ? clampNumber(value, min, max) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function loadStoredRightPanelTab(): RightPanelTab {
   try {
     const storedTab = localStorage.getItem(RIGHT_PANEL_TAB_KEY);
-    return storedTab === "nowPlaying" || storedTab === "lyrics" ? storedTab : "queue";
+    return storedTab === "lyrics" ? storedTab : "queue";
   } catch {
     return "queue";
   }
@@ -1712,6 +1753,18 @@ export function App() {
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
   const [searchFocused, setSearchFocused] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadStoredBoolean(SIDEBAR_COLLAPSED_KEY, false));
+  const [sidebarWidth, setSidebarWidth] = useState(() => loadStoredNumber(
+    SIDEBAR_WIDTH_KEY,
+    SIDEBAR_DEFAULT_WIDTH,
+    SIDEBAR_MIN_WIDTH,
+    SIDEBAR_MAX_WIDTH,
+  ));
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(() => loadStoredNumber(
+    RIGHT_SIDEBAR_WIDTH_KEY,
+    RIGHT_SIDEBAR_DEFAULT_WIDTH,
+    RIGHT_SIDEBAR_MIN_WIDTH,
+    RIGHT_SIDEBAR_MAX_WIDTH,
+  ));
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
@@ -1783,6 +1836,8 @@ export function App() {
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
+  const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
+  const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
@@ -2150,6 +2205,70 @@ export function App() {
   function setSidebarCollapsedState(collapsed: boolean) {
     setSidebarCollapsed(collapsed);
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
+  }
+
+  function setSidebarWidthState(nextWidth: number) {
+    const width = clampNumber(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+    setSidebarWidth(width);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+  }
+
+  function setRightSidebarWidthState(nextWidth: number) {
+    const width = clampNumber(nextWidth, RIGHT_SIDEBAR_MIN_WIDTH, RIGHT_SIDEBAR_MAX_WIDTH);
+    setRightSidebarWidth(width);
+    localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(width));
+  }
+
+  function beginSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (sidebarCollapsed) return;
+
+    event.preventDefault();
+    const initialWidth = sidebarWidth;
+    const startX = event.clientX;
+    let nextWidth = initialWidth;
+
+    document.body.classList.add("sidebar-resizing");
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      nextWidth = clampNumber(initialWidth + moveEvent.clientX - startX, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      setSidebarWidth(nextWidth);
+    };
+    const handleEnd = () => {
+      document.body.classList.remove("sidebar-resizing");
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd, { once: true });
+    window.addEventListener("pointercancel", handleEnd, { once: true });
+  }
+
+  function beginRightSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const initialWidth = rightSidebarWidth;
+    const startX = event.clientX;
+    let nextWidth = initialWidth;
+
+    document.body.classList.add("right-sidebar-resizing");
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      nextWidth = clampNumber(initialWidth + startX - moveEvent.clientX, RIGHT_SIDEBAR_MIN_WIDTH, RIGHT_SIDEBAR_MAX_WIDTH);
+      setRightSidebarWidth(nextWidth);
+    };
+    const handleEnd = () => {
+      document.body.classList.remove("right-sidebar-resizing");
+      localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(nextWidth));
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd, { once: true });
+    window.addEventListener("pointercancel", handleEnd, { once: true });
   }
 
   function setAnalyticsConsent(enabled: boolean) {
@@ -2847,6 +2966,7 @@ export function App() {
     if (!audio || !Number.isFinite(nextPosition)) return;
     audio.currentTime = nextPosition;
     setPosition(nextPosition);
+    setDiscordPresenceSyncNonce((nonce) => nonce + 1);
   }
 
   function handleLoadedMetadata(duration: number) {
@@ -3082,6 +3202,57 @@ export function App() {
     setSetupOpen(true);
     setActiveView("settings");
   }
+
+  useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    if (!appSettings.discordPresenceEnabled) {
+      setDiscordPresenceStatus("idle");
+      void invoke("clear_discord_presence").catch(() => undefined);
+      return;
+    }
+
+    const radioPresence = activePlaybackSource === "radio" && isRadioPlaying && radioNowPlaying;
+    const localPresence = activePlaybackSource === "local" && currentTrack;
+
+    if (!radioPresence && !localPresence) {
+      setDiscordPresenceStatus("idle");
+      void invoke("clear_discord_presence").catch(() => undefined);
+      return;
+    }
+
+    const track = radioPresence || localPresence;
+    if (!track) return;
+
+    setDiscordPresenceStatus("connecting");
+    void invoke("update_discord_presence", {
+      presence: {
+        title: track.title ?? "Live radio",
+        artist: track.artist ?? (radioPresence ? "Subwave" : "Unknown artist"),
+        album: track.album ?? null,
+        station: radioPresence ? radioStationName(radioStationState, radioStationUrl) : null,
+        playing: radioPresence ? true : isPlaying,
+        startedAt: radioPresence || !isPlaying ? null : Date.now() - Math.round(position * 1000),
+      },
+    }).catch(() => undefined);
+  }, [activePlaybackSource, appSettings.discordPresenceEnabled, currentTrack?.id, discordPresenceSyncNonce, isPlaying, isRadioPlaying, radioNowPlaying?.artist, radioNowPlaying?.album, radioNowPlaying?.title, radioStationState, radioStationUrl]);
+
+  useEffect(() => () => {
+    if (isTauriDesktopApp()) void invoke("clear_discord_presence").catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    let unlisten: (() => void) | undefined;
+    void listen<{ state: DiscordPresenceStatus }>("discord-presence-status", (event) => {
+      setDiscordPresenceStatus(event.payload.state);
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     if (config) {
@@ -3669,23 +3840,10 @@ export function App() {
       className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${coverWashUrl ? "with-cover-wash" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
       {coverWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${coverWashUrl})` }} aria-hidden="true" /> : null}
-
-      {sidebarCollapsed ? (
-        <div className="sidebar-rail sidebar-rail-left" aria-label="Collapsed sidebar">
-          <button
-            className="sidebar-edge-button sidebar-edge-button-left"
-            type="button"
-            aria-label="Show sidebar"
-            title="Show sidebar"
-            onClick={() => setSidebarCollapsedState(false)}
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      ) : null}
 
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
@@ -3695,16 +3853,6 @@ export function App() {
             <h1>Player</h1>
           </div>
         </div>
-        <button
-          className="sidebar-edge-button sidebar-edge-button-left"
-          type="button"
-          aria-label="Hide sidebar"
-          title="Hide sidebar"
-          onClick={() => setSidebarCollapsedState(true)}
-        >
-          <ChevronLeft size={16} />
-        </button>
-
         <nav className="nav-list">
           <button
             className={`nav-item nav-home ${activeView === "overview" ? "active" : ""}`}
@@ -3866,6 +4014,35 @@ export function App() {
             Settings
           </button>
         </div>
+        <div
+          className="sidebar-resize-handle"
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={beginSidebarResize}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setSidebarWidthState(sidebarWidth - 16);
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setSidebarWidthState(sidebarWidth + 16);
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              setSidebarWidthState(SIDEBAR_MIN_WIDTH);
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              setSidebarWidthState(SIDEBAR_MAX_WIDTH);
+            }
+          }}
+        />
       </aside> : null}
 
       <section className="workspace" aria-label="Music workspace">
@@ -3877,6 +4054,8 @@ export function App() {
             forwardTarget={forwardStack[0] ?? null}
             onNavigateBack={navigateBack}
             onNavigateForward={navigateForward}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsedState(!sidebarCollapsed)}
           />
           <SearchBox
             query={searchQuery}
@@ -3892,6 +4071,16 @@ export function App() {
             onOpenPlaylist={openPlaylist}
             onPlaySong={playSong}
           />
+          <button
+            className="icon-button topbar-right-sidebar-toggle"
+            type="button"
+            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
+            aria-pressed={rightPanelOpen}
+            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
+            onClick={() => setRightPanelState(!rightPanelOpen)}
+          >
+            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+          </button>
         </header>
 
         <div className="workspace-viewport">
@@ -3912,6 +4101,7 @@ export function App() {
               status={status}
               statusMessage={statusMessage}
               appSettings={appSettings}
+              discordPresenceStatus={discordPresenceStatus}
               activeTab={settingsTab}
               setActiveTab={selectSettingsTab}
               updateAppSettings={updateAppSettings}
@@ -4255,16 +4445,6 @@ export function App() {
               aria-label="Volume"
             />
           </div>
-          <button
-            className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
-            type="button"
-            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
-            aria-pressed={rightPanelOpen}
-            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
-            onClick={() => setRightPanelState(!rightPanelOpen)}
-          >
-            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </button>
         </div>
       </footer>
 
@@ -4272,39 +4452,31 @@ export function App() {
         <RightSidebar
           tab={rightPanelTab}
           setTab={selectRightPanelTab}
-          config={config}
           queue={queue}
           displayedQueue={displayedQueue}
           currentIndex={currentIndex}
           currentTrack={currentTrack}
-          radioStationState={radioStationState}
           radioNowPlaying={radioNowPlaying}
           radioUpcoming={radioUpcoming}
           radioHistory={radioHistory}
-          radioCoverUrl={radioCoverUrl}
-          radioStationUrl={radioStationUrl}
           radioStatus={radioStatus}
-          radioElapsed={radioElapsed}
           isRadioPlaying={isRadioPlaying}
-          playerDuration={playerDuration}
           position={position}
           isPlaying={isPlaying}
           lyricsStatus={lyricsStatus}
           lyricsLines={lyricsLines}
           lyricsMessage={lyricsMessage}
-          favoriteIds={favoriteIds}
-          favoriteBusyKey={favoriteBusyKey}
           draggedQueueIndex={draggedQueueIndex}
           dragOverQueueIndex={dragOverQueueIndex}
           setDraggedQueueIndex={setDraggedQueueIndex}
           setDragOverQueueIndex={setDragOverQueueIndex}
-      onDropQueueItem={dropQueueItem}
+          rightSidebarWidth={rightSidebarWidth}
+          onResizeRightSidebar={beginRightSidebarResize}
+          onSetRightSidebarWidth={setRightSidebarWidthState}
+          onDropQueueItem={dropQueueItem}
           onSelectQueueTrack={selectQueueTrack}
           onRemoveQueueItem={removeQueueItem}
           onClearQueue={clearQueue}
-          onToggleFavorite={toggleFavorite}
-          onOpenAlbumById={(albumId, label) => void openAlbumById(albumId, label)}
-          onOpenArtistById={(artistId, label) => void openArtistById(artistId, label)}
         />
       ) : null}
 
@@ -4485,84 +4657,67 @@ export function App() {
 function RightSidebar({
   tab,
   setTab,
-  config,
   queue,
   displayedQueue,
   currentIndex,
   currentTrack,
-  radioStationState,
   radioNowPlaying,
   radioUpcoming,
   radioHistory,
-  radioCoverUrl,
-  radioStationUrl,
   radioStatus,
-  radioElapsed,
   isRadioPlaying,
-  playerDuration,
   position,
   isPlaying,
   lyricsStatus,
   lyricsLines,
   lyricsMessage,
-  favoriteIds,
-  favoriteBusyKey,
   draggedQueueIndex,
   dragOverQueueIndex,
   setDraggedQueueIndex,
   setDragOverQueueIndex,
+  rightSidebarWidth,
+  onResizeRightSidebar,
+  onSetRightSidebarWidth,
   onDropQueueItem,
   onSelectQueueTrack,
   onRemoveQueueItem,
   onClearQueue,
-  onToggleFavorite,
-  onOpenAlbumById,
-  onOpenArtistById,
 }: {
   tab: RightPanelTab;
   setTab: (tab: RightPanelTab) => void;
-  config: NavidromeConfig | null;
   queue: Song[];
   displayedQueue: Array<{ song: Song; index: number }>;
   currentIndex: number;
   currentTrack: Song | null;
-  radioStationState: RadioStationState | null;
   radioNowPlaying: RadioTrack | null;
   radioUpcoming: RadioTrack[];
   radioHistory: RadioTrack[];
-  radioCoverUrl: string | null;
-  radioStationUrl: string;
   radioStatus: RadioStatus;
-  radioElapsed: number;
   isRadioPlaying: boolean;
-  playerDuration: number;
   position: number;
   isPlaying: boolean;
   lyricsStatus: LyricsStatus;
   lyricsLines: LyricLine[];
   lyricsMessage: string;
-  favoriteIds: FavoriteIds;
-  favoriteBusyKey: string;
   draggedQueueIndex: number | null;
   dragOverQueueIndex: number | null;
   setDraggedQueueIndex: (index: number | null) => void;
   setDragOverQueueIndex: (index: number | null) => void;
+  rightSidebarWidth: number;
+  onResizeRightSidebar: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onSetRightSidebarWidth: (width: number) => void;
   onDropQueueItem: (toIndex: number, fromIndex?: number) => void;
   onSelectQueueTrack: (index: number) => void;
   onRemoveQueueItem: (index: number) => void;
   onClearQueue: () => void;
-  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
-  onOpenAlbumById: (albumId: string, label: string) => void;
-  onOpenArtistById: (artistId: string, label: string) => void;
 }) {
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
-  const radioStationLabel = radioStationName(radioStationState, radioStationUrl);
-  const radioDuration = radioNowPlaying?.duration ?? 0;
   const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const recentRadioHistory = radioHistory.slice(0, 5).reverse();
+  const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const latestDragOverQueueIndexRef = useRef<number | null>(dragOverQueueIndex);
   const [queueDragGhost, setQueueDragGhost] = useState<{
@@ -4589,28 +4744,15 @@ function RightSidebar({
   }, [lyricsLines, position]);
 
   useEffect(() => {
-    if (tab !== "lyrics" || activeLyricIndex < 0) return;
-    activeLyricRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (tab !== "lyrics" || activeLyricIndex < 0 || !lyricsScrollRef.current || !activeLyricRef.current) return;
+    scrollElementWithin(lyricsScrollRef.current, activeLyricRef.current, "center");
   }, [activeLyricIndex, tab]);
-
-  useEffect(() => {
-    if (isRadioSession && tab === "nowPlaying") setTab("queue");
-  }, [isRadioSession, setTab, tab]);
 
   useEffect(() => {
     latestDragOverQueueIndexRef.current = dragOverQueueIndex;
   }, [dragOverQueueIndex]);
 
-  const progressLabel =
-    isRadioPlaying && radioNowPlaying
-      ? radioDuration
-        ? `${formatDuration(radioElapsed)} / ${formatDuration(radioDuration)}`
-        : "Live radio"
-      : currentTrack && (playerDuration || currentTrack.duration)
-      ? `${formatDuration(position)} / ${formatDuration(playerDuration || currentTrack.duration)}`
-      : "Nothing playing";
-  const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
-  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : tab === "lyrics" ? "Lyrics" : "Now Playing";
+  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : "Lyrics";
   const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
     const queueIndexFromPointer = (event: PointerEvent) => {
       const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
@@ -4686,17 +4828,11 @@ function RightSidebar({
         </div>
       </div>
 
-      <div className={`right-tabs ${isRadioSession ? "radio-tabs" : ""}`} role="tablist" aria-label="Right panel">
+      <div className="right-tabs" role="tablist" aria-label="Right panel">
         <button className={tab === "queue" ? "active" : ""} type="button" onClick={() => setTab("queue")}>
           <ListMusic size={15} />
           {queueTabLabel}
         </button>
-        {!isRadioSession ? (
-          <button className={tab === "nowPlaying" ? "active" : ""} type="button" onClick={() => setTab("nowPlaying")}>
-            <Music2 size={15} />
-            Now Playing
-          </button>
-        ) : null}
         <button className={tab === "lyrics" ? "active" : ""} type="button" onClick={() => setTab("lyrics")}>
           <Music2 size={15} />
           Lyrics
@@ -4796,90 +4932,6 @@ function RightSidebar({
             </p>
           ) : null}
         </div>
-      ) : tab === "nowPlaying" ? (
-        <div className="right-panel-section now-playing-panel">
-          {isRadioPlaying ? (
-            <>
-              <CoverArt
-                src={radioCoverUrl}
-                label={radioNowPlaying?.title ?? radioStationLabel}
-                className="right-now-cover"
-                fallbackIcon={<RadioTower size={42} />}
-              />
-              <div className="right-now-copy">
-                <p className="eyebrow">{radioStatus === "playing" ? "On Air" : "Radio"}</p>
-                <h3>{radioNowPlaying?.title ?? "Live radio"}</h3>
-                <span className="track-link">{radioNowPlaying?.artist ?? radioStationLabel}</span>
-                {radioNowPlaying?.album ? <span className="track-link">{radioNowPlaying.album}</span> : null}
-              </div>
-              <div className="right-now-stats">
-                <span>{progressLabel}</span>
-                <span>{radioStationLabel}</span>
-              </div>
-            </>
-          ) : currentTrack ? (
-            <>
-              <CoverArt
-                src={nowPlayingCoverUrl}
-                label={currentTrack.title}
-                className="right-now-cover"
-                fallbackIcon={<Music2 size={42} />}
-              />
-              <div className="right-now-copy">
-                <p className="eyebrow">{isPlaying ? "Playing" : "Paused"}</p>
-                <h3>{currentTrack.title}</h3>
-                <button
-                  className="track-link"
-                  type="button"
-                  onClick={() => currentTrack.artistId && onOpenArtistById(currentTrack.artistId, currentTrack.artist ?? "artist")}
-                  disabled={!currentTrack.artistId}
-                >
-                  {currentTrack.artist ?? "Unknown artist"}
-                </button>
-                <button
-                  className="track-link"
-                  type="button"
-                  onClick={() => currentTrack.albumId && onOpenAlbumById(currentTrack.albumId, currentTrack.album ?? currentTrack.title)}
-                  disabled={!currentTrack.albumId}
-                >
-                  {currentTrack.album ?? "Unknown album"}
-                </button>
-              </div>
-              <div className="right-now-stats">
-                <span>{progressLabel}</span>
-                <span>{queue.length ? `${currentIndex + 1} of ${queue.length}` : "Queue empty"}</span>
-              </div>
-              <div className="right-now-actions">
-                <FavoriteButton
-                  active={favoriteIds.songs.has(currentTrack.id)}
-                  busy={favoriteBusyKey === `song:${currentTrack.id}`}
-                  label={currentTrack.title}
-                  onToggle={(favorite) => onToggleFavorite("song", currentTrack.id, favorite)}
-                />
-                <button
-                  className="secondary-button compact-button"
-                  type="button"
-                  disabled={!currentTrack.albumId}
-                  onClick={() => currentTrack.albumId && onOpenAlbumById(currentTrack.albumId, currentTrack.album ?? currentTrack.title)}
-                >
-                  <Disc3 size={15} />
-                  Album
-                </button>
-                <button
-                  className="secondary-button compact-button"
-                  type="button"
-                  disabled={!currentTrack.artistId}
-                  onClick={() => currentTrack.artistId && onOpenArtistById(currentTrack.artistId, currentTrack.artist ?? "artist")}
-                >
-                  <UserRound size={15} />
-                  Artist
-                </button>
-              </div>
-            </>
-          ) : (
-            <EmptyPanel icon={<Music2 size={20} />} text="Nothing playing yet." />
-          )}
-        </div>
       ) : (
         <div className="right-panel-section lyrics-panel">
           {isRadioSession ? (
@@ -4893,7 +4945,7 @@ function RightSidebar({
               {lyricsStatus === "loading" ? (
                 <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />
               ) : lyricsLines.length ? (
-                <div className="lyrics-lines">
+                <div className="lyrics-lines" ref={lyricsScrollRef}>
                   {lyricsLines.map((line, index) => (
                     <p
                       className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
@@ -4931,6 +4983,35 @@ function RightSidebar({
           <small>{formatDuration(queueDragGhost.song.duration)}</small>
         </div>
       ) : null}
+      <div
+        className="right-sidebar-resize-handle"
+        role="separator"
+        aria-label="Resize right sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={RIGHT_SIDEBAR_MIN_WIDTH}
+        aria-valuemax={RIGHT_SIDEBAR_MAX_WIDTH}
+        aria-valuenow={rightSidebarWidth}
+        tabIndex={0}
+        onPointerDown={onResizeRightSidebar}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            onSetRightSidebarWidth(rightSidebarWidth + 16);
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            onSetRightSidebarWidth(rightSidebarWidth - 16);
+          }
+          if (event.key === "Home") {
+            event.preventDefault();
+            onSetRightSidebarWidth(RIGHT_SIDEBAR_MIN_WIDTH);
+          }
+          if (event.key === "End") {
+            event.preventDefault();
+            onSetRightSidebarWidth(RIGHT_SIDEBAR_MAX_WIDTH);
+          }
+        }}
+      />
     </aside>
   );
 }
@@ -4961,6 +5042,8 @@ function BrowserNavigation({
   forwardTarget,
   onNavigateBack,
   onNavigateForward,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: {
   canNavigateBack: boolean;
   canNavigateForward: boolean;
@@ -4968,12 +5051,24 @@ function BrowserNavigation({
   forwardTarget: BrowserSnapshot | null;
   onNavigateBack: () => void;
   onNavigateForward: () => void;
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
 }) {
   const backLabel = getSnapshotLabel(backTarget);
   const forwardLabel = getSnapshotLabel(forwardTarget);
 
   return (
     <div className="browser-nav" aria-label="Browser history">
+      <button
+        className="icon-button sidebar-topbar-toggle"
+        type="button"
+        aria-label={sidebarCollapsed ? "Show left sidebar" : "Hide left sidebar"}
+        aria-pressed={!sidebarCollapsed}
+        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        onClick={onToggleSidebar}
+      >
+        {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+      </button>
       <button
         className="icon-button"
         type="button"
@@ -5183,6 +5278,7 @@ function SettingsView({
   status,
   statusMessage,
   appSettings,
+  discordPresenceStatus,
   activeTab,
   setActiveTab,
   updateAppSettings,
@@ -5203,6 +5299,7 @@ function SettingsView({
   status: ConnectionStatus;
   statusMessage: string;
   appSettings: AppSettings;
+  discordPresenceStatus: DiscordPresenceStatus;
   activeTab: SettingsTab;
   setActiveTab: (tab: SettingsTab) => void;
   updateAppSettings: (settings: AppSettings) => void;
@@ -5433,6 +5530,30 @@ function SettingsView({
       </section> : null}
 
       {activeTab === "privacy" ? <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Discord</p>
+            <h3>Rich Presence</h3>
+          </div>
+          <MessageCircle size={18} />
+        </div>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.discordPresenceEnabled}
+            onChange={(event) => updateAppSettings({ ...appSettings, discordPresenceEnabled: event.target.checked })}
+          />
+          <span>Show what I’m playing on Discord</span>
+        </label>
+        <p className="settings-note">
+          Desktop only. Prism sends the current track, artist, album, and playback state directly to the Discord app running on this device. Nothing is sent to Prism or a Discord bot.
+        </p>
+        {appSettings.discordPresenceEnabled ? <p className={`settings-note ${discordPresenceStatus === "unavailable" ? "bad" : ""}`}>
+          {discordPresenceStatus === "connecting" ? "Connecting to Discord…" : null}
+          {discordPresenceStatus === "connected" ? "Connected to Discord." : null}
+          {discordPresenceStatus === "unavailable" ? "Discord is unavailable. Keep the desktop app open and try again." : null}
+          {discordPresenceStatus === "idle" ? "Start local playback to update Discord." : null}
+        </p> : null}
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Analytics</p>
@@ -6780,6 +6901,13 @@ function SongListHeader({
 function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }) {
   const available = new Set(letters);
 
+  function jumpToLetter(letter: string) {
+    const target = document.getElementById(alphaSectionId(prefix, letter));
+    const browserPanel = target?.closest<HTMLElement>(".browser-panel");
+
+    if (target && browserPanel) scrollElementWithin(browserPanel, target);
+  }
+
   return (
     <div className="alphabet-rail" aria-label="Alphabet jump">
       {ALPHABET.map((letter) => (
@@ -6787,7 +6915,7 @@ function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }
           type="button"
           key={letter}
           disabled={!available.has(letter)}
-          onClick={() => document.getElementById(alphaSectionId(prefix, letter))?.scrollIntoView({ block: "start", behavior: "smooth" })}
+          onClick={() => jumpToLetter(letter)}
           aria-label={`Jump to ${letter}`}
         >
           {letter}
