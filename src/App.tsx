@@ -520,25 +520,6 @@ function getSettingsTabLabel(tab: SettingsTab) {
   return labels[tab];
 }
 
-function getGreetingPeriod() {
-  const hour = new Date().getHours();
-  if (hour < 5) return "night";
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  if (hour < 22) return "evening";
-  return "night";
-}
-
-function formatDisplayName(value?: string) {
-  if (!value) return "there";
-  return value
-    .trim()
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function sortAlbumsChronologically(albums: Album[]) {
   return [...albums].sort((a, b) => {
     const yearA = a.year ?? Number.MAX_SAFE_INTEGER;
@@ -1961,33 +1942,6 @@ export function App() {
       () => queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0)),
       [currentIndex, queue],
     );
-  const libraryItems = useMemo(
-    () => [
-      { label: "Artists", value: hasConfig ? `${libraryData.artists.length} loaded` : "Needs server" },
-      { label: "Albums", value: hasConfig ? `${libraryData.albums.length} loaded` : "Needs server" },
-      { label: "Playlists", value: hasConfig ? `${libraryData.playlists.length} loaded` : "Needs server" },
-      { label: "Recently Added", value: hasConfig ? `${libraryData.recentAlbums.length} albums` : "Needs server" },
-      { label: "Recently Played", value: hasConfig ? `${libraryData.recentlyPlayedAlbums.length} albums` : "Needs server" },
-      {
-        label: "Favorites",
-        value: hasConfig
-          ? `${libraryData.favorites.artists.length + libraryData.favorites.albums.length + libraryData.favorites.songs.length} saved`
-          : "Needs server",
-      },
-    ],
-    [
-      hasConfig,
-      libraryData.albums.length,
-      libraryData.artists.length,
-      libraryData.favorites.albums.length,
-      libraryData.favorites.artists.length,
-      libraryData.favorites.songs.length,
-      libraryData.playlists.length,
-      libraryData.recentAlbums.length,
-      libraryData.recentlyPlayedAlbums.length,
-    ],
-  );
-
   function normalizeAppSettings(nextSettings: AppSettings) {
     const radioStationUrls = normalizeRadioStationList([...nextSettings.radioStationUrls, nextSettings.radioStationUrl]);
     const activeStation = normalizeStationUrl(nextSettings.radioStationUrl) || radioStationUrls[0] || "";
@@ -4134,7 +4088,6 @@ export function App() {
               radioWaveformBars={radioWaveformBars}
               tuneInRadio={tuneInRadio}
               onAddFirstRadioStation={tuneInRadio}
-              libraryItems={libraryItems}
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
@@ -4161,7 +4114,16 @@ export function App() {
               detailStatus={detailStatus}
               detailMessage={detailMessage}
               currentTrack={currentTrack}
+              currentTrackCoverUrl={currentTrackCoverUrl}
               isPlaying={isPlaying}
+              position={position}
+              duration={playerDuration || currentTrack?.duration || 0}
+              hasPrevious={currentIndex > 0}
+              hasNext={repeatMode === "all" || currentIndex < queue.length - 1}
+              onTogglePlayback={togglePlayback}
+              onPrevious={playPrevious}
+              onNext={() => playNext(false)}
+              onSeek={seekTo}
               favoriteIds={favoriteIds}
               favoriteBusyKey={favoriteBusyKey}
               onToggleFavorite={toggleFavorite}
@@ -6051,7 +6013,6 @@ function LibraryView({
   radioWaveformBars,
   tuneInRadio,
   onAddFirstRadioStation,
-  libraryItems,
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
@@ -6077,7 +6038,16 @@ function LibraryView({
   detailStatus,
   detailMessage,
   currentTrack,
+  currentTrackCoverUrl,
   isPlaying,
+  position,
+  duration,
+  hasPrevious,
+  hasNext,
+  onTogglePlayback,
+  onPrevious,
+  onNext,
+  onSeek,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
@@ -6112,7 +6082,6 @@ function LibraryView({
   radioWaveformBars: number[];
   tuneInRadio: () => Promise<void>;
   onAddFirstRadioStation: (stationUrl: string) => Promise<void>;
-  libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
@@ -6138,7 +6107,16 @@ function LibraryView({
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
   currentTrack: Song | null;
+  currentTrackCoverUrl: string | null;
   isPlaying: boolean;
+  position: number;
+  duration: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onTogglePlayback: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onSeek: (position: number) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -6268,13 +6246,22 @@ function LibraryView({
           {activeView === "overview" ? (
             <OverviewHome
               config={config}
-              libraryItems={libraryItems}
               recentAlbums={recentAlbums}
+              recentlyPlayedAlbums={recentlyPlayedAlbums}
               currentTrack={currentTrack}
+              currentTrackCoverUrl={currentTrackCoverUrl}
               isPlaying={isPlaying}
+              position={position}
+              duration={duration}
               favoriteIds={favoriteIds}
               favoriteBusyKey={favoriteBusyKey}
               onToggleFavorite={onToggleFavorite}
+              hasPrevious={hasPrevious}
+              hasNext={hasNext}
+              onTogglePlayback={onTogglePlayback}
+              onPrevious={onPrevious}
+              onNext={onNext}
+              onSeek={onSeek}
               onSelectLibraryView={onSelectLibraryView}
               onOpenAlbum={onOpenAlbum}
               onPlayAlbum={onPlayAlbum}
@@ -6388,111 +6375,101 @@ function LibraryView({
 
 function OverviewHome({
   config,
-  libraryItems,
   recentAlbums,
+  recentlyPlayedAlbums,
   currentTrack,
+  currentTrackCoverUrl,
   isPlaying,
+  position,
+  duration,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  hasPrevious,
+  hasNext,
+  onTogglePlayback,
+  onPrevious,
+  onNext,
+  onSeek,
   onSelectLibraryView,
   onOpenAlbum,
   onPlayAlbum,
 }: {
   config: NavidromeConfig | null;
-  libraryItems: Array<{ label: string; value: string }>;
   recentAlbums: Album[];
+  recentlyPlayedAlbums: Album[];
   currentTrack: Song | null;
+  currentTrackCoverUrl: string | null;
   isPlaying: boolean;
+  position: number;
+  duration: number;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onTogglePlayback: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onSeek: (position: number) => void;
   onSelectLibraryView: (view: View) => void;
   onOpenAlbum: (album: Album) => void;
   onPlayAlbum: (album: Album) => void;
 }) {
-  const shortcutItems = libraryItems;
-  const visualAlbums = recentAlbums.slice(0, 5);
-  const featuredAlbum = visualAlbums[0] ?? null;
-  const featuredCoverUrl = config && featuredAlbum ? buildCoverArtUrl(config, featuredAlbum.coverArt, "520") : null;
-  const greeting = `Good ${getGreetingPeriod()}, ${formatDisplayName(config?.username)}`;
-  const librarySummary = libraryItems
-    .slice(0, 3)
-    .map((item) => `${item.value.replace(" loaded", "")} ${item.label.toLowerCase()}`)
-    .join(" · ");
-  const currentTrackSummary = currentTrack ? `${currentTrack.title} - ${currentTrack.artist ?? "Unknown artist"}` : "";
-  const shortcutMeta: Record<string, ReactNode> = {
-    Artists: <UserRound size={18} />,
-    Albums: <Disc3 size={18} />,
-    Playlists: <ListMusic size={18} />,
-    "Recently Added": <Plus size={18} />,
-    "Recently Played": <History size={18} />,
-    Favorites: <Star size={18} />,
-  };
+  const visualAlbums = (recentlyPlayedAlbums.length ? recentlyPlayedAlbums : recentAlbums).slice(0, 8);
+  const hasTrack = Boolean(currentTrack);
+  const progress = Math.min(position, Math.max(duration, 1));
 
   return (
     <div className="home-view">
-      <section className="home-hero">
-        <div className="home-hero-copy">
-          <p className="eyebrow">Home</p>
-          <h3>{greeting}</h3>
-          <p className="home-library-state">{config ? librarySummary : "Connect Navidrome to load your library."}</p>
-          {isPlaying && currentTrackSummary ? <p className="home-now-playing">Now playing: {currentTrackSummary}</p> : null}
-        </div>
-        <div className="home-cover-stage">
-          {visualAlbums.map((album, index) => {
-            const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, index === 0 ? "520" : "260") : null;
-
-            return (
-              <button
-                className={`home-cover-peek peek-${index + 1}`}
-                type="button"
-                key={album.id}
-                onClick={() => onOpenAlbum(album)}
-                aria-label={`Open ${album.name}`}
-              >
-                <CoverArt src={coverUrl} label={album.name} className="home-cover-art" />
-              </button>
-            );
-          })}
-          {!visualAlbums.length ? <CoverArt src={featuredCoverUrl} label="Prism library" className="home-cover-art home-cover-empty" /> : null}
-        </div>
-      </section>
-
-      <section>
+      <section className="home-listening-ribbon" aria-labelledby="recent-listening-title">
         <div className="section-label">
-          <h4>Library</h4>
+          <div>
+            <p className="eyebrow">Your listening</p>
+            <h4 id="recent-listening-title">Recently played</h4>
+          </div>
+          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("recentlyPlayed")}>View history</button>
         </div>
-        <div className="home-shortcuts">
-          {shortcutItems.map((item) => (
-            <button
-              className="home-shortcut"
-              type="button"
-              key={item.label}
-              onClick={() => {
-                if (item.label === "Albums") onSelectLibraryView("albums");
-                if (item.label === "Artists") onSelectLibraryView("artists");
-                if (item.label === "Playlists") onSelectLibraryView("playlists");
-                if (item.label === "Recently Added") onSelectLibraryView("recentlyAdded");
-                if (item.label === "Recently Played") onSelectLibraryView("recentlyPlayed");
-                if (item.label === "Favorites") onSelectLibraryView("favorites");
-              }}
-            >
-              <span className="home-shortcut-icon">{shortcutMeta[item.label]}</span>
-              <span className="home-shortcut-copy">
-                <strong>{item.label}</strong>
-                <small>{item.value}</small>
-              </span>
-              <ChevronRight size={16} />
+        <div className="home-art-ribbon">
+          {visualAlbums.map((album) => (
+            <button className="home-ribbon-album" type="button" key={album.id} onClick={() => onOpenAlbum(album)} aria-label={`Open ${album.name}`}>
+              <CoverArt src={config ? buildCoverArtUrl(config, album.coverArt, "240") : null} label={album.name} className="home-ribbon-cover" />
             </button>
           ))}
+          {!visualAlbums.length ? <p className="home-ribbon-empty">Play something to make this home feel like yours.</p> : null}
+        </div>
+      </section>
+
+      <section className={`home-now-playing-hero ${hasTrack ? "has-track" : ""}`}>
+        <div className="home-now-playing-art">
+          <CoverArt src={currentTrackCoverUrl} label={currentTrack?.title ?? "Prism Player"} className="home-now-playing-cover" />
+        </div>
+        <div className="home-now-playing-copy">
+          <p className="eyebrow">{isPlaying ? "Now playing" : hasTrack ? "Paused" : "Ready when you are"}</p>
+          <h3>{currentTrack?.title ?? "Your next listen starts here"}</h3>
+          <p>{currentTrack ? `${currentTrack.artist ?? "Unknown artist"}${currentTrack.album ? ` · ${currentTrack.album}` : ""}` : config ? "Pick an album, artist, or song from your library." : "Connect your Navidrome server to bring your music home."}</p>
+          <div className="home-playback-controls">
+            <button type="button" aria-label="Previous" onClick={onPrevious} disabled={!hasPrevious}><SkipBack size={18} /></button>
+            <button className="home-primary-play" type="button" aria-label={isPlaying ? "Pause" : "Play"} onClick={onTogglePlayback} disabled={!hasTrack}>
+              {isPlaying ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
+            </button>
+            <button type="button" aria-label="Next" onClick={onNext} disabled={!hasNext}><SkipForward size={18} /></button>
+          </div>
+          <div className="home-seek-row">
+            <span>{formatDuration(position)}</span>
+            <input type="range" min="0" max={Math.max(duration, 1)} step="1" value={progress} onChange={(event) => onSeek(Number(event.target.value))} disabled={!hasTrack || !duration} aria-label="Seek" />
+            <span>{formatDuration(duration)}</span>
+          </div>
         </div>
       </section>
 
       <section>
         <div className="section-label">
-          <h4>Recently added</h4>
-          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("albums")}>
+          <div>
+            <p className="eyebrow">Fresh in your library</p>
+            <h4>Recently added</h4>
+          </div>
+          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("recentlyAdded")}>
             View albums
           </button>
         </div>
