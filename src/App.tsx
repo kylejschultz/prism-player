@@ -57,7 +57,7 @@ type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
-type RightPanelTab = "queue" | "nowPlaying" | "lyrics";
+type RightPanelTab = "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
@@ -377,6 +377,10 @@ const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
 const SIDEBAR_MIN_WIDTH = 208;
 const SIDEBAR_MAX_WIDTH = 360;
 const SIDEBAR_DEFAULT_WIDTH = 248;
+const RIGHT_SIDEBAR_WIDTH_KEY = "prism-player.rightSidebarWidth";
+const RIGHT_SIDEBAR_MIN_WIDTH = 280;
+const RIGHT_SIDEBAR_MAX_WIDTH = 520;
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 338;
 const INSTALL_ID_KEY = "prism-player.installId";
 const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
@@ -784,7 +788,7 @@ function loadStoredNumber(key: string, fallback: number, min: number, max: numbe
 function loadStoredRightPanelTab(): RightPanelTab {
   try {
     const storedTab = localStorage.getItem(RIGHT_PANEL_TAB_KEY);
-    return storedTab === "nowPlaying" || storedTab === "lyrics" ? storedTab : "queue";
+    return storedTab === "lyrics" ? storedTab : "queue";
   } catch {
     return "queue";
   }
@@ -1745,6 +1749,12 @@ export function App() {
     SIDEBAR_MIN_WIDTH,
     SIDEBAR_MAX_WIDTH,
   ));
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(() => loadStoredNumber(
+    RIGHT_SIDEBAR_WIDTH_KEY,
+    RIGHT_SIDEBAR_DEFAULT_WIDTH,
+    RIGHT_SIDEBAR_MIN_WIDTH,
+    RIGHT_SIDEBAR_MAX_WIDTH,
+  ));
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
@@ -2191,6 +2201,12 @@ export function App() {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
   }
 
+  function setRightSidebarWidthState(nextWidth: number) {
+    const width = clampNumber(nextWidth, RIGHT_SIDEBAR_MIN_WIDTH, RIGHT_SIDEBAR_MAX_WIDTH);
+    setRightSidebarWidth(width);
+    localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(width));
+  }
+
   function beginSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
     if (sidebarCollapsed) return;
 
@@ -2208,6 +2224,31 @@ export function App() {
     const handleEnd = () => {
       document.body.classList.remove("sidebar-resizing");
       localStorage.setItem(SIDEBAR_WIDTH_KEY, String(nextWidth));
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleEnd, { once: true });
+    window.addEventListener("pointercancel", handleEnd, { once: true });
+  }
+
+  function beginRightSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const initialWidth = rightSidebarWidth;
+    const startX = event.clientX;
+    let nextWidth = initialWidth;
+
+    document.body.classList.add("right-sidebar-resizing");
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      nextWidth = clampNumber(initialWidth + startX - moveEvent.clientX, RIGHT_SIDEBAR_MIN_WIDTH, RIGHT_SIDEBAR_MAX_WIDTH);
+      setRightSidebarWidth(nextWidth);
+    };
+    const handleEnd = () => {
+      document.body.classList.remove("right-sidebar-resizing");
+      localStorage.setItem(RIGHT_SIDEBAR_WIDTH_KEY, String(nextWidth));
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleEnd);
       window.removeEventListener("pointercancel", handleEnd);
@@ -3735,7 +3776,7 @@ export function App() {
       className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${coverWashUrl ? "with-cover-wash" : ""}`}
-      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
       {coverWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${coverWashUrl})` }} aria-hidden="true" /> : null}
@@ -3908,16 +3949,6 @@ export function App() {
             <Settings size={18} />
             Settings
           </button>
-          <button
-            className="player-panel-toggle sidebar-collapse-toggle"
-            type="button"
-            aria-label="Hide left sidebar"
-            aria-pressed={true}
-            title="Hide sidebar"
-            onClick={() => setSidebarCollapsedState(true)}
-          >
-            <PanelLeftClose size={17} />
-          </button>
         </div>
         <div
           className="sidebar-resize-handle"
@@ -3959,6 +3990,8 @@ export function App() {
             forwardTarget={forwardStack[0] ?? null}
             onNavigateBack={navigateBack}
             onNavigateForward={navigateForward}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleSidebar={() => setSidebarCollapsedState(!sidebarCollapsed)}
           />
           <SearchBox
             query={searchQuery}
@@ -3974,6 +4007,16 @@ export function App() {
             onOpenPlaylist={openPlaylist}
             onPlaySong={playSong}
           />
+          <button
+            className="icon-button topbar-right-sidebar-toggle"
+            type="button"
+            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
+            aria-pressed={rightPanelOpen}
+            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
+            onClick={() => setRightPanelState(!rightPanelOpen)}
+          >
+            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
+          </button>
         </header>
 
         <div className="workspace-viewport">
@@ -4108,18 +4151,6 @@ export function App() {
           }}
         />
 
-        {sidebarCollapsed ? (
-          <button
-            className="player-panel-toggle player-sidebar-toggle"
-            type="button"
-            aria-label="Show left sidebar"
-            aria-pressed={false}
-            title="Show sidebar"
-            onClick={() => setSidebarCollapsedState(false)}
-          >
-            <PanelLeftOpen size={17} />
-          </button>
-        ) : null}
         <div className={`now-playing ${footerTrack || isRadioPresentation ? "" : "empty"}`}>
           {isRadioPresentation ? (
             radioCoverUrl ? (
@@ -4349,16 +4380,6 @@ export function App() {
               aria-label="Volume"
             />
           </div>
-          <button
-            className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
-            type="button"
-            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
-            aria-pressed={rightPanelOpen}
-            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
-            onClick={() => setRightPanelState(!rightPanelOpen)}
-          >
-            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </button>
         </div>
       </footer>
 
@@ -4366,39 +4387,31 @@ export function App() {
         <RightSidebar
           tab={rightPanelTab}
           setTab={selectRightPanelTab}
-          config={config}
           queue={queue}
           displayedQueue={displayedQueue}
           currentIndex={currentIndex}
           currentTrack={currentTrack}
-          radioStationState={radioStationState}
           radioNowPlaying={radioNowPlaying}
           radioUpcoming={radioUpcoming}
           radioHistory={radioHistory}
-          radioCoverUrl={radioCoverUrl}
-          radioStationUrl={radioStationUrl}
           radioStatus={radioStatus}
-          radioElapsed={radioElapsed}
           isRadioPlaying={isRadioPlaying}
-          playerDuration={playerDuration}
           position={position}
           isPlaying={isPlaying}
           lyricsStatus={lyricsStatus}
           lyricsLines={lyricsLines}
           lyricsMessage={lyricsMessage}
-          favoriteIds={favoriteIds}
-          favoriteBusyKey={favoriteBusyKey}
           draggedQueueIndex={draggedQueueIndex}
           dragOverQueueIndex={dragOverQueueIndex}
           setDraggedQueueIndex={setDraggedQueueIndex}
           setDragOverQueueIndex={setDragOverQueueIndex}
-      onDropQueueItem={dropQueueItem}
+          rightSidebarWidth={rightSidebarWidth}
+          onResizeRightSidebar={beginRightSidebarResize}
+          onSetRightSidebarWidth={setRightSidebarWidthState}
+          onDropQueueItem={dropQueueItem}
           onSelectQueueTrack={selectQueueTrack}
           onRemoveQueueItem={removeQueueItem}
           onClearQueue={clearQueue}
-          onToggleFavorite={toggleFavorite}
-          onOpenAlbumById={(albumId, label) => void openAlbumById(albumId, label)}
-          onOpenArtistById={(artistId, label) => void openArtistById(artistId, label)}
         />
       ) : null}
 
@@ -4579,81 +4592,63 @@ export function App() {
 function RightSidebar({
   tab,
   setTab,
-  config,
   queue,
   displayedQueue,
   currentIndex,
   currentTrack,
-  radioStationState,
   radioNowPlaying,
   radioUpcoming,
   radioHistory,
-  radioCoverUrl,
-  radioStationUrl,
   radioStatus,
-  radioElapsed,
   isRadioPlaying,
-  playerDuration,
   position,
   isPlaying,
   lyricsStatus,
   lyricsLines,
   lyricsMessage,
-  favoriteIds,
-  favoriteBusyKey,
   draggedQueueIndex,
   dragOverQueueIndex,
   setDraggedQueueIndex,
   setDragOverQueueIndex,
+  rightSidebarWidth,
+  onResizeRightSidebar,
+  onSetRightSidebarWidth,
   onDropQueueItem,
   onSelectQueueTrack,
   onRemoveQueueItem,
   onClearQueue,
-  onToggleFavorite,
-  onOpenAlbumById,
-  onOpenArtistById,
 }: {
   tab: RightPanelTab;
   setTab: (tab: RightPanelTab) => void;
-  config: NavidromeConfig | null;
   queue: Song[];
   displayedQueue: Array<{ song: Song; index: number }>;
   currentIndex: number;
   currentTrack: Song | null;
-  radioStationState: RadioStationState | null;
   radioNowPlaying: RadioTrack | null;
   radioUpcoming: RadioTrack[];
   radioHistory: RadioTrack[];
-  radioCoverUrl: string | null;
-  radioStationUrl: string;
   radioStatus: RadioStatus;
-  radioElapsed: number;
   isRadioPlaying: boolean;
-  playerDuration: number;
   position: number;
   isPlaying: boolean;
   lyricsStatus: LyricsStatus;
   lyricsLines: LyricLine[];
   lyricsMessage: string;
-  favoriteIds: FavoriteIds;
-  favoriteBusyKey: string;
   draggedQueueIndex: number | null;
   dragOverQueueIndex: number | null;
   setDraggedQueueIndex: (index: number | null) => void;
   setDragOverQueueIndex: (index: number | null) => void;
+  rightSidebarWidth: number;
+  onResizeRightSidebar: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onSetRightSidebarWidth: (width: number) => void;
   onDropQueueItem: (toIndex: number, fromIndex?: number) => void;
   onSelectQueueTrack: (index: number) => void;
   onRemoveQueueItem: (index: number) => void;
   onClearQueue: () => void;
-  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
-  onOpenAlbumById: (albumId: string, label: string) => void;
-  onOpenArtistById: (artistId: string, label: string) => void;
 }) {
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
-  const radioStationLabel = radioStationName(radioStationState, radioStationUrl);
-  const radioDuration = radioNowPlaying?.duration ?? 0;
   const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const recentRadioHistory = radioHistory.slice(0, 5).reverse();
@@ -4689,23 +4684,10 @@ function RightSidebar({
   }, [activeLyricIndex, tab]);
 
   useEffect(() => {
-    if (isRadioSession && tab === "nowPlaying") setTab("queue");
-  }, [isRadioSession, setTab, tab]);
-
-  useEffect(() => {
     latestDragOverQueueIndexRef.current = dragOverQueueIndex;
   }, [dragOverQueueIndex]);
 
-  const progressLabel =
-    isRadioPlaying && radioNowPlaying
-      ? radioDuration
-        ? `${formatDuration(radioElapsed)} / ${formatDuration(radioDuration)}`
-        : "Live radio"
-      : currentTrack && (playerDuration || currentTrack.duration)
-      ? `${formatDuration(position)} / ${formatDuration(playerDuration || currentTrack.duration)}`
-      : "Nothing playing";
-  const nowPlayingCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "720") : null;
-  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : tab === "lyrics" ? "Lyrics" : "Now Playing";
+  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : "Lyrics";
   const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
     const queueIndexFromPointer = (event: PointerEvent) => {
       const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
@@ -4781,17 +4763,11 @@ function RightSidebar({
         </div>
       </div>
 
-      <div className={`right-tabs ${isRadioSession ? "radio-tabs" : ""}`} role="tablist" aria-label="Right panel">
+      <div className="right-tabs" role="tablist" aria-label="Right panel">
         <button className={tab === "queue" ? "active" : ""} type="button" onClick={() => setTab("queue")}>
           <ListMusic size={15} />
           {queueTabLabel}
         </button>
-        {!isRadioSession ? (
-          <button className={tab === "nowPlaying" ? "active" : ""} type="button" onClick={() => setTab("nowPlaying")}>
-            <Music2 size={15} />
-            Now Playing
-          </button>
-        ) : null}
         <button className={tab === "lyrics" ? "active" : ""} type="button" onClick={() => setTab("lyrics")}>
           <Music2 size={15} />
           Lyrics
@@ -4891,90 +4867,6 @@ function RightSidebar({
             </p>
           ) : null}
         </div>
-      ) : tab === "nowPlaying" ? (
-        <div className="right-panel-section now-playing-panel">
-          {isRadioPlaying ? (
-            <>
-              <CoverArt
-                src={radioCoverUrl}
-                label={radioNowPlaying?.title ?? radioStationLabel}
-                className="right-now-cover"
-                fallbackIcon={<RadioTower size={42} />}
-              />
-              <div className="right-now-copy">
-                <p className="eyebrow">{radioStatus === "playing" ? "On Air" : "Radio"}</p>
-                <h3>{radioNowPlaying?.title ?? "Live radio"}</h3>
-                <span className="track-link">{radioNowPlaying?.artist ?? radioStationLabel}</span>
-                {radioNowPlaying?.album ? <span className="track-link">{radioNowPlaying.album}</span> : null}
-              </div>
-              <div className="right-now-stats">
-                <span>{progressLabel}</span>
-                <span>{radioStationLabel}</span>
-              </div>
-            </>
-          ) : currentTrack ? (
-            <>
-              <CoverArt
-                src={nowPlayingCoverUrl}
-                label={currentTrack.title}
-                className="right-now-cover"
-                fallbackIcon={<Music2 size={42} />}
-              />
-              <div className="right-now-copy">
-                <p className="eyebrow">{isPlaying ? "Playing" : "Paused"}</p>
-                <h3>{currentTrack.title}</h3>
-                <button
-                  className="track-link"
-                  type="button"
-                  onClick={() => currentTrack.artistId && onOpenArtistById(currentTrack.artistId, currentTrack.artist ?? "artist")}
-                  disabled={!currentTrack.artistId}
-                >
-                  {currentTrack.artist ?? "Unknown artist"}
-                </button>
-                <button
-                  className="track-link"
-                  type="button"
-                  onClick={() => currentTrack.albumId && onOpenAlbumById(currentTrack.albumId, currentTrack.album ?? currentTrack.title)}
-                  disabled={!currentTrack.albumId}
-                >
-                  {currentTrack.album ?? "Unknown album"}
-                </button>
-              </div>
-              <div className="right-now-stats">
-                <span>{progressLabel}</span>
-                <span>{queue.length ? `${currentIndex + 1} of ${queue.length}` : "Queue empty"}</span>
-              </div>
-              <div className="right-now-actions">
-                <FavoriteButton
-                  active={favoriteIds.songs.has(currentTrack.id)}
-                  busy={favoriteBusyKey === `song:${currentTrack.id}`}
-                  label={currentTrack.title}
-                  onToggle={(favorite) => onToggleFavorite("song", currentTrack.id, favorite)}
-                />
-                <button
-                  className="secondary-button compact-button"
-                  type="button"
-                  disabled={!currentTrack.albumId}
-                  onClick={() => currentTrack.albumId && onOpenAlbumById(currentTrack.albumId, currentTrack.album ?? currentTrack.title)}
-                >
-                  <Disc3 size={15} />
-                  Album
-                </button>
-                <button
-                  className="secondary-button compact-button"
-                  type="button"
-                  disabled={!currentTrack.artistId}
-                  onClick={() => currentTrack.artistId && onOpenArtistById(currentTrack.artistId, currentTrack.artist ?? "artist")}
-                >
-                  <UserRound size={15} />
-                  Artist
-                </button>
-              </div>
-            </>
-          ) : (
-            <EmptyPanel icon={<Music2 size={20} />} text="Nothing playing yet." />
-          )}
-        </div>
       ) : (
         <div className="right-panel-section lyrics-panel">
           {isRadioSession ? (
@@ -5026,6 +4918,35 @@ function RightSidebar({
           <small>{formatDuration(queueDragGhost.song.duration)}</small>
         </div>
       ) : null}
+      <div
+        className="right-sidebar-resize-handle"
+        role="separator"
+        aria-label="Resize right sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={RIGHT_SIDEBAR_MIN_WIDTH}
+        aria-valuemax={RIGHT_SIDEBAR_MAX_WIDTH}
+        aria-valuenow={rightSidebarWidth}
+        tabIndex={0}
+        onPointerDown={onResizeRightSidebar}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            onSetRightSidebarWidth(rightSidebarWidth + 16);
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            onSetRightSidebarWidth(rightSidebarWidth - 16);
+          }
+          if (event.key === "Home") {
+            event.preventDefault();
+            onSetRightSidebarWidth(RIGHT_SIDEBAR_MIN_WIDTH);
+          }
+          if (event.key === "End") {
+            event.preventDefault();
+            onSetRightSidebarWidth(RIGHT_SIDEBAR_MAX_WIDTH);
+          }
+        }}
+      />
     </aside>
   );
 }
@@ -5056,6 +4977,8 @@ function BrowserNavigation({
   forwardTarget,
   onNavigateBack,
   onNavigateForward,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: {
   canNavigateBack: boolean;
   canNavigateForward: boolean;
@@ -5063,12 +4986,24 @@ function BrowserNavigation({
   forwardTarget: BrowserSnapshot | null;
   onNavigateBack: () => void;
   onNavigateForward: () => void;
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
 }) {
   const backLabel = getSnapshotLabel(backTarget);
   const forwardLabel = getSnapshotLabel(forwardTarget);
 
   return (
     <div className="browser-nav" aria-label="Browser history">
+      <button
+        className="icon-button sidebar-topbar-toggle"
+        type="button"
+        aria-label={sidebarCollapsed ? "Show left sidebar" : "Hide left sidebar"}
+        aria-pressed={!sidebarCollapsed}
+        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        onClick={onToggleSidebar}
+      >
+        {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+      </button>
       <button
         className="icon-button"
         type="button"
