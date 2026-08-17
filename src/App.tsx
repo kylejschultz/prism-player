@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -59,6 +61,7 @@ type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
 
@@ -98,6 +101,10 @@ function isVersionNewer(candidate: string, current: string) {
   return false;
 }
 
+function isTauriDesktopApp() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 type NavidromeConfig = {
   serverUrl: string;
   username: string;
@@ -110,6 +117,7 @@ type AppSettings = {
   defaultArtistView: ArtistViewMode;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
+  discordPresenceEnabled: boolean;
   updateDismissedVersion: string;
   coverWashEnabled: boolean;
   lowPerformanceMode: boolean;
@@ -386,7 +394,7 @@ const ANALYTICS_LAST_PING_KEY = "prism-player.analyticsLastPing";
 const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/releases/latest";
 const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
 const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
-const PRISM_DISCORD_URL = "https://discord.gg/aDEBQq3XtN";
+const PRISM_DISCORD_URL = "https://discord.gg/hzeAqu7EwF";
 const APP_VERSION = packageJson.version;
 const APP_COMMIT_SHA = __APP_COMMIT_SHA__;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
@@ -432,6 +440,7 @@ const defaultSettings: AppSettings = {
   defaultArtistView: "list",
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
+  discordPresenceEnabled: false,
   updateDismissedVersion: "",
   coverWashEnabled: true,
   lowPerformanceMode: false,
@@ -591,6 +600,7 @@ function loadStoredSettings(): AppSettings {
       defaultArtistView: parsed.defaultArtistView === "art" ? "art" : "list",
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
+      discordPresenceEnabled: Boolean(parsed.discordPresenceEnabled),
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
@@ -1826,6 +1836,8 @@ export function App() {
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
+  const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
+  const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
@@ -2954,6 +2966,7 @@ export function App() {
     if (!audio || !Number.isFinite(nextPosition)) return;
     audio.currentTime = nextPosition;
     setPosition(nextPosition);
+    setDiscordPresenceSyncNonce((nonce) => nonce + 1);
   }
 
   function handleLoadedMetadata(duration: number) {
@@ -3189,6 +3202,57 @@ export function App() {
     setSetupOpen(true);
     setActiveView("settings");
   }
+
+  useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    if (!appSettings.discordPresenceEnabled) {
+      setDiscordPresenceStatus("idle");
+      void invoke("clear_discord_presence").catch(() => undefined);
+      return;
+    }
+
+    const radioPresence = activePlaybackSource === "radio" && isRadioPlaying && radioNowPlaying;
+    const localPresence = activePlaybackSource === "local" && currentTrack;
+
+    if (!radioPresence && !localPresence) {
+      setDiscordPresenceStatus("idle");
+      void invoke("clear_discord_presence").catch(() => undefined);
+      return;
+    }
+
+    const track = radioPresence || localPresence;
+    if (!track) return;
+
+    setDiscordPresenceStatus("connecting");
+    void invoke("update_discord_presence", {
+      presence: {
+        title: track.title ?? "Live radio",
+        artist: track.artist ?? (radioPresence ? "Subwave" : "Unknown artist"),
+        album: track.album ?? null,
+        station: radioPresence ? radioStationName(radioStationState, radioStationUrl) : null,
+        playing: radioPresence ? true : isPlaying,
+        startedAt: radioPresence || !isPlaying ? null : Date.now() - Math.round(position * 1000),
+      },
+    }).catch(() => undefined);
+  }, [activePlaybackSource, appSettings.discordPresenceEnabled, currentTrack?.id, discordPresenceSyncNonce, isPlaying, isRadioPlaying, radioNowPlaying?.artist, radioNowPlaying?.album, radioNowPlaying?.title, radioStationState, radioStationUrl]);
+
+  useEffect(() => () => {
+    if (isTauriDesktopApp()) void invoke("clear_discord_presence").catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    let unlisten: (() => void) | undefined;
+    void listen<{ state: DiscordPresenceStatus }>("discord-presence-status", (event) => {
+      setDiscordPresenceStatus(event.payload.state);
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     if (config) {
@@ -4037,6 +4101,7 @@ export function App() {
               status={status}
               statusMessage={statusMessage}
               appSettings={appSettings}
+              discordPresenceStatus={discordPresenceStatus}
               activeTab={settingsTab}
               setActiveTab={selectSettingsTab}
               updateAppSettings={updateAppSettings}
@@ -5213,6 +5278,7 @@ function SettingsView({
   status,
   statusMessage,
   appSettings,
+  discordPresenceStatus,
   activeTab,
   setActiveTab,
   updateAppSettings,
@@ -5233,6 +5299,7 @@ function SettingsView({
   status: ConnectionStatus;
   statusMessage: string;
   appSettings: AppSettings;
+  discordPresenceStatus: DiscordPresenceStatus;
   activeTab: SettingsTab;
   setActiveTab: (tab: SettingsTab) => void;
   updateAppSettings: (settings: AppSettings) => void;
@@ -5463,6 +5530,30 @@ function SettingsView({
       </section> : null}
 
       {activeTab === "privacy" ? <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Discord</p>
+            <h3>Rich Presence</h3>
+          </div>
+          <MessageCircle size={18} />
+        </div>
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.discordPresenceEnabled}
+            onChange={(event) => updateAppSettings({ ...appSettings, discordPresenceEnabled: event.target.checked })}
+          />
+          <span>Show what I’m playing on Discord</span>
+        </label>
+        <p className="settings-note">
+          Desktop only. Prism sends the current track, artist, album, and playback state directly to the Discord app running on this device. Nothing is sent to Prism or a Discord bot.
+        </p>
+        {appSettings.discordPresenceEnabled ? <p className={`settings-note ${discordPresenceStatus === "unavailable" ? "bad" : ""}`}>
+          {discordPresenceStatus === "connecting" ? "Connecting to Discord…" : null}
+          {discordPresenceStatus === "connected" ? "Connected to Discord." : null}
+          {discordPresenceStatus === "unavailable" ? "Discord is unavailable. Keep the desktop app open and try again." : null}
+          {discordPresenceStatus === "idle" ? "Start local playback to update Discord." : null}
+        </p> : null}
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Analytics</p>
