@@ -6397,6 +6397,9 @@ function OverviewHome({
   return (
     <div className="home-view">
       <section className={`home-now-playing-hero ${hasTrack ? "has-track" : ""}`}>
+        {currentTrackCoverUrl ? (
+          <div className="home-cover-wash" style={{ backgroundImage: `url(${currentTrackCoverUrl})` }} aria-hidden="true" />
+        ) : null}
         <div className="home-now-playing-art">
           <CoverArt src={currentTrackCoverUrl} label={currentTrack?.title ?? "Prism Player"} className="home-now-playing-cover" />
         </div>

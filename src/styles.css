@@ -1325,6 +1325,27 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
     linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012));
 }
 
+.home-cover-wash {
+  position: absolute;
+  inset: -16%;
+  z-index: 0;
+  pointer-events: none;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.58;
+  filter: blur(46px) saturate(145%);
+  transform: scale(1.08);
+}
+
+.home-cover-wash::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    linear-gradient(112deg, rgba(13, 13, 12, 0.48), rgba(13, 13, 12, 0.68) 58%, rgba(13, 13, 12, 0.5)),
+    radial-gradient(circle at 78% 20%, rgba(240, 210, 123, 0.12), transparent 44%);
+}
+
 .home-now-playing-hero::after {
   content: "";
   position: absolute;
