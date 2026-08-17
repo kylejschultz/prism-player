@@ -4995,6 +4995,16 @@ function BrowserNavigation({
   return (
     <div className="browser-nav" aria-label="Browser history">
       <button
+        className="icon-button sidebar-topbar-toggle"
+        type="button"
+        aria-label={sidebarCollapsed ? "Show left sidebar" : "Hide left sidebar"}
+        aria-pressed={!sidebarCollapsed}
+        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        onClick={onToggleSidebar}
+      >
+        {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+      </button>
+      <button
         className="icon-button"
         type="button"
         onClick={onNavigateBack}
@@ -5013,16 +5023,6 @@ function BrowserNavigation({
         title={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
       >
         <ChevronRight size={17} />
-      </button>
-      <button
-        className="icon-button sidebar-topbar-toggle"
-        type="button"
-        aria-label={sidebarCollapsed ? "Show left sidebar" : "Hide left sidebar"}
-        aria-pressed={!sidebarCollapsed}
-        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-        onClick={onToggleSidebar}
-      >
-        {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
       </button>
     </div>
   );
