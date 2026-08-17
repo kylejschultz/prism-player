@@ -14,6 +14,7 @@ import {
   Disc3,
   Download,
   ExternalLink,
+  Maximize2,
   History,
   Heart,
   Home,
@@ -52,7 +53,7 @@ import {
 import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
-type View = LibraryViewMode | "radio" | "search" | "settings";
+type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
 type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
@@ -498,6 +499,7 @@ function getViewLabel(view: View) {
     recentlyAdded: "Recently Added",
     recentlyPlayed: "Recently Played",
     favorites: "Favorites",
+    nowPlaying: "Now Playing",
     radio: "Radio",
     search: "Search",
     settings: "Settings",
@@ -4115,12 +4117,6 @@ export function App() {
               currentTrack={currentTrack}
               currentTrackCoverUrl={currentTrackCoverUrl}
               isPlaying={isPlaying}
-              activePlaybackSource={activePlaybackSource}
-              radioNowPlaying={radioNowPlaying}
-              radioCoverUrl={radioCoverUrl}
-              radioStationName={radioStationName(radioStationState, radioStationUrl)}
-              hasRadioStation={Boolean(radioStationUrl)}
-              isRadioPlaying={isRadioPlaying}
               position={position}
               duration={playerDuration || currentTrack?.duration || 0}
               hasPrevious={currentIndex > 0}
@@ -4191,7 +4187,10 @@ export function App() {
               <CoverArt src={null} label="Radio" className="player-cover" fallbackIcon={<RadioTower size={20} />} />
             )
           ) : footerTrack ? (
-            <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
+            <button className="player-now-playing-trigger" type="button" onClick={() => selectView("nowPlaying")} aria-label={`Open Now Playing for ${footerTrack.title}`}>
+              <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
+              <Maximize2 size={14} aria-hidden="true" />
+            </button>
           ) : null}
           <div className="now-playing-copy">
             {isRadioPresentation ? (
@@ -6044,12 +6043,6 @@ function LibraryView({
   currentTrack,
   currentTrackCoverUrl,
   isPlaying,
-  activePlaybackSource,
-  radioNowPlaying,
-  radioCoverUrl,
-  radioStationName,
-  hasRadioStation,
-  isRadioPlaying,
   position,
   duration,
   hasPrevious,
@@ -6118,12 +6111,6 @@ function LibraryView({
   currentTrack: Song | null;
   currentTrackCoverUrl: string | null;
   isPlaying: boolean;
-  activePlaybackSource: "local" | "radio";
-  radioNowPlaying: RadioTrack | null;
-  radioCoverUrl: string | null;
-  radioStationName: string;
-  hasRadioStation: boolean;
-  isRadioPlaying: boolean;
   position: number;
   duration: number;
   hasPrevious: boolean;
@@ -6183,7 +6170,7 @@ function LibraryView({
   const showLibraryError = libraryStatus === "error" && activeView !== "search";
 
   return (
-    <section className={`browser-panel ${activeView === "overview" ? "home-panel" : ""}`}>
+    <section className={`browser-panel ${activeView === "overview" || activeView === "nowPlaying" ? "home-panel" : ""}`}>
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
           config={config}
@@ -6212,7 +6199,7 @@ function LibraryView({
         />
       ) : (
         <>
-          {activeView !== "overview" ? (
+          {activeView !== "overview" && activeView !== "nowPlaying" ? (
             <div className="panel-heading browser-heading">
               <h3>{panelTitle}</h3>
               <div className="heading-actions">
@@ -6263,15 +6250,17 @@ function LibraryView({
           {activeView === "overview" ? (
             <OverviewHome
               config={config}
+              recentlyPlayedAlbums={recentlyPlayedAlbums}
+              listeningHistory={listeningHistory}
+              onPlaySong={onPlaySong}
+            />
+          ) : null}
+          {activeView === "nowPlaying" ? (
+            <NowPlayingView
+              config={config}
               currentTrack={currentTrack}
               currentTrackCoverUrl={currentTrackCoverUrl}
               isPlaying={isPlaying}
-              activePlaybackSource={activePlaybackSource}
-              radioNowPlaying={radioNowPlaying}
-              radioCoverUrl={radioCoverUrl}
-              radioStationName={radioStationName}
-              hasRadioStation={hasRadioStation}
-              isRadioPlaying={isRadioPlaying}
               position={position}
               duration={duration}
               hasPrevious={hasPrevious}
@@ -6390,15 +6379,52 @@ function LibraryView({
 
 function OverviewHome({
   config,
+  recentlyPlayedAlbums,
+  listeningHistory,
+  onPlaySong,
+}: {
+  config: NavidromeConfig | null;
+  recentlyPlayedAlbums: Album[];
+  listeningHistory: ListeningHistoryEntry[];
+  onPlaySong: (song: Song) => void;
+}) {
+  const artAlbums = recentlyPlayedAlbums.slice(0, 5);
+  const latestListen = listeningHistory[0]?.song;
+
+  return (
+    <div className="home-dashboard">
+      <section className="home-dashboard-intro">
+        <div>
+          <p className="eyebrow">Your listening</p>
+          <h3>Music, close at hand.</h3>
+          <p>{latestListen ? `Last played: ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}` : config ? "Start a record, and Prism will keep your recent listening here." : "Connect your library to make this space yours."}</p>
+          {latestListen ? (
+            <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(latestListen)}>
+              <Play size={16} fill="currentColor" />
+              Continue listening
+            </button>
+          ) : null}
+        </div>
+        <div className="home-art-cluster" aria-label="Recently played albums">
+          {artAlbums.length ? artAlbums.map((album, index) => (
+            <CoverArt
+              key={album.id}
+              src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+              label={album.name}
+              className={`home-cluster-art home-cluster-art-${index + 1}`}
+            />
+          )) : <div className="home-cluster-empty"><Music2 size={34} /></div>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function NowPlayingView({
+  config,
   currentTrack,
   currentTrackCoverUrl,
   isPlaying,
-  activePlaybackSource,
-  radioNowPlaying,
-  radioCoverUrl,
-  radioStationName,
-  hasRadioStation,
-  isRadioPlaying,
   position,
   duration,
   hasPrevious,
@@ -6412,12 +6438,6 @@ function OverviewHome({
   currentTrack: Song | null;
   currentTrackCoverUrl: string | null;
   isPlaying: boolean;
-  activePlaybackSource: "local" | "radio";
-  radioNowPlaying: RadioTrack | null;
-  radioCoverUrl: string | null;
-  radioStationName: string;
-  hasRadioStation: boolean;
-  isRadioPlaying: boolean;
   position: number;
   duration: number;
   hasPrevious: boolean;
@@ -6427,50 +6447,40 @@ function OverviewHome({
   onNext: () => void;
   onSeek: (position: number) => void;
 }) {
-  const isRadio = activePlaybackSource === "radio" && hasRadioStation;
   const hasTrack = Boolean(currentTrack);
-  const hasPlayback = isRadio || hasTrack;
-  const title = isRadio ? radioNowPlaying?.title ?? "Tune into Subwave" : currentTrack?.title ?? "Your next listen starts here";
-  const byline = isRadio
-    ? radioNowPlaying
-      ? `${radioNowPlaying.artist ?? radioStationName}${radioNowPlaying.album ? ` · ${radioNowPlaying.album}` : ""}`
-      : radioStationName
-    : currentTrack
-      ? `${currentTrack.artist ?? "Unknown artist"}${currentTrack.album ? ` · ${currentTrack.album}` : ""}`
-      : config
-        ? "Pick an album, artist, or song from your library."
-        : "Connect your Navidrome server to bring your music home.";
-  const coverUrl = isRadio ? radioCoverUrl : currentTrackCoverUrl;
-  const playing = isRadio ? isRadioPlaying : isPlaying;
+  const title = currentTrack?.title ?? "Your next listen starts here";
+  const byline = currentTrack
+    ? `${currentTrack.artist ?? "Unknown artist"}${currentTrack.album ? ` · ${currentTrack.album}` : ""}`
+    : config
+      ? "Pick an album, artist, or song from your library."
+      : "Connect your Navidrome server to bring your music home.";
   const progress = Math.min(position, Math.max(duration, 1));
 
   return (
     <div className="home-view">
-      <section className={`home-now-playing-hero ${hasPlayback ? "has-track" : ""} ${isRadio ? "is-radio" : ""}`}>
-        {coverUrl ? (
-          <div className="home-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" />
+      <section className={`home-now-playing-hero ${hasTrack ? "has-track" : ""}`}>
+        {currentTrackCoverUrl ? (
+          <div className="home-cover-wash" style={{ backgroundImage: `url(${currentTrackCoverUrl})` }} aria-hidden="true" />
         ) : null}
         <div className="home-now-playing-art">
-          <CoverArt src={coverUrl} label={title} className="home-now-playing-cover" fallbackIcon={isRadio ? <RadioTower size={42} /> : <Music2 size={42} />} />
+          <CoverArt src={currentTrackCoverUrl} label={title} className="home-now-playing-cover" fallbackIcon={<Music2 size={42} />} />
         </div>
         <div className="home-now-playing-copy">
-          <p className="eyebrow">{isRadio ? (playing ? "On air · Subwave" : "Radio · Subwave") : playing ? "Now playing" : hasTrack ? "Paused" : "Ready when you are"}</p>
+          <p className="eyebrow">{isPlaying ? "Now playing" : hasTrack ? "Paused" : "Ready when you are"}</p>
           <h3>{title}</h3>
           <p>{byline}</p>
           <div className="home-playback-controls">
-            {!isRadio ? <button type="button" aria-label="Previous" onClick={onPrevious} disabled={!hasPrevious}><SkipBack size={18} /></button> : null}
-            <button className="home-primary-play" type="button" aria-label={playing ? "Pause" : isRadio ? "Tune in" : "Play"} onClick={onTogglePlayback} disabled={!hasPlayback}>
-              {playing ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
+            <button type="button" aria-label="Previous" onClick={onPrevious} disabled={!hasPrevious}><SkipBack size={18} /></button>
+            <button className="home-primary-play" type="button" aria-label={isPlaying ? "Pause" : "Play"} onClick={onTogglePlayback} disabled={!hasTrack}>
+              {isPlaying ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
             </button>
-            {!isRadio ? <button type="button" aria-label="Next" onClick={onNext} disabled={!hasNext}><SkipForward size={18} /></button> : null}
+            <button type="button" aria-label="Next" onClick={onNext} disabled={!hasNext}><SkipForward size={18} /></button>
           </div>
-          {isRadio ? <p className="home-radio-status">{playing ? "Live stream" : "Ready to tune in"}</p> : (
-            <div className="home-seek-row">
-              <span>{formatDuration(position)}</span>
-              <input type="range" min="0" max={Math.max(duration, 1)} step="1" value={progress} onChange={(event) => onSeek(Number(event.target.value))} disabled={!hasTrack || !duration} aria-label="Seek" />
-              <span>{formatDuration(duration)}</span>
-            </div>
-          )}
+          <div className="home-seek-row">
+            <span>{formatDuration(position)}</span>
+            <input type="range" min="0" max={Math.max(duration, 1)} step="1" value={progress} onChange={(event) => onSeek(Number(event.target.value))} disabled={!hasTrack || !duration} aria-label="Seek" />
+            <span>{formatDuration(duration)}</span>
+          </div>
         </div>
       </section>
     </div>
