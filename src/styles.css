@@ -4073,6 +4073,8 @@ button.similar-chip:hover,
   align-self: center;
   gap: 12px;
   min-width: 0;
+  padding-right: 14px;
+  transform: translateY(7px);
 }
 
 .volume-control {
