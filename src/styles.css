@@ -1295,64 +1295,13 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   gap: 20px;
 }
 
-.home-listening-ribbon {
-  display: grid;
-  gap: 10px;
-}
-
-.home-listening-ribbon .section-label,
-.home-now-playing-hero {
-  margin: 0;
-}
-
-.home-art-ribbon {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 8px;
-  min-height: 68px;
-}
-
-.home-ribbon-album {
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
-  border-radius: 8px;
-  background: transparent;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-  transition: transform 160ms ease, filter 160ms ease;
-}
-
-.home-ribbon-album:hover {
-  filter: brightness(1.1);
-  transform: translateY(-3px);
-}
-
-.home-ribbon-album img,
-.home-ribbon-album .cover-fallback {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-}
-
-.home-ribbon-empty {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 18px;
-  border: 1px dashed rgba(244, 241, 236, 0.18);
-  border-radius: 8px;
-  color: rgba(244, 241, 236, 0.58);
-  font-size: 13px;
-}
-
 .home-now-playing-hero {
   position: relative;
   display: grid;
   grid-template-columns: minmax(160px, 0.52fr) minmax(0, 1fr);
   align-items: center;
   gap: clamp(22px, 4vw, 52px);
-  min-height: 340px;
+  min-height: min(560px, calc(100vh - 230px));
   padding: clamp(22px, 4vw, 42px);
   overflow: hidden;
   border-radius: 12px;
@@ -1467,14 +1416,6 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 @media (max-width: 760px) {
-  .home-art-ribbon {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .home-ribbon-album:nth-child(n + 5) {
-    display: none;
-  }
-
   .home-now-playing-hero {
     grid-template-columns: 1fr;
     justify-items: center;

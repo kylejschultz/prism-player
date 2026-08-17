@@ -4109,7 +4109,6 @@ export function App() {
               setPlaylistCreatorOpen={setPlaylistCreatorOpen}
               onSongContextMenu={openSongContextMenu}
               onRetryLibrary={() => void refreshLibrary()}
-              onSelectLibraryView={selectView}
               detailSelection={detailSelection}
               detailStatus={detailStatus}
               detailMessage={detailMessage}
@@ -6033,7 +6032,6 @@ function LibraryView({
   searchStatus,
   setPlaylistCreatorOpen,
   onSongContextMenu,
-  onSelectLibraryView,
   detailSelection,
   detailStatus,
   detailMessage,
@@ -6102,7 +6100,6 @@ function LibraryView({
   searchStatus: "idle" | "searching" | "error";
   setPlaylistCreatorOpen: (open: boolean) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
-  onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
@@ -6246,25 +6243,17 @@ function LibraryView({
           {activeView === "overview" ? (
             <OverviewHome
               config={config}
-              recentAlbums={recentAlbums}
-              recentlyPlayedAlbums={recentlyPlayedAlbums}
               currentTrack={currentTrack}
               currentTrackCoverUrl={currentTrackCoverUrl}
               isPlaying={isPlaying}
               position={position}
               duration={duration}
-              favoriteIds={favoriteIds}
-              favoriteBusyKey={favoriteBusyKey}
-              onToggleFavorite={onToggleFavorite}
               hasPrevious={hasPrevious}
               hasNext={hasNext}
               onTogglePlayback={onTogglePlayback}
               onPrevious={onPrevious}
               onNext={onNext}
               onSeek={onSeek}
-              onSelectLibraryView={onSelectLibraryView}
-              onOpenAlbum={onOpenAlbum}
-              onPlayAlbum={onPlayAlbum}
             />
           ) : null}
           {activeView === "albums" ? (
@@ -6375,71 +6364,36 @@ function LibraryView({
 
 function OverviewHome({
   config,
-  recentAlbums,
-  recentlyPlayedAlbums,
   currentTrack,
   currentTrackCoverUrl,
   isPlaying,
   position,
   duration,
-  favoriteIds,
-  favoriteBusyKey,
-  onToggleFavorite,
   hasPrevious,
   hasNext,
   onTogglePlayback,
   onPrevious,
   onNext,
   onSeek,
-  onSelectLibraryView,
-  onOpenAlbum,
-  onPlayAlbum,
 }: {
   config: NavidromeConfig | null;
-  recentAlbums: Album[];
-  recentlyPlayedAlbums: Album[];
   currentTrack: Song | null;
   currentTrackCoverUrl: string | null;
   isPlaying: boolean;
   position: number;
   duration: number;
-  favoriteIds: FavoriteIds;
-  favoriteBusyKey: string;
-  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   hasPrevious: boolean;
   hasNext: boolean;
   onTogglePlayback: () => void;
   onPrevious: () => void;
   onNext: () => void;
   onSeek: (position: number) => void;
-  onSelectLibraryView: (view: View) => void;
-  onOpenAlbum: (album: Album) => void;
-  onPlayAlbum: (album: Album) => void;
 }) {
-  const visualAlbums = (recentlyPlayedAlbums.length ? recentlyPlayedAlbums : recentAlbums).slice(0, 8);
   const hasTrack = Boolean(currentTrack);
   const progress = Math.min(position, Math.max(duration, 1));
 
   return (
     <div className="home-view">
-      <section className="home-listening-ribbon" aria-labelledby="recent-listening-title">
-        <div className="section-label">
-          <div>
-            <p className="eyebrow">Your listening</p>
-            <h4 id="recent-listening-title">Recently played</h4>
-          </div>
-          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("recentlyPlayed")}>View history</button>
-        </div>
-        <div className="home-art-ribbon">
-          {visualAlbums.map((album) => (
-            <button className="home-ribbon-album" type="button" key={album.id} onClick={() => onOpenAlbum(album)} aria-label={`Open ${album.name}`}>
-              <CoverArt src={config ? buildCoverArtUrl(config, album.coverArt, "240") : null} label={album.name} className="home-ribbon-cover" />
-            </button>
-          ))}
-          {!visualAlbums.length ? <p className="home-ribbon-empty">Play something to make this home feel like yours.</p> : null}
-        </div>
-      </section>
-
       <section className={`home-now-playing-hero ${hasTrack ? "has-track" : ""}`}>
         <div className="home-now-playing-art">
           <CoverArt src={currentTrackCoverUrl} label={currentTrack?.title ?? "Prism Player"} className="home-now-playing-cover" />
@@ -6461,28 +6415,6 @@ function OverviewHome({
             <span>{formatDuration(duration)}</span>
           </div>
         </div>
-      </section>
-
-      <section>
-        <div className="section-label">
-          <div>
-            <p className="eyebrow">Fresh in your library</p>
-            <h4>Recently added</h4>
-          </div>
-          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("recentlyAdded")}>
-            View albums
-          </button>
-        </div>
-        <AlbumGrid
-          config={config}
-          albums={recentAlbums}
-          favoriteIds={favoriteIds}
-          favoriteBusyKey={favoriteBusyKey}
-          onToggleFavorite={onToggleFavorite}
-          onOpenAlbum={onOpenAlbum}
-          onPlayAlbum={onPlayAlbum}
-          withAlphabetRail={false}
-        />
       </section>
     </div>
   );
