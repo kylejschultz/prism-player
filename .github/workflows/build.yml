@@ -83,6 +83,25 @@ jobs:
       - name: Build macOS installer
         run: npm run tauri:build:installer
 
+      - name: Name macOS installer for the release
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
+        run: |
+          source_dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$source_dmg" ]]; then
+            echo "::error::No macOS DMG was produced."
+            exit 1
+          fi
+
+          if [[ -n "$RELEASE_TAG" ]]; then
+            suffix="$RELEASE_TAG"
+          else
+            suffix="${GITHUB_REF_NAME}"
+          fi
+          suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
+          target_dmg="src-tauri/target/release/bundle/dmg/Prism-player-${suffix}.dmg"
+          mv "$source_dmg" "$target_dmg"
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
         with:
@@ -172,7 +191,6 @@ jobs:
       - name: Post release announcement
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK_URL }}
-          DISCORD_ANNOUNCEMENT_ROLE_ID: ${{ vars.DISCORD_ANNOUNCEMENT_ROLE_ID }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
         run: |
@@ -190,13 +208,6 @@ jobs:
 
           webhook_url = os.environ["DISCORD_WEBHOOK_URL"]
           release = json.loads(os.environ["RELEASE_JSON"])
-          role_id = os.environ.get("DISCORD_ANNOUNCEMENT_ROLE_ID", "").strip()
-
-          def asset_url(suffix):
-              for asset in release.get("assets", []):
-                  if asset["name"].lower().endswith(suffix):
-                      return asset["url"]
-              return None
 
           def post(payload, components=False):
               separator = "&" if "?" in webhook_url else "?"
@@ -215,35 +226,15 @@ jobs:
                   print(exc.read().decode("utf-8", "replace"))
                   raise
 
-          if role_id:
-              post({
-                  "username": "Prism Player Releases",
-                  "content": f"<@&{role_id}>",
-                  "allowed_mentions": {"parse": [], "roles": [role_id]},
-              })
-
           notes = (release.get("body") or "See the GitHub release for the full notes.").strip()
           if len(notes) > 1800:
               notes = notes[:1797].rstrip() + "..."
 
-          buttons = []
-          macos_url = asset_url(".dmg")
-          windows_url = asset_url(".exe")
-          if macos_url:
-              buttons.append({"type": 2, "style": 5, "label": "Download for macOS", "url": macos_url})
-          if windows_url:
-              buttons.append({"type": 2, "style": 5, "label": "Download for Windows", "url": windows_url})
-          buttons.append({"type": 2, "style": 5, "label": "View GitHub Release", "url": release["url"]})
-
           card_components = [
-              {"type": 10, "content": f"# Prism Player {release.get('name') or os.environ['RELEASE_TAG']}\nA new Prism Player release is ready."},
+              {"type": 10, "content": f"# {release.get('name') or os.environ['RELEASE_TAG']}"},
               {"type": 14, "divider": True, "spacing": 1},
-              {"type": 10, "content": f"## What changed\n{notes}"},
-              {"type": 14, "divider": True, "spacing": 1},
-              {"type": 10, "content": "## Downloads"},
-              {"type": 1, "components": buttons},
-              {"type": 14, "divider": True, "spacing": 1},
-              {"type": 10, "content": "_Prism Player release_"},
+              {"type": 10, "content": notes},
+              {"type": 10, "content": f"[View release and downloads]({release['url']})"},
           ]
           post({
               "username": "Prism Player Releases",
