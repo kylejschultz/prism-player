@@ -6165,7 +6165,7 @@ function LibraryView({
   const showLibraryError = libraryStatus === "error" && activeView !== "search";
 
   return (
-    <section className="browser-panel">
+    <section className={`browser-panel ${activeView === "overview" ? "home-panel" : ""}`}>
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
           config={config}
@@ -6194,9 +6194,10 @@ function LibraryView({
         />
       ) : (
         <>
-          <div className="panel-heading browser-heading">
-            <h3>{panelTitle}</h3>
-            <div className="heading-actions">
+          {activeView !== "overview" ? (
+            <div className="panel-heading browser-heading">
+              <h3>{panelTitle}</h3>
+              <div className="heading-actions">
               {activeView === "albums" ? (
                 <div className="view-toggle" aria-label="Album view">
                   <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
@@ -6223,8 +6224,9 @@ function LibraryView({
                   New Playlist
                 </button>
               ) : null}
+              </div>
             </div>
-          </div>
+          ) : null}
           {showLibraryError ? (
             <StateNotice
               tone="bad"
