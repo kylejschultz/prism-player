@@ -1616,10 +1616,11 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   gap: 12px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  padding: 1px 1px 8px;
+  /* Leave room for the card lift and the carousel affordance without clipping either. */
+  padding: 6px 1px 10px;
   scroll-padding-inline: 1px;
   scroll-snap-type: inline proximity;
-  scrollbar-color: rgba(244, 241, 236, 0.42) transparent;
+  scrollbar-color: transparent transparent;
   scrollbar-width: thin;
 }
 
@@ -1633,6 +1634,17 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-row::-webkit-scrollbar-thumb {
   border-radius: 999px;
+  background: transparent;
+  transition: background 160ms ease;
+}
+
+.home-album-row:hover,
+.home-album-row:focus-visible {
+  scrollbar-color: rgba(244, 241, 236, 0.42) transparent;
+}
+
+.home-album-row:hover::-webkit-scrollbar-thumb,
+.home-album-row:focus-visible::-webkit-scrollbar-thumb {
   background: rgba(244, 241, 236, 0.36);
 }
 
