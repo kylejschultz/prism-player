@@ -2140,6 +2140,10 @@ button.similar-chip:hover,
   grid-area: 1 / 1;
 }
 
+.track-index .track-number {
+  pointer-events: none;
+}
+
 .album-track-row:hover .track-number,
 .album-track-row:focus-within .track-number {
   opacity: 0;
