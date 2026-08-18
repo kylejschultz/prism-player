@@ -6207,6 +6207,19 @@ function LibraryView({
   onQueueSong: (song: Song) => void;
   onRetryLibrary: () => void;
 }) {
+  const [isHomeScrollbarVisible, setIsHomeScrollbarVisible] = useState(false);
+  const homeScrollbarTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (homeScrollbarTimeoutRef.current !== null) window.clearTimeout(homeScrollbarTimeoutRef.current);
+  }, []);
+
+  function revealHomeScrollbar() {
+    setIsHomeScrollbarVisible(true);
+    if (homeScrollbarTimeoutRef.current !== null) window.clearTimeout(homeScrollbarTimeoutRef.current);
+    homeScrollbarTimeoutRef.current = window.setTimeout(() => setIsHomeScrollbarVisible(false), 700);
+  }
+
   if (activeView === "radio") {
     return (
       <RadioView
@@ -6239,7 +6252,10 @@ function LibraryView({
   const showLibraryError = libraryStatus === "error" && activeView !== "search";
 
   return (
-    <section className={`browser-panel ${activeView === "overview" || activeView === "nowPlaying" ? "home-panel" : ""}`}>
+    <section
+      className={`browser-panel ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
+      onScroll={activeView === "overview" || activeView === "nowPlaying" ? revealHomeScrollbar : undefined}
+    >
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
           config={config}

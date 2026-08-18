@@ -1082,7 +1082,28 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   border: 0;
   border-radius: 0;
   background: transparent;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: transparent transparent;
+}
+
+.browser-panel.home-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.browser-panel.home-panel::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.browser-panel.home-panel.is-scrolling {
+  scrollbar-color: rgba(244, 241, 236, 0.34) transparent;
+}
+
+.browser-panel.home-panel.is-scrolling::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(244, 241, 236, 0.34);
+  background-clip: padding-box;
 }
 
 .browser-heading {
