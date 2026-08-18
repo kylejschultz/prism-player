@@ -108,6 +108,7 @@ function isTauriDesktopApp() {
 
 type NavidromeConfig = {
   serverUrl: string;
+  name: string;
   username: string;
   password: string;
 };
@@ -412,6 +413,7 @@ const idleRadioWaveformBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (
 
 const emptyConfig: NavidromeConfig = {
   serverUrl: "",
+  name: "",
   username: "",
   password: "",
 };
@@ -550,7 +552,7 @@ function loadStoredConfig(): NavidromeConfig | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as NavidromeConfig;
     if (!parsed.serverUrl || !parsed.username || !parsed.password) return null;
-    return parsed;
+    return { ...parsed, name: typeof parsed.name === "string" ? parsed.name : "" };
   } catch {
     return null;
   }
@@ -2313,6 +2315,7 @@ export function App() {
 
     const nextConfig = {
       serverUrl: normalizeServerUrl(form.serverUrl),
+      name: form.name.trim(),
       username: form.username.trim(),
       password: form.password,
     };
@@ -5389,6 +5392,16 @@ function SettingsView({
         </label>
 
         <label>
+          Name
+          <input
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            placeholder="Kyle"
+            autoComplete="name"
+          />
+        </label>
+
+        <label>
           Username
           <input
             value={form.username}
@@ -5677,6 +5690,12 @@ function FirstRunWizard({
             onChange={(event) => setForm({ ...form, serverUrl: event.target.value })}
             placeholder="https://music.example.com"
             autoComplete="url"
+          />
+          <input
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            placeholder="Name"
+            autoComplete="name"
           />
           <div className="split-inputs">
             <input
@@ -6471,7 +6490,7 @@ function OverviewHome({
   const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const listenerName = config?.username.trim();
+  const listenerName = config?.name.trim();
   const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
   const visibleNewAlbums = recentAlbums.slice(0, 5);
 
