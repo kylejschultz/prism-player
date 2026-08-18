@@ -6471,6 +6471,7 @@ function OverviewHome({
   const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const listenerName = config?.username.trim();
   const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
   const visibleNewAlbums = recentAlbums.slice(0, 5);
 
@@ -6485,7 +6486,7 @@ function OverviewHome({
       <section className="home-dashboard-intro">
         <div>
           <p className="eyebrow">Your listening</p>
-          <h3>{greeting}.</h3>
+          <h3>{greeting}{listenerName ? `, ${listenerName}` : ""}.</h3>
           <p>{latestListen ? `Pick up where you left off with ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}.` : config ? "Start a record, and Prism will keep the good stuff close at hand." : "Connect your library to make this space yours."}</p>
           {latestListen ? (
             isContinuing ? (
