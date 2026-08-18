@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/kylejschultz/prism-player/compare/v0.4.0...v0.4.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* Make track-row play icons receive clicks ([577a6a4](https://github.com/kylejschultz/prism-player/commit/577a6a456a451d81cc5c59735238fbe8898ecb0a))
+* Make track-row play icons receive clicks ([58597ee](https://github.com/kylejschultz/prism-player/commit/58597eeaa85d0416ee8e00c52c6ca033a110c5ce))
+* Release v0.4.1 track-row play-button hotfix ([0d75748](https://github.com/kylejschultz/prism-player/commit/0d757483c3186fa79aac1fb57d248e9c3135180e))
+
 ## [0.4.0](https://github.com/kylejschultz/prism-player/compare/v0.3.0...v0.4.0) (2026-08-17)
 
 
