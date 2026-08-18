@@ -6602,8 +6602,10 @@ function HomeAlbumShelf({
               className="home-album-cover"
               onPlay={() => onPlayAlbum(album)}
             />
-            <strong>{album.name}</strong>
-            <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+            <div className="home-album-copy">
+              <strong>{album.name}</strong>
+              <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+            </div>
           </div>
         ))}
       </div>
