@@ -125,6 +125,7 @@ type AppSettings = {
   showSharedPlaylists: boolean;
   radioStationUrl: string;
   radioStationUrls: string[];
+  radioStationNames: Record<string, string>;
 };
 
 type Album = {
@@ -448,6 +449,7 @@ const defaultSettings: AppSettings = {
   showSharedPlaylists: true,
   radioStationUrl: "",
   radioStationUrls: [],
+  radioStationNames: {},
 };
 
 const ALPHABET = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -569,6 +571,18 @@ function normalizeRadioStationList(values: Array<string | undefined | null>) {
   return stations;
 }
 
+function normalizeRadioStationNames(values: Record<string, string> | undefined, stations: string[]) {
+  const names: Record<string, string> = {};
+
+  Object.entries(values ?? {}).forEach(([stationUrl, name]) => {
+    const origin = normalizeStationUrl(stationUrl);
+    const normalizedName = name.trim();
+    if (origin && stations.includes(origin) && normalizedName) names[origin] = normalizedName;
+  });
+
+  return names;
+}
+
 function loadStoredSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -590,6 +604,7 @@ function loadStoredSettings(): AppSettings {
       showSharedPlaylists: parsed.showSharedPlaylists ?? defaultSettings.showSharedPlaylists,
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
       radioStationUrls,
+      radioStationNames: normalizeRadioStationNames(parsed.radioStationNames, radioStationUrls),
     };
   } catch {
     return defaultSettings;
@@ -960,8 +975,9 @@ function formatRadioStreamLabel(bitrate: number | string | null | undefined, for
   return `${normalizedFormat} / ${bitrateText}`;
 }
 
-function radioStationName(state: RadioStationState | null, stationUrl: string) {
+function radioStationName(state: RadioStationState | null, stationUrl: string, savedName?: string) {
   return (
+    savedName ||
     state?.context?.stationName ||
     state?.context?.station?.name ||
     state?.station?.name ||
@@ -1953,6 +1969,7 @@ export function App() {
       lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
       radioStationUrl: activeStation,
       radioStationUrls: radioStationUrls.includes(activeStation) ? radioStationUrls : normalizeRadioStationList([activeStation, ...radioStationUrls]),
+      radioStationNames: normalizeRadioStationNames(nextSettings.radioStationNames, radioStationUrls),
     };
   }
 
@@ -1963,14 +1980,21 @@ export function App() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizedSettings));
   }
 
-  function saveRadioStation(origin: string) {
+  function saveRadioStation(origin: string, discoveredName?: string) {
     const normalized = normalizeStationUrl(origin);
     if (!normalized) return;
+
+    const stationUrls = normalizeRadioStationList([...appSettings.radioStationUrls, normalized]);
+    const existingName = appSettings.radioStationNames[normalized];
+    const name = discoveredName?.trim();
 
     updateAppSettings({
       ...appSettings,
       radioStationUrl: normalized,
-      radioStationUrls: normalizeRadioStationList([...appSettings.radioStationUrls, normalized]),
+      radioStationUrls: stationUrls,
+      // The first name returned by a station is remembered. A value edited in
+      // Settings is intentionally left alone as a user-friendly override.
+      radioStationNames: existingName || !name ? appSettings.radioStationNames : { ...appSettings.radioStationNames, [normalized]: name },
     });
     setRadioStationInput(normalized);
   }
@@ -2007,6 +2031,7 @@ export function App() {
       ...appSettings,
       radioStationUrl: activeStation,
       radioStationUrls: remainingStations,
+      radioStationNames: normalizeRadioStationNames(appSettings.radioStationNames, remainingStations),
     });
     setRadioStationInput(activeStation);
   }
@@ -2071,7 +2096,7 @@ export function App() {
       ]);
       applyRadioStationState(nextState);
       if (nextSession) applyRadioSession(nextSession);
-      saveRadioStation(origin);
+      saveRadioStation(origin, radioStationName(nextState, origin));
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
       setRadioMessage("Station connected.");
       return nextState;
@@ -3186,7 +3211,7 @@ export function App() {
         title: track.title ?? "Live radio",
         artist: track.artist ?? (radioPresence ? "Subwave" : "Unknown artist"),
         album: track.album ?? null,
-        station: radioPresence ? radioStationName(radioStationState, radioStationUrl) : null,
+        station: radioPresence ? radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl]) : null,
         playing: radioPresence ? true : isPlaying,
         startedAt: radioPresence || !isPlaying ? null : Date.now() - Math.round(position * 1000),
       },
@@ -3776,9 +3801,9 @@ export function App() {
 
   const radioDuration = radioNowPlaying?.duration ?? 0;
   const radioHasTimedTrack = Boolean(isRadioPlaying && radioNowPlaying && radioDuration > 0);
-  const footerRadioTitle = radioNowPlaying?.title ?? radioStationName(radioStationState, radioStationUrl);
+  const footerRadioTitle = radioNowPlaying?.title ?? radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl]);
   const footerRadioMeta = radioNowPlaying
-    ? radioNowPlaying.artist || radioStationName(radioStationState, radioStationUrl)
+    ? radioNowPlaying.artist || radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl])
     : "Live broadcast";
   const seekDuration = isRadioPlaying ? (radioHasTimedTrack ? radioDuration : Math.max(radioElapsed, 1)) : playerDuration || currentTrack?.duration || 0;
   const seekPosition = isRadioPlaying ? (radioHasTimedTrack ? Math.min(radioElapsed, radioDuration) : 0) : position;
@@ -5466,10 +5491,25 @@ function SettingsView({
           <div className="settings-station-list">
             {appSettings.radioStationUrls.map((stationUrl) => (
               <div className={`settings-station-row ${stationUrl === appSettings.radioStationUrl ? "active" : ""}`} key={stationUrl}>
-                <button className="settings-station-main" type="button" onClick={() => onSelectRadioStation(stationUrl)}>
-                  <RadioTower size={15} />
-                  <span>{stationUrl.replace(/^https?:\/\//, "")}</span>
-                </button>
+                <div className="settings-station-details">
+                  <button className="settings-station-main" type="button" onClick={() => onSelectRadioStation(stationUrl)}>
+                    <RadioTower size={15} />
+                    <span>{appSettings.radioStationNames[stationUrl] || stationUrl.replace(/^https?:\/\//, "")}</span>
+                  </button>
+                  <input
+                    className="settings-station-name"
+                    aria-label={`Display name for ${stationUrl}`}
+                    value={appSettings.radioStationNames[stationUrl] ?? ""}
+                    onChange={(event) => {
+                      const name = event.target.value.trim();
+                      const radioStationNames = { ...appSettings.radioStationNames };
+                      if (name) radioStationNames[stationUrl] = name;
+                      else delete radioStationNames[stationUrl];
+                      updateAppSettings({ ...appSettings, radioStationNames });
+                    }}
+                    placeholder="Display name (optional)"
+                  />
+                </div>
                 <button
                   className="icon-button"
                   type="button"
@@ -5497,7 +5537,7 @@ function SettingsView({
             Add
           </button>
         </form>
-        <p className="settings-note">Prism validates this against `/api/state` and plays the station stream from `/stream.mp3`.</p>
+        <p className="settings-note">Prism remembers the station name reported by `/api/state`; use Display name to override it. Streams play from `/stream.mp3`.</p>
       </section> : null}
 
       {activeTab === "privacy" ? <section className="settings-panel">
@@ -5842,7 +5882,8 @@ function RadioView({
   const [firstStationUrl, setFirstStationUrl] = useState("");
   const isPlaying = status === "playing";
   const isTuning = status === "checking";
-  const selectedStationLabel = stationUrl ? stationUrl.replace(/^https?:\/\//, "") : "No station selected";
+  const stationLabel = (url: string) => radioStationName(stationState, url, appSettings.radioStationNames[normalizeStationUrl(url)]);
+  const selectedStationLabel = stationUrl ? stationLabel(stationUrl) : "No station selected";
 
   if (!isPlaying) {
     return (
@@ -5864,7 +5905,7 @@ function RadioView({
                 <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={isTuning}>
                   {savedStations.map((savedStationUrl) => (
                     <option value={savedStationUrl} key={savedStationUrl}>
-                      {savedStationUrl.replace(/^https?:\/\//, "")}
+                      {stationLabel(savedStationUrl)}
                     </option>
                   ))}
                 </select>
@@ -5904,7 +5945,7 @@ function RadioView({
 
   const nowPlaying = firstRadioTrack(stationState);
   const listenerCount = radioListenerCount(stationState);
-  const stationName = radioStationName(stationState, stationUrl);
+  const stationName = stationLabel(stationUrl);
   const showTiming = radioShowTiming(schedule, Date.now());
   const showName = stationState?.activeShow?.name ?? showTiming?.currentShow?.name;
   const personaId = showTiming?.currentShow?.personaId;
@@ -5960,7 +6001,7 @@ function RadioView({
               <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
                 {savedStations.map((savedStationUrl) => (
                   <option value={savedStationUrl} key={savedStationUrl}>
-                    {savedStationUrl.replace(/^https?:\/\//, "")}
+                    {stationLabel(savedStationUrl)}
                   </option>
                 ))}
               </select>
@@ -6265,7 +6306,7 @@ function LibraryView({
               listeningHistory={listeningHistory}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
-              radioStationName={radioStationName(radioStationState, appSettings.radioStationUrl)}
+              radioStationName={radioStationName(radioStationState, appSettings.radioStationUrl, appSettings.radioStationNames[normalizeStationUrl(appSettings.radioStationUrl)])}
               radioStatus={radioStatus}
               onPlaySong={onPlaySong}
               onPlayAlbum={onPlayAlbum}

@@ -2785,6 +2785,12 @@ button.similar-chip:hover,
   color: #f8df91;
 }
 
+.settings-station-details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
 .settings-station-main {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
@@ -2809,6 +2815,18 @@ button.similar-chip:hover,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.settings-station-name {
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
 }
 
 .settings-station-form {
