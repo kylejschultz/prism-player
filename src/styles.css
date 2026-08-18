@@ -1607,6 +1607,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .home-album-row {
+  position: relative;
   display: grid;
   min-width: 0;
   width: 100%;
@@ -1622,6 +1623,27 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   scroll-snap-type: inline proximity;
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
+}
+
+/* macOS overlay scrollbars only reveal while actively scrolling. Keep a
+ * thumb-only cue visible on hover so horizontal shelves advertise themselves. */
+.home-album-row::after {
+  position: absolute;
+  right: 6px;
+  bottom: 1px;
+  width: 72px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(244, 241, 236, 0.42);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.home-album-row:hover::after,
+.home-album-row:focus-visible::after {
+  opacity: 1;
 }
 
 .home-album-row::-webkit-scrollbar {
@@ -1668,9 +1690,14 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   transform: translateY(-2px);
 }
 
-.home-album-cover {
+.home-album > .playable-cover {
   width: 64px;
   flex: 0 0 64px;
+}
+
+.home-album-cover {
+  display: block;
+  width: 100%;
   aspect-ratio: 1;
   border-radius: 10px;
   object-fit: cover;
