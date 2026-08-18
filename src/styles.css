@@ -1604,20 +1604,43 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  grid-auto-columns: minmax(220px, 250px);
+  grid-auto-flow: column;
+  grid-template-rows: 1fr;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 1px 1px 8px;
+  scroll-padding-inline: 1px;
+  scroll-snap-type: inline proximity;
+  scrollbar-color: rgba(244, 241, 236, 0.42) transparent;
+  scrollbar-width: thin;
+}
+
+.home-album-row::-webkit-scrollbar {
+  height: 6px;
+}
+
+.home-album-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.home-album-row::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(244, 241, 236, 0.36);
 }
 
 .home-album {
   display: flex;
   align-items: center;
   min-width: 0;
-  min-height: 104px;
-  gap: 14px;
-  padding: 10px 14px 10px 10px;
+  min-height: 76px;
+  gap: 10px;
+  padding: 8px 10px 8px 8px;
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.035);
+  scroll-snap-align: start;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
@@ -1628,8 +1651,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .home-album-cover {
-  width: 84px;
-  flex: 0 0 84px;
+  width: 60px;
+  flex: 0 0 60px;
   aspect-ratio: 1;
   border-radius: 10px;
   object-fit: cover;
@@ -1637,8 +1660,9 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-copy {
   display: grid;
+  flex: 1 1 auto;
   min-width: 0;
-  gap: 4px;
+  gap: 2px;
 }
 
 .home-album-copy strong,
@@ -1651,16 +1675,16 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-copy strong {
   -webkit-line-clamp: 2;
-  font-size: 13px;
-  line-height: 1.25;
+  font-size: 12px;
+  line-height: 1.2;
   font-weight: 600;
 }
 
 .home-album-copy small {
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   color: rgba(244, 241, 236, 0.56);
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 .home-art-cluster {
@@ -1716,7 +1740,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   }
 
   .home-album-row {
-    grid-template-columns: 1fr;
+    grid-auto-columns: minmax(210px, 78vw);
   }
 
   .home-dashboard-intro > div > p:not(.eyebrow) {
@@ -1756,7 +1780,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   }
 
   .home-album-row {
-    grid-template-columns: 1fr;
+    grid-auto-columns: minmax(200px, 84vw);
   }
 }
 

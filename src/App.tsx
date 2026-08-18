@@ -6507,14 +6507,14 @@ function OverviewHome({
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const listenerName = config?.name.trim();
-  const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 3);
-  const visibleNewAlbums = recentAlbums.slice(0, 3);
+  const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
+  const visibleNewAlbums = recentAlbums.slice(0, 5);
 
   useEffect(() => {
-    setShuffleAlbums(shuffled(albums).slice(0, 3));
+    setShuffleAlbums(shuffled(albums).slice(0, 5));
   }, [albums]);
 
-  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 3));
+  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 5));
 
   return (
     <div className="home-dashboard">
@@ -6535,7 +6535,7 @@ function OverviewHome({
           ) : null}
         </div>
         <div className="home-art-cluster" aria-label="Albums from your library">
-          {visibleRecentAlbums.length ? visibleRecentAlbums.map((album, index) => (
+          {visibleRecentAlbums.length ? visibleRecentAlbums.slice(0, 3).map((album, index) => (
             <CoverArt
               key={album.id}
               src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
@@ -6593,7 +6593,7 @@ function HomeAlbumShelf({
         {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
         {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
       </div>
-      <div className="home-album-row">
+      <div className="home-album-row" tabIndex={0} aria-label={`${title} albums`}>
         {albums.map((album) => (
           <div className="home-album" key={album.id}>
             <PlayableCover
