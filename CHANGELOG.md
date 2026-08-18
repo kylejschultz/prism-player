@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/kylejschultz/prism-player/compare/v0.4.0...v0.4.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* Fixed track-row play icons so clicking the glyph starts playback instead of selecting text. ([#94](https://github.com/kylejschultz/prism-player/issues/94))
+
 ## [0.4.0](https://github.com/kylejschultz/prism-player/compare/v0.3.0...v0.4.0) (2026-08-17)
 
 
