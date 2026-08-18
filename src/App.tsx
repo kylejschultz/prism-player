@@ -6491,14 +6491,14 @@ function OverviewHome({
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const listenerName = config?.name.trim();
-  const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
-  const visibleNewAlbums = recentAlbums.slice(0, 5);
+  const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 3);
+  const visibleNewAlbums = recentAlbums.slice(0, 3);
 
   useEffect(() => {
-    setShuffleAlbums(shuffled(albums).slice(0, 5));
+    setShuffleAlbums(shuffled(albums).slice(0, 3));
   }, [albums]);
 
-  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 5));
+  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 3));
 
   return (
     <div className="home-dashboard">
@@ -6541,15 +6541,16 @@ function OverviewHome({
           {isRadioStarting ? "Tuning in" : `Listen to ${radioStationName}`}
         </button>
       </section>
-      <HomeAlbumShelf title="Recently played" albums={visibleRecentAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyPlayed")} />
-      <HomeAlbumShelf title="Recently added" albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyAdded")} />
-      <HomeAlbumShelf title="Shuffle something" albums={shuffleAlbums} config={config} onPlayAlbum={onPlayAlbum} onRefresh={refreshShuffleAlbums} />
+      <HomeAlbumShelf title="Recently played" description="A few records to come back to." albums={visibleRecentAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyPlayed")} />
+      <HomeAlbumShelf title="Recently added" description="Fresh additions to your library." albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyAdded")} />
+      <HomeAlbumShelf title="Start listening" description="A few picks from your library." albums={shuffleAlbums} config={config} onPlayAlbum={onPlayAlbum} onRefresh={refreshShuffleAlbums} />
     </div>
   );
 }
 
 function HomeAlbumShelf({
   title,
+  description,
   albums,
   config,
   onPlayAlbum,
@@ -6557,6 +6558,7 @@ function HomeAlbumShelf({
   onRefresh,
 }: {
   title: string;
+  description: string;
   albums: Album[];
   config: NavidromeConfig | null;
   onPlayAlbum: (album: Album) => void;
@@ -6568,7 +6570,10 @@ function HomeAlbumShelf({
   return (
     <section className="home-album-shelf">
       <div className="home-shelf-heading">
-        <h4>{title}</h4>
+        <div>
+          <h4>{title}</h4>
+          <p>{description}</p>
+        </div>
         {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
         {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
       </div>
