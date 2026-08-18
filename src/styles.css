@@ -1,4 +1,7 @@
 :root {
+  --prism-accent: #f0d27b;
+  --prism-accent-strong: #f8df91;
+  --prism-accent-rgb: 240, 210, 123;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   color: #f4f1ec;
   background: #111111;
@@ -1486,6 +1489,15 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   margin-top: 20px;
 }
 
+.home-continue-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  color: rgba(244, 241, 236, 0.72);
+  font-weight: 600;
+}
+
 .home-radio-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1494,9 +1506,9 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   width: min(100%, 1040px);
   margin: 0 auto;
   padding: 18px 20px;
-  border: 1px solid rgba(171, 124, 255, 0.32);
+  border: 1px solid rgba(var(--prism-accent-rgb), 0.3);
   border-radius: 16px;
-  background: linear-gradient(115deg, rgba(88, 50, 145, 0.3), rgba(21, 26, 43, 0.68));
+  background: linear-gradient(115deg, rgba(var(--prism-accent-rgb), 0.2), rgba(21, 26, 43, 0.68));
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
 }
 
@@ -1506,8 +1518,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   aspect-ratio: 1;
   place-items: center;
   border-radius: 13px;
-  color: #f0ddff;
-  background: rgba(184, 127, 255, 0.18);
+  color: var(--prism-accent-strong);
+  background: rgba(var(--prism-accent-rgb), 0.18);
 }
 
 .home-radio-card h4,

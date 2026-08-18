@@ -4089,6 +4089,10 @@ export function App() {
               radioMessage={radioMessage}
               radioWaveformBars={radioWaveformBars}
               tuneInRadio={tuneInRadio}
+              onStartRadio={() => {
+                selectView("radio");
+                void tuneInRadio();
+              }}
               onAddFirstRadioStation={tuneInRadio}
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
@@ -6017,6 +6021,7 @@ function LibraryView({
   radioMessage,
   radioWaveformBars,
   tuneInRadio,
+  onStartRadio,
   onAddFirstRadioStation,
   albums,
   recentAlbums,
@@ -6086,6 +6091,7 @@ function LibraryView({
   radioMessage: string;
   radioWaveformBars: number[];
   tuneInRadio: () => Promise<void>;
+  onStartRadio: () => void;
   onAddFirstRadioStation: (stationUrl: string) => Promise<void>;
   albums: Album[];
   recentAlbums: Album[];
@@ -6257,9 +6263,14 @@ function LibraryView({
               recentAlbums={recentAlbums}
               recentlyPlayedAlbums={recentlyPlayedAlbums}
               listeningHistory={listeningHistory}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              radioStationName={radioStationName(radioStationState, appSettings.radioStationUrl)}
+              radioStatus={radioStatus}
               onPlaySong={onPlaySong}
               onPlayAlbum={onPlayAlbum}
               onSelectView={onSelectView}
+              onStartRadio={onStartRadio}
             />
           ) : null}
           {activeView === "nowPlaying" ? (
@@ -6390,20 +6401,32 @@ function OverviewHome({
   recentAlbums,
   recentlyPlayedAlbums,
   listeningHistory,
+  currentTrack,
+  isPlaying,
+  radioStationName,
+  radioStatus,
   onPlaySong,
   onPlayAlbum,
   onSelectView,
+  onStartRadio,
 }: {
   config: NavidromeConfig | null;
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
   listeningHistory: ListeningHistoryEntry[];
+  currentTrack: Song | null;
+  isPlaying: boolean;
+  radioStationName: string;
+  radioStatus: RadioStatus;
   onPlaySong: (song: Song) => void;
   onPlayAlbum: (album: Album) => void;
   onSelectView: (view: View) => void;
+  onStartRadio: () => void;
 }) {
   const latestListen = listeningHistory[0]?.song;
+  const isContinuing = Boolean(latestListen && currentTrack?.id === latestListen.id && isPlaying);
+  const isRadioStarting = radioStatus === "checking";
   const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -6424,10 +6447,14 @@ function OverviewHome({
           <h3>{greeting}.</h3>
           <p>{latestListen ? `Pick up where you left off with ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}.` : config ? "Start a record, and Prism will keep the good stuff close at hand." : "Connect your library to make this space yours."}</p>
           {latestListen ? (
-            <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(latestListen)}>
-              <Play size={16} fill="currentColor" />
-              Continue listening
-            </button>
+            isContinuing ? (
+              <span className="home-continue-status"><Pause size={16} fill="currentColor" /> Listening now</span>
+            ) : (
+              <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(latestListen)}>
+                <Play size={16} fill="currentColor" />
+                Continue listening
+              </button>
+            )
           ) : null}
         </div>
         <div className="home-art-cluster" aria-label="Albums from your library">
@@ -6445,11 +6472,12 @@ function OverviewHome({
         <div className="home-radio-mark"><RadioTower size={22} /></div>
         <div>
           <p className="eyebrow">Live from Subwave</p>
-          <h4>Listen to Radio</h4>
+          <h4>Listen to {radioStationName}</h4>
           <p>A separate place for the live station, shows, and requests.</p>
         </div>
-        <button className="secondary-button home-radio-button" type="button" onClick={() => onSelectView("radio")}>
-          Open Radio <ChevronRight size={16} />
+        <button className="secondary-button home-radio-button" type="button" onClick={onStartRadio} disabled={isRadioStarting}>
+          {isRadioStarting ? <Loader2 className="spin" size={16} /> : <Play size={16} fill="currentColor" />}
+          {isRadioStarting ? "Tuning in" : `Listen to ${radioStationName}`}
         </button>
       </section>
       <HomeAlbumShelf title="Recently played" albums={visibleRecentAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyPlayed")} />
