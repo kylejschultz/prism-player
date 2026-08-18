@@ -4094,6 +4094,7 @@ export function App() {
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
               listeningHistory={listeningHistory}
+              onSelectView={selectView}
               onClearListeningHistory={clearListeningHistory}
               songs={songLibrary}
               songLibraryStatus={songLibraryStatus}
@@ -6021,6 +6022,7 @@ function LibraryView({
   recentAlbums,
   recentlyPlayedAlbums,
   listeningHistory,
+  onSelectView,
   onClearListeningHistory,
   songs,
   songLibraryStatus,
@@ -6089,6 +6091,7 @@ function LibraryView({
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
   listeningHistory: ListeningHistoryEntry[];
+  onSelectView: (view: View) => void;
   onClearListeningHistory: () => void;
   songs: Song[];
   songLibraryStatus: "idle" | "loading" | "ready" | "error";
@@ -6250,9 +6253,13 @@ function LibraryView({
           {activeView === "overview" ? (
             <OverviewHome
               config={config}
+              albums={albums}
+              recentAlbums={recentAlbums}
               recentlyPlayedAlbums={recentlyPlayedAlbums}
               listeningHistory={listeningHistory}
               onPlaySong={onPlaySong}
+              onPlayAlbum={onPlayAlbum}
+              onSelectView={onSelectView}
             />
           ) : null}
           {activeView === "nowPlaying" ? (
@@ -6379,25 +6386,43 @@ function LibraryView({
 
 function OverviewHome({
   config,
+  albums,
+  recentAlbums,
   recentlyPlayedAlbums,
   listeningHistory,
   onPlaySong,
+  onPlayAlbum,
+  onSelectView,
 }: {
   config: NavidromeConfig | null;
+  albums: Album[];
+  recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
   listeningHistory: ListeningHistoryEntry[];
   onPlaySong: (song: Song) => void;
+  onPlayAlbum: (album: Album) => void;
+  onSelectView: (view: View) => void;
 }) {
-  const artAlbums = recentlyPlayedAlbums.slice(0, 5);
   const latestListen = listeningHistory[0]?.song;
+  const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
+  const visibleNewAlbums = recentAlbums.slice(0, 5);
+
+  useEffect(() => {
+    setShuffleAlbums(shuffled(albums).slice(0, 5));
+  }, [albums]);
+
+  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 5));
 
   return (
     <div className="home-dashboard">
       <section className="home-dashboard-intro">
         <div>
           <p className="eyebrow">Your listening</p>
-          <h3>Music, close at hand.</h3>
-          <p>{latestListen ? `Last played: ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}` : config ? "Start a record, and Prism will keep your recent listening here." : "Connect your library to make this space yours."}</p>
+          <h3>{greeting}.</h3>
+          <p>{latestListen ? `Pick up where you left off with ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}.` : config ? "Start a record, and Prism will keep the good stuff close at hand." : "Connect your library to make this space yours."}</p>
           {latestListen ? (
             <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(latestListen)}>
               <Play size={16} fill="currentColor" />
@@ -6405,8 +6430,8 @@ function OverviewHome({
             </button>
           ) : null}
         </div>
-        <div className="home-art-cluster" aria-label="Recently played albums">
-          {artAlbums.length ? artAlbums.map((album, index) => (
+        <div className="home-art-cluster" aria-label="Albums from your library">
+          {visibleRecentAlbums.length ? visibleRecentAlbums.map((album, index) => (
             <CoverArt
               key={album.id}
               src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
@@ -6416,7 +6441,63 @@ function OverviewHome({
           )) : <div className="home-cluster-empty"><Music2 size={34} /></div>}
         </div>
       </section>
+      <section className="home-radio-card">
+        <div className="home-radio-mark"><RadioTower size={22} /></div>
+        <div>
+          <p className="eyebrow">Live from Subwave</p>
+          <h4>Listen to Radio</h4>
+          <p>A separate place for the live station, shows, and requests.</p>
+        </div>
+        <button className="secondary-button home-radio-button" type="button" onClick={() => onSelectView("radio")}>
+          Open Radio <ChevronRight size={16} />
+        </button>
+      </section>
+      <HomeAlbumShelf title="Recently played" albums={visibleRecentAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyPlayed")} />
+      <HomeAlbumShelf title="Recently added" albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyAdded")} />
+      <HomeAlbumShelf title="Shuffle something" albums={shuffleAlbums} config={config} onPlayAlbum={onPlayAlbum} onRefresh={refreshShuffleAlbums} />
     </div>
+  );
+}
+
+function HomeAlbumShelf({
+  title,
+  albums,
+  config,
+  onPlayAlbum,
+  onOpenAlbum,
+  onRefresh,
+}: {
+  title: string;
+  albums: Album[];
+  config: NavidromeConfig | null;
+  onPlayAlbum: (album: Album) => void;
+  onOpenAlbum?: () => void;
+  onRefresh?: () => void;
+}) {
+  if (!albums.length) return null;
+
+  return (
+    <section className="home-album-shelf">
+      <div className="home-shelf-heading">
+        <h4>{title}</h4>
+        {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
+        {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
+      </div>
+      <div className="home-album-row">
+        {albums.map((album) => (
+          <div className="home-album" key={album.id}>
+            <PlayableCover
+              src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+              label={album.name}
+              className="home-album-cover"
+              onPlay={() => onPlayAlbum(album)}
+            />
+            <strong>{album.name}</strong>
+            <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
