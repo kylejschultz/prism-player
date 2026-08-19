@@ -6581,6 +6581,28 @@ function HomeAlbumShelf({
   onOpenAlbum?: () => void;
   onRefresh?: () => void;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [scrollMetrics, setScrollMetrics] = useState({ max: 0, value: 0 });
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+
+    const updateScrollMetrics = () => {
+      const max = Math.max(0, row.scrollWidth - row.clientWidth);
+      setScrollMetrics({ max, value: Math.min(row.scrollLeft, max) });
+    };
+
+    updateScrollMetrics();
+    row.addEventListener("scroll", updateScrollMetrics, { passive: true });
+    const resizeObserver = new ResizeObserver(updateScrollMetrics);
+    resizeObserver.observe(row);
+    return () => {
+      row.removeEventListener("scroll", updateScrollMetrics);
+      resizeObserver.disconnect();
+    };
+  }, [albums]);
+
   if (!albums.length) return null;
 
   return (
@@ -6593,21 +6615,35 @@ function HomeAlbumShelf({
         {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
         {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
       </div>
-      <div className="home-album-row" tabIndex={0} aria-label={`${title} albums`}>
-        {albums.map((album) => (
-          <div className="home-album" key={album.id}>
-            <PlayableCover
-              src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
-              label={album.name}
-              className="home-album-cover"
-              onPlay={() => onPlayAlbum(album)}
-            />
-            <div className="home-album-copy">
-              <strong>{album.name}</strong>
-              <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+      <div className="home-album-carousel">
+        <div className="home-album-row" ref={rowRef} tabIndex={0} aria-label={`${title} albums`}>
+          {albums.map((album) => (
+            <div className="home-album" key={album.id}>
+              <PlayableCover
+                src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+                label={album.name}
+                className="home-album-cover"
+                onPlay={() => onPlayAlbum(album)}
+              />
+              <div className="home-album-copy">
+                <strong>{album.name}</strong>
+                <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+        {scrollMetrics.max > 0 ? (
+          <input
+            className="home-album-scrollbar"
+            type="range"
+            min="0"
+            max={scrollMetrics.max}
+            value={scrollMetrics.value}
+            step="1"
+            aria-label={`Scroll ${title} albums`}
+            onChange={(event) => rowRef.current?.scrollTo({ left: Number(event.currentTarget.value) })}
+          />
+        ) : null}
       </div>
     </section>
   );

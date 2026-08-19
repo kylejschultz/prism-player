@@ -1606,8 +1606,11 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   color: #fff;
 }
 
-.home-album-row {
+.home-album-carousel {
   position: relative;
+}
+
+.home-album-row {
   display: grid;
   min-width: 0;
   width: 100%;
@@ -1625,25 +1628,57 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   scrollbar-width: thin;
 }
 
-/* macOS overlay scrollbars only reveal while actively scrolling. Keep a
- * thumb-only cue visible on hover so horizontal shelves advertise themselves. */
-.home-album-row::after {
+.home-album-scrollbar {
   position: absolute;
-  right: 6px;
+  right: 1px;
+  left: 1px;
   bottom: 1px;
-  width: 72px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(244, 241, 236, 0.42);
-  content: "";
+  width: calc(100% - 2px);
+  height: 8px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: ew-resize;
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease;
 }
 
-.home-album-row:hover::after,
-.home-album-row:focus-visible::after {
+.home-album-carousel:hover .home-album-scrollbar,
+.home-album-carousel:focus-within .home-album-scrollbar {
   opacity: 1;
+  pointer-events: auto;
+}
+
+.home-album-scrollbar::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.home-album-scrollbar::-webkit-slider-thumb {
+  width: 72px;
+  height: 4px;
+  margin-top: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(244, 241, 236, 0.42);
+}
+
+.home-album-scrollbar::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.home-album-scrollbar::-moz-range-thumb {
+  width: 72px;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(244, 241, 236, 0.42);
 }
 
 .home-album-row::-webkit-scrollbar {
