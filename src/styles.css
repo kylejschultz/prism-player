@@ -1606,6 +1606,10 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   color: #fff;
 }
 
+.home-album-carousel {
+  position: relative;
+}
+
 .home-album-row {
   display: grid;
   min-width: 0;
@@ -1622,6 +1626,24 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   scroll-snap-type: inline proximity;
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
+}
+
+.home-album-scroll-cue {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  color: rgba(244, 241, 236, 0.5);
+  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.home-album-scroll-cue-left {
+  left: -2px;
+}
+
+.home-album-scroll-cue-right {
+  right: -2px;
 }
 
 .home-album-row::-webkit-scrollbar {

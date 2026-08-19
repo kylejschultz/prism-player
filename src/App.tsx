@@ -6581,6 +6581,31 @@ function HomeAlbumShelf({
   onOpenAlbum?: () => void;
   onRefresh?: () => void;
 }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [scrollCue, setScrollCue] = useState({ canScrollLeft: false, canScrollRight: false });
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+
+    const updateScrollCue = () => {
+      const maxScrollLeft = Math.max(0, row.scrollWidth - row.clientWidth);
+      setScrollCue({
+        canScrollLeft: row.scrollLeft > 1,
+        canScrollRight: row.scrollLeft < maxScrollLeft - 1,
+      });
+    };
+
+    updateScrollCue();
+    row.addEventListener("scroll", updateScrollCue, { passive: true });
+    const resizeObserver = new ResizeObserver(updateScrollCue);
+    resizeObserver.observe(row);
+    return () => {
+      row.removeEventListener("scroll", updateScrollCue);
+      resizeObserver.disconnect();
+    };
+  }, [albums]);
+
   if (!albums.length) return null;
 
   return (
@@ -6594,7 +6619,7 @@ function HomeAlbumShelf({
         {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
       </div>
       <div className="home-album-carousel">
-        <div className="home-album-row" tabIndex={0} aria-label={`${title} albums`}>
+        <div className="home-album-row" ref={rowRef} tabIndex={0} aria-label={`${title} albums`}>
           {albums.map((album) => (
             <div className="home-album" key={album.id}>
               <PlayableCover
@@ -6610,6 +6635,8 @@ function HomeAlbumShelf({
             </div>
           ))}
         </div>
+        {scrollCue.canScrollLeft ? <ChevronLeft className="home-album-scroll-cue home-album-scroll-cue-left" size={18} aria-hidden="true" /> : null}
+        {scrollCue.canScrollRight ? <ChevronRight className="home-album-scroll-cue home-album-scroll-cue-right" size={18} aria-hidden="true" /> : null}
       </div>
     </section>
   );
