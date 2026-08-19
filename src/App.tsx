@@ -66,6 +66,8 @@ type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable"
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
 
+const LIBRARY_SCAN_POLL_INTERVAL_MS = 5 * 60 * 1000;
+
 function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
   return createPortal(<div className={`modal-backdrop ${className}`.trim()}>{children}</div>, document.body);
 }
@@ -1491,6 +1493,29 @@ async function resolveNavidromeConfig(config: NavidromeConfig) {
   throw lastError instanceof Error ? lastError : new Error("Could not reach Navidrome.");
 }
 
+type NavidromeScanStatus = {
+  scanning?: boolean;
+  lastScan?: string | number;
+};
+
+async function fetchNavidromeScanStatus(config: NavidromeConfig): Promise<NavidromeScanStatus | null> {
+  const response = await navidromeRequest<{ scanStatus?: NavidromeScanStatus }>(config, "getScanStatus");
+  return response.scanStatus ?? null;
+}
+
+function scanTimestamp(lastScan: NavidromeScanStatus["lastScan"]) {
+  if (lastScan == null) return null;
+  return String(lastScan);
+}
+
+function scanHasAdvanced(previous: string, next: string) {
+  const previousTime = Number.isFinite(Number(previous)) ? Number(previous) : Date.parse(previous);
+  const nextTime = Number.isFinite(Number(next)) ? Number(next) : Date.parse(next);
+
+  if (Number.isFinite(previousTime) && Number.isFinite(nextTime)) return nextTime > previousTime;
+  return previous !== next;
+}
+
 async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
   const [albums, recentAlbumResponse, recentlyPlayedResponse, artistResponse, playlistResponse, starredResponse] = await Promise.all([
     fetchAlbumLibrary(config),
@@ -1878,6 +1903,11 @@ export function App() {
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
+  const lastLibraryScanRef = useRef<string | null>(null);
+  const libraryScanWasInProgressRef = useRef(false);
+  const libraryScanCheckInFlightRef = useRef(false);
+  const libraryRefreshInFlightRef = useRef(false);
+  const libraryRefreshGenerationRef = useRef(0);
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
@@ -2326,7 +2356,10 @@ export function App() {
   }
 
   async function refreshLibrary(nextConfig = config) {
-    if (!nextConfig) return false;
+    if (!nextConfig || libraryRefreshInFlightRef.current) return false;
+
+    const refreshGeneration = libraryRefreshGenerationRef.current;
+    libraryRefreshInFlightRef.current = true;
 
     setStatus("checking");
     setLibraryStatus("loading");
@@ -2334,10 +2367,12 @@ export function App() {
 
     try {
       const resolvedConfig = await resolveNavidromeConfig(nextConfig);
-      const [nextLibrary, nextListenerName] = await Promise.all([
+      const [scanStatus, nextLibrary, nextListenerName] = await Promise.all([
+        fetchNavidromeScanStatus(resolvedConfig).catch(() => null),
         fetchLibrary(resolvedConfig),
         fetchNavidromeProfileName(resolvedConfig).catch(() => ""),
       ]);
+      if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
       setLibraryData(nextLibrary);
       setListenerName(nextListenerName);
       setConfig(resolvedConfig);
@@ -2346,12 +2381,19 @@ export function App() {
       setLibraryStatus("ready");
       setStatusMessage(`Connected to ${resolvedConfig.serverUrl}.`);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(resolvedConfig));
+      libraryScanWasInProgressRef.current = Boolean(scanStatus?.scanning);
+      const lastScan = scanTimestamp(scanStatus?.lastScan);
+      if (lastScan) lastLibraryScanRef.current = lastScan;
       return true;
     } catch (error) {
+      if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
+
       setStatus("error");
       setLibraryStatus("error");
       setStatusMessage(getErrorMessage(error));
       return false;
+    } finally {
+      libraryRefreshInFlightRef.current = false;
     }
   }
 
@@ -3205,6 +3247,9 @@ export function App() {
   }
 
   function resetConnection() {
+    libraryRefreshGenerationRef.current += 1;
+    lastLibraryScanRef.current = null;
+    libraryScanWasInProgressRef.current = false;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(LAST_PLAYED_TRACK_KEY);
     localStorage.removeItem(PLAYBACK_STATE_KEY);
@@ -3288,6 +3333,69 @@ export function App() {
       void refreshLibrary(config);
     }
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    const scanConfig = config as NavidromeConfig;
+
+    let cancelled = false;
+
+    async function checkForLibraryUpdates() {
+      if (
+        cancelled
+        || document.visibilityState === "hidden"
+        || libraryRefreshInFlightRef.current
+        || libraryScanCheckInFlightRef.current
+      ) return;
+
+      libraryScanCheckInFlightRef.current = true;
+      try {
+        const scanStatus = await fetchNavidromeScanStatus(scanConfig);
+        if (scanStatus?.scanning) {
+          libraryScanWasInProgressRef.current = true;
+          return;
+        }
+
+        const nextLastScan = scanTimestamp(scanStatus?.lastScan);
+        const previousLastScan = lastLibraryScanRef.current;
+        const shouldRefreshAfterScan = libraryScanWasInProgressRef.current;
+
+        if (cancelled || !nextLastScan) return;
+        if (!previousLastScan && !shouldRefreshAfterScan) {
+          lastLibraryScanRef.current = nextLastScan;
+          return;
+        }
+        const scanAdvanced = previousLastScan ? scanHasAdvanced(previousLastScan, nextLastScan) : false;
+        if (!shouldRefreshAfterScan && !scanAdvanced) return;
+
+        const refreshed = await refreshLibrary(scanConfig);
+        if (refreshed) {
+          lastLibraryScanRef.current = nextLastScan;
+          libraryScanWasInProgressRef.current = false;
+        }
+      } catch {
+        // Keep the active library and try again on the next foreground check.
+      } finally {
+        libraryScanCheckInFlightRef.current = false;
+      }
+    }
+
+    function checkWhenVisible() {
+      if (document.visibilityState === "visible") void checkForLibraryUpdates();
+    }
+
+    const interval = window.setInterval(() => void checkForLibraryUpdates(), LIBRARY_SCAN_POLL_INTERVAL_MS);
+    window.addEventListener("focus", checkWhenVisible);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    void checkForLibraryUpdates();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", checkWhenVisible);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [config]);
 
   useEffect(() => {
     if (!appSettings.analyticsEnabled) return;
