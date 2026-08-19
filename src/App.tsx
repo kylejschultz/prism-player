@@ -1193,11 +1193,29 @@ function splitFeaturedTitle(title: string) {
   }
 
   const liveSuffix = title.match(/\s+(?:[-–—]\s*)?((?:live)(?:\s+(?:at|from|in)\b)?.+)$/i);
-  if (!liveSuffix?.index) return { main: title, feature: "" };
+  if (liveSuffix?.index) {
+    return {
+      main: title.slice(0, liveSuffix.index).trim(),
+      feature: liveSuffix[1]?.trim() ?? "",
+    };
+  }
+
+  const parentheticalSuffix = title.match(/\s+((?:\([^)]*\)\s*)+)$/);
+  if (parentheticalSuffix?.index) {
+    const qualifiers = [...parentheticalSuffix[1].matchAll(/\(([^)]*)\)/g)]
+      .map((match) => match[1]?.trim())
+      .filter((qualifier): qualifier is string => Boolean(qualifier));
+    if (qualifiers.length) {
+      return {
+        main: title.slice(0, parentheticalSuffix.index).trim(),
+        feature: qualifiers.join(" · "),
+      };
+    }
+  }
 
   return {
-    main: title.slice(0, liveSuffix.index).trim(),
-    feature: liveSuffix[1]?.trim() ?? "",
+    main: title,
+    feature: "",
   };
 }
 
@@ -6007,7 +6025,7 @@ function RadioView({
 
         <div className="radio-copy">
           <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
-          <h3>
+          <h3 aria-label={radioTitle}>
             <span>{radioTitleParts.main}</span>
             {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
           </h3>

@@ -3262,7 +3262,8 @@ button.similar-chip:hover,
   display: -webkit-box;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
+  /* Three lines is the hard visual limit; the full title remains available to assistive tech. */
+  -webkit-line-clamp: 3;
   margin-top: 10px;
   color: #f4f1ec;
   font-size: clamp(36px, 9cqw, 48px);
@@ -4138,8 +4139,8 @@ button.similar-chip:hover,
   padding: 8px 18px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background:
-    linear-gradient(90deg, rgba(240, 210, 123, 0.08), transparent 28%, rgba(63, 145, 133, 0.07)),
-    rgba(7, 7, 7, 0.82);
+    linear-gradient(90deg, rgba(240, 210, 123, 0.1), transparent 28%, rgba(63, 145, 133, 0.09)),
+    rgba(7, 7, 7, 0.56);
   backdrop-filter: blur(20px);
 }
 
