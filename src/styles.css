@@ -1606,10 +1606,6 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   color: #fff;
 }
 
-.home-album-carousel {
-  position: relative;
-}
-
 .home-album-row {
   display: grid;
   min-width: 0;
@@ -1620,65 +1616,12 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   gap: 12px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  /* Leave room for the card lift and the carousel affordance without clipping either. */
+  /* Leave room for the card lift and native scrollbar without clipping either. */
   padding: 6px 1px 10px;
   scroll-padding-inline: 1px;
   scroll-snap-type: inline proximity;
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
-}
-
-.home-album-scrollbar {
-  position: absolute;
-  right: 1px;
-  left: 1px;
-  bottom: 1px;
-  width: calc(100% - 2px);
-  height: 8px;
-  margin: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  cursor: ew-resize;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 160ms ease;
-}
-
-.home-album-carousel:hover .home-album-scrollbar,
-.home-album-carousel:focus-within .home-album-scrollbar {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.home-album-scrollbar::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: transparent;
-}
-
-.home-album-scrollbar::-webkit-slider-thumb {
-  width: 72px;
-  height: 4px;
-  margin-top: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(244, 241, 236, 0.42);
-}
-
-.home-album-scrollbar::-moz-range-track {
-  height: 4px;
-  background: transparent;
-}
-
-.home-album-scrollbar::-moz-range-thumb {
-  width: 72px;
-  height: 4px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(244, 241, 236, 0.42);
 }
 
 .home-album-row::-webkit-scrollbar {
