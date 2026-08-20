@@ -3287,7 +3287,7 @@ export function App() {
     }
 
     const radioPresence = activePlaybackSource === "radio" && isRadioPlaying && radioNowPlaying;
-    const localPresence = activePlaybackSource === "local" && currentTrack;
+    const localPresence = activePlaybackSource === "local" && isPlaying && currentTrack;
 
     if (!radioPresence && !localPresence) {
       setDiscordPresenceStatus("idle");
