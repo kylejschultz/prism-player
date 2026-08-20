@@ -108,7 +108,6 @@ function isTauriDesktopApp() {
 
 type NavidromeConfig = {
   serverUrl: string;
-  name: string;
   username: string;
   password: string;
 };
@@ -413,7 +412,6 @@ const idleRadioWaveformBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (
 
 const emptyConfig: NavidromeConfig = {
   serverUrl: "",
-  name: "",
   username: "",
   password: "",
 };
@@ -552,7 +550,11 @@ function loadStoredConfig(): NavidromeConfig | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as NavidromeConfig;
     if (!parsed.serverUrl || !parsed.username || !parsed.password) return null;
-    return { ...parsed, name: typeof parsed.name === "string" ? parsed.name : "" };
+    return {
+      serverUrl: parsed.serverUrl,
+      username: parsed.username,
+      password: parsed.password,
+    };
   } catch {
     return null;
   }
@@ -1447,6 +1449,26 @@ async function navidromeRequest<T>(
   }
 }
 
+async function fetchNavidromeProfileName(config: NavidromeConfig) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(`${normalizeServerUrl(config.serverUrl)}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: config.username, password: config.password }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
+
+    const profile = (await response.json()) as { name?: string };
+    return profile.name?.trim() ?? "";
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function resolveNavidromeConfig(config: NavidromeConfig) {
   const candidates = getServerUrlCandidates(config.serverUrl);
   let lastError: unknown = null;
@@ -1758,6 +1780,7 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
+  const [listenerName, setListenerName] = useState("");
   const [songLibrary, setSongLibrary] = useState<Song[]>([]);
   const [songLibraryStatus, setSongLibraryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [listeningHistory, setListeningHistory] = useState<ListeningHistoryEntry[]>(() => loadListeningHistory());
@@ -2311,8 +2334,12 @@ export function App() {
 
     try {
       const resolvedConfig = await resolveNavidromeConfig(nextConfig);
-      const nextLibrary = await fetchLibrary(resolvedConfig);
+      const [nextLibrary, nextListenerName] = await Promise.all([
+        fetchLibrary(resolvedConfig),
+        fetchNavidromeProfileName(resolvedConfig).catch(() => ""),
+      ]);
       setLibraryData(nextLibrary);
+      setListenerName(nextListenerName);
       setConfig(resolvedConfig);
       setForm(resolvedConfig);
       setStatus("connected");
@@ -2333,7 +2360,6 @@ export function App() {
 
     const nextConfig = {
       serverUrl: normalizeServerUrl(form.serverUrl),
-      name: form.name.trim(),
       username: form.username.trim(),
       password: form.password,
     };
@@ -3184,6 +3210,7 @@ export function App() {
     localStorage.removeItem(PLAYBACK_STATE_KEY);
     setConfig(null);
     setForm(emptyConfig);
+    setListenerName("");
     setLibraryData(emptyLibraryData);
     setSongLibrary([]);
     setSongLibraryStatus("idle");
@@ -4123,6 +4150,7 @@ export function App() {
             <LibraryView
               activeView={activeView}
               config={config}
+              listenerName={listenerName}
               libraryStatus={libraryStatus}
               statusMessage={statusMessage}
               appSettings={appSettings}
@@ -5410,16 +5438,6 @@ function SettingsView({
         </label>
 
         <label>
-          Name
-          <input
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="Kyle"
-            autoComplete="name"
-          />
-        </label>
-
-        <label>
           Username
           <input
             value={form.username}
@@ -5708,12 +5726,6 @@ function FirstRunWizard({
             onChange={(event) => setForm({ ...form, serverUrl: event.target.value })}
             placeholder="https://music.example.com"
             autoComplete="url"
-          />
-          <input
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="Name"
-            autoComplete="name"
           />
           <div className="split-inputs">
             <input
@@ -6087,6 +6099,7 @@ function RadioView({
 function LibraryView({
   activeView,
   config,
+  listenerName,
   libraryStatus,
   statusMessage,
   appSettings,
@@ -6157,6 +6170,7 @@ function LibraryView({
 }: {
   activeView: View;
   config: NavidromeConfig | null;
+  listenerName: string;
   libraryStatus: LibraryStatus;
   statusMessage: string;
   appSettings: AppSettings;
@@ -6353,6 +6367,7 @@ function LibraryView({
           {activeView === "overview" ? (
             <OverviewHome
               config={config}
+              listenerName={listenerName}
               albums={albums}
               recentAlbums={recentAlbums}
               recentlyPlayedAlbums={recentlyPlayedAlbums}
@@ -6491,6 +6506,7 @@ function LibraryView({
 
 function OverviewHome({
   config,
+  listenerName,
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
@@ -6505,6 +6521,7 @@ function OverviewHome({
   onStartRadio,
 }: {
   config: NavidromeConfig | null;
+  listenerName: string;
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
@@ -6524,7 +6541,6 @@ function OverviewHome({
   const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const listenerName = config?.name.trim();
   const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
   const visibleNewAlbums = recentAlbums.slice(0, 5);
 
