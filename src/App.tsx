@@ -6819,6 +6819,8 @@ function NowPlayingView({
       ? "Pick an album, artist, or song from your library."
       : "Connect your Navidrome server to bring your music home.";
   const progress = Math.min(position, Math.max(duration, 1));
+  const progressRatio = progress / Math.max(duration, 1);
+  const progressFillEnd = `calc(11px + ${progressRatio * 100}% - ${22 * progressRatio}px)`;
 
   return (
     <div className="home-view">
@@ -6842,7 +6844,18 @@ function NowPlayingView({
           </div>
           <div className="home-seek-row">
             <span>{formatDuration(position)}</span>
-            <input type="range" min="0" max={Math.max(duration, 1)} step="1" value={progress} onChange={(event) => onSeek(Number(event.target.value))} disabled={!hasTrack || !duration} aria-label="Seek" />
+            <input
+              className="home-seek-slider"
+              type="range"
+              min="0"
+              max={Math.max(duration, 1)}
+              step="1"
+              value={progress}
+              style={{ "--home-seek-fill-end": progressFillEnd } as CSSProperties}
+              onChange={(event) => onSeek(Number(event.target.value))}
+              disabled={!hasTrack || !duration}
+              aria-label="Seek"
+            />
             <span>{formatDuration(duration)}</span>
           </div>
         </div>
