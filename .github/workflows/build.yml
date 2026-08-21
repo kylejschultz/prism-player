@@ -73,6 +73,11 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Build macOS installer
+        env:
+          # Tauri skips Finder's layout script on CI by default. GitHub's macOS
+          # runner supports it, and the script writes our background and icon
+          # positions into the DMG's Finder metadata.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: npm run tauri:build:installer
 
       - name: Name macOS installer for the release
