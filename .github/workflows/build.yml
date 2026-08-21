@@ -69,16 +69,8 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
-
-      - name: Install macOS packaging dependency
-        run: python -m pip install --disable-pip-version-check dmgbuild
 
       - name: Build macOS installer
         run: npm run tauri:build:installer
