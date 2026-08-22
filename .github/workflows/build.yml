@@ -69,6 +69,26 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Prepare Apple notarization key
+        id: apple_credentials
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          umask 077
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          export API_KEY_PATH="$api_key_path"
+          node <<'NODE'
+          const fs = require("fs");
+
+          const key = Buffer.from(process.env.APPLE_API_KEY_BASE64, "base64");
+          if (!key.toString("utf8").includes("-----BEGIN PRIVATE KEY-----")) {
+            throw new Error("APPLE_API_KEY_BASE64 did not decode to an App Store Connect private key.");
+          }
+          fs.writeFileSync(process.env.API_KEY_PATH, key, { mode: 0o600 });
+          NODE
+          echo "api_key_path=$api_key_path" >> "$GITHUB_OUTPUT"
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
@@ -78,6 +98,11 @@ jobs:
           # runner supports it, and the script writes our background and icon
           # positions into the DMG's Finder metadata.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+          # Tauri imports the certificate into an ephemeral keychain and signs
+          # the app. Notarization is performed explicitly below so the Actions
+          # log always includes Apple's submission ID and current status.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: npm run tauri:build:installer
 
       - name: Name macOS installer for the release
@@ -98,6 +123,81 @@ jobs:
           suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
           target_dmg="src-tauri/target/release/bundle/dmg/Prism-player-${suffix}.dmg"
           mv "$source_dmg" "$target_dmg"
+
+      - name: Notarize macOS installer
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_PATH: ${{ steps.apple_credentials.outputs.api_key_path }}
+        run: |
+          dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$dmg" ]]; then
+            echo "::error::No macOS DMG was produced."
+            exit 1
+          fi
+
+          submission_json="$(xcrun notarytool submit "$dmg" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --output-format json)"
+          printf '%s\n' "$submission_json"
+          submission_id="$(node -e 'let d=""; process.stdin.on("data", c => d += c).on("end", () => { const id = JSON.parse(d).id; if (!id) process.exit(1); process.stdout.write(id); })' <<< "$submission_json")"
+          echo "Apple notarization submission: $submission_id"
+
+          for attempt in {1..60}; do
+            if status_json="$(xcrun notarytool info "$submission_id" \
+              --key "$APPLE_API_KEY_PATH" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" \
+              --output-format json)"; then
+              status="$(node -e 'let d=""; process.stdin.on("data", c => d += c).on("end", () => process.stdout.write(JSON.parse(d).status || "unknown"))' <<< "$status_json")"
+              echo "Apple notarization status (attempt $attempt/60): $status"
+              if [[ "$status" == "Accepted" ]]; then
+                xcrun stapler staple -v "$dmg"
+                exit 0
+              fi
+              if [[ "$status" == "Invalid" || "$status" == "Rejected" ]]; then
+                xcrun notarytool log "$submission_id" \
+                  --key "$APPLE_API_KEY_PATH" \
+                  --key-id "$APPLE_API_KEY_ID" \
+                  --issuer "$APPLE_API_ISSUER_ID"
+                exit 1
+              fi
+            else
+              echo "::warning::Could not read Apple notarization status; retrying."
+            fi
+            sleep 30
+          done
+
+          echo "::error::Apple notarization did not finish within 30 minutes (submission $submission_id)."
+          exit 1
+
+      - name: Verify signed and notarized macOS installer
+        env:
+          APPLE_CERTIFICATE_IDENTITY: ${{ secrets.APPLE_CERTIFICATE_IDENTITY }}
+        run: |
+          dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          codesign --verify --strict --verbose=2 "$dmg"
+          xcrun stapler validate "$dmg"
+          if ! spctl --assess --type open --verbose=4 "$dmg"; then
+            # Hosted runners do not provide Finder's download-quarantine
+            # context, so spctl can return "Insufficient Context" here even
+            # after Apple's acceptance and a successful stapler validation.
+            echo "::warning::Gatekeeper open assessment is unavailable on this hosted runner."
+          fi
+
+          mount_point="$(mktemp -d)"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_point"
+          trap 'hdiutil detach "$mount_point" -quiet || true' EXIT
+
+          app="$mount_point/Prism Player.app"
+          actual_identity="$(codesign -dvv "$app" 2>&1 | awk -F= '/^Authority=Developer ID Application:/ { print substr($0, 11); exit }')"
+          test "$actual_identity" = "$APPLE_CERTIFICATE_IDENTITY"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          if ! spctl --assess --type execute --verbose=4 "$app"; then
+            echo "::warning::Gatekeeper execute assessment is unavailable on this hosted runner."
+          fi
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7

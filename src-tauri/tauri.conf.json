@@ -37,7 +37,6 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "signingIdentity": "-",
       "minimumSystemVersion": "13.0",
       "dmg": {
         "background": "../scripts/macos-installer-background.png",
