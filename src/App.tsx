@@ -14,6 +14,7 @@ import {
   Disc3,
   Download,
   ExternalLink,
+  Maximize2,
   History,
   Heart,
   Home,
@@ -52,7 +53,7 @@ import {
 import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
-type View = LibraryViewMode | "radio" | "search" | "settings";
+type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
 type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
@@ -64,6 +65,8 @@ type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
+
+const LIBRARY_SCAN_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
 function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
   return createPortal(<div className={`modal-backdrop ${className}`.trim()}>{children}</div>, document.body);
@@ -124,6 +127,7 @@ type AppSettings = {
   showSharedPlaylists: boolean;
   radioStationUrl: string;
   radioStationUrls: string[];
+  radioStationNames: Record<string, string>;
 };
 
 type Album = {
@@ -447,6 +451,7 @@ const defaultSettings: AppSettings = {
   showSharedPlaylists: true,
   radioStationUrl: "",
   radioStationUrls: [],
+  radioStationNames: {},
 };
 
 const ALPHABET = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -498,6 +503,7 @@ function getViewLabel(view: View) {
     recentlyAdded: "Recently Added",
     recentlyPlayed: "Recently Played",
     favorites: "Favorites",
+    nowPlaying: "Now Playing",
     radio: "Radio",
     search: "Search",
     settings: "Settings",
@@ -518,25 +524,6 @@ function getSettingsTabLabel(tab: SettingsTab) {
   };
 
   return labels[tab];
-}
-
-function getGreetingPeriod() {
-  const hour = new Date().getHours();
-  if (hour < 5) return "night";
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  if (hour < 22) return "evening";
-  return "night";
-}
-
-function formatDisplayName(value?: string) {
-  if (!value) return "there";
-  return value
-    .trim()
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function sortAlbumsChronologically(albums: Album[]) {
@@ -565,7 +552,11 @@ function loadStoredConfig(): NavidromeConfig | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as NavidromeConfig;
     if (!parsed.serverUrl || !parsed.username || !parsed.password) return null;
-    return parsed;
+    return {
+      serverUrl: parsed.serverUrl,
+      username: parsed.username,
+      password: parsed.password,
+    };
   } catch {
     return null;
   }
@@ -584,6 +575,18 @@ function normalizeRadioStationList(values: Array<string | undefined | null>) {
   });
 
   return stations;
+}
+
+function normalizeRadioStationNames(values: Record<string, string> | undefined, stations: string[]) {
+  const names: Record<string, string> = {};
+
+  Object.entries(values ?? {}).forEach(([stationUrl, name]) => {
+    const origin = normalizeStationUrl(stationUrl);
+    const normalizedName = name.trim();
+    if (origin && stations.includes(origin) && normalizedName) names[origin] = normalizedName;
+  });
+
+  return names;
 }
 
 function loadStoredSettings(): AppSettings {
@@ -607,6 +610,7 @@ function loadStoredSettings(): AppSettings {
       showSharedPlaylists: parsed.showSharedPlaylists ?? defaultSettings.showSharedPlaylists,
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
       radioStationUrls,
+      radioStationNames: normalizeRadioStationNames(parsed.radioStationNames, radioStationUrls),
     };
   } catch {
     return defaultSettings;
@@ -977,8 +981,9 @@ function formatRadioStreamLabel(bitrate: number | string | null | undefined, for
   return `${normalizedFormat} / ${bitrateText}`;
 }
 
-function radioStationName(state: RadioStationState | null, stationUrl: string) {
+function radioStationName(state: RadioStationState | null, stationUrl: string, savedName?: string) {
   return (
+    savedName ||
     state?.context?.stationName ||
     state?.context?.station?.name ||
     state?.station?.name ||
@@ -1192,11 +1197,29 @@ function splitFeaturedTitle(title: string) {
   }
 
   const liveSuffix = title.match(/\s+(?:[-–—]\s*)?((?:live)(?:\s+(?:at|from|in)\b)?.+)$/i);
-  if (!liveSuffix?.index) return { main: title, feature: "" };
+  if (liveSuffix?.index) {
+    return {
+      main: title.slice(0, liveSuffix.index).trim(),
+      feature: liveSuffix[1]?.trim() ?? "",
+    };
+  }
+
+  const parentheticalSuffix = title.match(/\s+((?:\([^)]*\)\s*)+)$/);
+  if (parentheticalSuffix?.index) {
+    const qualifiers = [...parentheticalSuffix[1].matchAll(/\(([^)]*)\)/g)]
+      .map((match) => match[1]?.trim())
+      .filter((qualifier): qualifier is string => Boolean(qualifier));
+    if (qualifiers.length) {
+      return {
+        main: title.slice(0, parentheticalSuffix.index).trim(),
+        feature: qualifiers.join(" · "),
+      };
+    }
+  }
 
   return {
-    main: title.slice(0, liveSuffix.index).trim(),
-    feature: liveSuffix[1]?.trim() ?? "",
+    main: title,
+    feature: "",
   };
 }
 
@@ -1428,6 +1451,26 @@ async function navidromeRequest<T>(
   }
 }
 
+async function fetchNavidromeProfileName(config: NavidromeConfig) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(`${normalizeServerUrl(config.serverUrl)}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: config.username, password: config.password }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
+
+    const profile = (await response.json()) as { name?: string };
+    return profile.name?.trim() ?? "";
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function resolveNavidromeConfig(config: NavidromeConfig) {
   const candidates = getServerUrlCandidates(config.serverUrl);
   let lastError: unknown = null;
@@ -1448,6 +1491,29 @@ async function resolveNavidromeConfig(config: NavidromeConfig) {
   }
 
   throw lastError instanceof Error ? lastError : new Error("Could not reach Navidrome.");
+}
+
+type NavidromeScanStatus = {
+  scanning?: boolean;
+  lastScan?: string | number;
+};
+
+async function fetchNavidromeScanStatus(config: NavidromeConfig): Promise<NavidromeScanStatus | null> {
+  const response = await navidromeRequest<{ scanStatus?: NavidromeScanStatus }>(config, "getScanStatus");
+  return response.scanStatus ?? null;
+}
+
+function scanTimestamp(lastScan: NavidromeScanStatus["lastScan"]) {
+  if (lastScan == null) return null;
+  return String(lastScan);
+}
+
+function scanHasAdvanced(previous: string, next: string) {
+  const previousTime = Number.isFinite(Number(previous)) ? Number(previous) : Date.parse(previous);
+  const nextTime = Number.isFinite(Number(next)) ? Number(next) : Date.parse(next);
+
+  if (Number.isFinite(previousTime) && Number.isFinite(nextTime)) return nextTime > previousTime;
+  return previous !== next;
 }
 
 async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
@@ -1739,6 +1805,7 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
+  const [listenerName, setListenerName] = useState("");
   const [songLibrary, setSongLibrary] = useState<Song[]>([]);
   const [songLibraryStatus, setSongLibraryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [listeningHistory, setListeningHistory] = useState<ListeningHistoryEntry[]>(() => loadListeningHistory());
@@ -1836,6 +1903,11 @@ export function App() {
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
   const lastPlaybackPersistRef = useRef(0);
   const lastPlaybackPersistTrackRef = useRef("");
+  const lastLibraryScanRef = useRef<string | null>(null);
+  const libraryScanWasInProgressRef = useRef(false);
+  const libraryScanCheckInFlightRef = useRef(false);
+  const libraryRefreshInFlightRef = useRef(false);
+  const libraryRefreshGenerationRef = useRef(0);
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
@@ -1961,33 +2033,6 @@ export function App() {
       () => queue.map((song, index) => ({ song, index })).slice(Math.max(currentIndex, 0)),
       [currentIndex, queue],
     );
-  const libraryItems = useMemo(
-    () => [
-      { label: "Artists", value: hasConfig ? `${libraryData.artists.length} loaded` : "Needs server" },
-      { label: "Albums", value: hasConfig ? `${libraryData.albums.length} loaded` : "Needs server" },
-      { label: "Playlists", value: hasConfig ? `${libraryData.playlists.length} loaded` : "Needs server" },
-      { label: "Recently Added", value: hasConfig ? `${libraryData.recentAlbums.length} albums` : "Needs server" },
-      { label: "Recently Played", value: hasConfig ? `${libraryData.recentlyPlayedAlbums.length} albums` : "Needs server" },
-      {
-        label: "Favorites",
-        value: hasConfig
-          ? `${libraryData.favorites.artists.length + libraryData.favorites.albums.length + libraryData.favorites.songs.length} saved`
-          : "Needs server",
-      },
-    ],
-    [
-      hasConfig,
-      libraryData.albums.length,
-      libraryData.artists.length,
-      libraryData.favorites.albums.length,
-      libraryData.favorites.artists.length,
-      libraryData.favorites.songs.length,
-      libraryData.playlists.length,
-      libraryData.recentAlbums.length,
-      libraryData.recentlyPlayedAlbums.length,
-    ],
-  );
-
   function normalizeAppSettings(nextSettings: AppSettings) {
     const radioStationUrls = normalizeRadioStationList([...nextSettings.radioStationUrls, nextSettings.radioStationUrl]);
     const activeStation = normalizeStationUrl(nextSettings.radioStationUrl) || radioStationUrls[0] || "";
@@ -1997,6 +2042,7 @@ export function App() {
       lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
       radioStationUrl: activeStation,
       radioStationUrls: radioStationUrls.includes(activeStation) ? radioStationUrls : normalizeRadioStationList([activeStation, ...radioStationUrls]),
+      radioStationNames: normalizeRadioStationNames(nextSettings.radioStationNames, radioStationUrls),
     };
   }
 
@@ -2007,14 +2053,21 @@ export function App() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizedSettings));
   }
 
-  function saveRadioStation(origin: string) {
+  function saveRadioStation(origin: string, discoveredName?: string) {
     const normalized = normalizeStationUrl(origin);
     if (!normalized) return;
+
+    const stationUrls = normalizeRadioStationList([...appSettings.radioStationUrls, normalized]);
+    const existingName = appSettings.radioStationNames[normalized];
+    const name = discoveredName?.trim();
 
     updateAppSettings({
       ...appSettings,
       radioStationUrl: normalized,
-      radioStationUrls: normalizeRadioStationList([...appSettings.radioStationUrls, normalized]),
+      radioStationUrls: stationUrls,
+      // The first name returned by a station is remembered. A value edited in
+      // Settings is intentionally left alone as a user-friendly override.
+      radioStationNames: existingName || !name ? appSettings.radioStationNames : { ...appSettings.radioStationNames, [normalized]: name },
     });
     setRadioStationInput(normalized);
   }
@@ -2051,6 +2104,7 @@ export function App() {
       ...appSettings,
       radioStationUrl: activeStation,
       radioStationUrls: remainingStations,
+      radioStationNames: normalizeRadioStationNames(appSettings.radioStationNames, remainingStations),
     });
     setRadioStationInput(activeStation);
   }
@@ -2115,7 +2169,7 @@ export function App() {
       ]);
       applyRadioStationState(nextState);
       if (nextSession) applyRadioSession(nextSession);
-      saveRadioStation(origin);
+      saveRadioStation(origin, radioStationName(nextState, origin));
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
       setRadioMessage("Station connected.");
       return nextState;
@@ -2302,7 +2356,10 @@ export function App() {
   }
 
   async function refreshLibrary(nextConfig = config) {
-    if (!nextConfig) return false;
+    if (!nextConfig || libraryRefreshInFlightRef.current) return false;
+
+    const refreshGeneration = libraryRefreshGenerationRef.current;
+    libraryRefreshInFlightRef.current = true;
 
     setStatus("checking");
     setLibraryStatus("loading");
@@ -2310,20 +2367,33 @@ export function App() {
 
     try {
       const resolvedConfig = await resolveNavidromeConfig(nextConfig);
-      const nextLibrary = await fetchLibrary(resolvedConfig);
+      const [scanStatus, nextLibrary, nextListenerName] = await Promise.all([
+        fetchNavidromeScanStatus(resolvedConfig).catch(() => null),
+        fetchLibrary(resolvedConfig),
+        fetchNavidromeProfileName(resolvedConfig).catch(() => ""),
+      ]);
+      if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
       setLibraryData(nextLibrary);
+      setListenerName(nextListenerName);
       setConfig(resolvedConfig);
       setForm(resolvedConfig);
       setStatus("connected");
       setLibraryStatus("ready");
       setStatusMessage(`Connected to ${resolvedConfig.serverUrl}.`);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(resolvedConfig));
+      libraryScanWasInProgressRef.current = Boolean(scanStatus?.scanning);
+      const lastScan = scanTimestamp(scanStatus?.lastScan);
+      if (lastScan) lastLibraryScanRef.current = lastScan;
       return true;
     } catch (error) {
+      if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
+
       setStatus("error");
       setLibraryStatus("error");
       setStatusMessage(getErrorMessage(error));
       return false;
+    } finally {
+      libraryRefreshInFlightRef.current = false;
     }
   }
 
@@ -3177,11 +3247,15 @@ export function App() {
   }
 
   function resetConnection() {
+    libraryRefreshGenerationRef.current += 1;
+    lastLibraryScanRef.current = null;
+    libraryScanWasInProgressRef.current = false;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(LAST_PLAYED_TRACK_KEY);
     localStorage.removeItem(PLAYBACK_STATE_KEY);
     setConfig(null);
     setForm(emptyConfig);
+    setListenerName("");
     setLibraryData(emptyLibraryData);
     setSongLibrary([]);
     setSongLibraryStatus("idle");
@@ -3213,7 +3287,7 @@ export function App() {
     }
 
     const radioPresence = activePlaybackSource === "radio" && isRadioPlaying && radioNowPlaying;
-    const localPresence = activePlaybackSource === "local" && currentTrack;
+    const localPresence = activePlaybackSource === "local" && isPlaying && currentTrack;
 
     if (!radioPresence && !localPresence) {
       setDiscordPresenceStatus("idle");
@@ -3230,7 +3304,7 @@ export function App() {
         title: track.title ?? "Live radio",
         artist: track.artist ?? (radioPresence ? "Subwave" : "Unknown artist"),
         album: track.album ?? null,
-        station: radioPresence ? radioStationName(radioStationState, radioStationUrl) : null,
+        station: radioPresence ? radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl]) : null,
         playing: radioPresence ? true : isPlaying,
         startedAt: radioPresence || !isPlaying ? null : Date.now() - Math.round(position * 1000),
       },
@@ -3259,6 +3333,69 @@ export function App() {
       void refreshLibrary(config);
     }
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    const scanConfig = config as NavidromeConfig;
+
+    let cancelled = false;
+
+    async function checkForLibraryUpdates() {
+      if (
+        cancelled
+        || document.visibilityState === "hidden"
+        || libraryRefreshInFlightRef.current
+        || libraryScanCheckInFlightRef.current
+      ) return;
+
+      libraryScanCheckInFlightRef.current = true;
+      try {
+        const scanStatus = await fetchNavidromeScanStatus(scanConfig);
+        if (scanStatus?.scanning) {
+          libraryScanWasInProgressRef.current = true;
+          return;
+        }
+
+        const nextLastScan = scanTimestamp(scanStatus?.lastScan);
+        const previousLastScan = lastLibraryScanRef.current;
+        const shouldRefreshAfterScan = libraryScanWasInProgressRef.current;
+
+        if (cancelled || !nextLastScan) return;
+        if (!previousLastScan && !shouldRefreshAfterScan) {
+          lastLibraryScanRef.current = nextLastScan;
+          return;
+        }
+        const scanAdvanced = previousLastScan ? scanHasAdvanced(previousLastScan, nextLastScan) : false;
+        if (!shouldRefreshAfterScan && !scanAdvanced) return;
+
+        const refreshed = await refreshLibrary(scanConfig);
+        if (refreshed) {
+          lastLibraryScanRef.current = nextLastScan;
+          libraryScanWasInProgressRef.current = false;
+        }
+      } catch {
+        // Keep the active library and try again on the next foreground check.
+      } finally {
+        libraryScanCheckInFlightRef.current = false;
+      }
+    }
+
+    function checkWhenVisible() {
+      if (document.visibilityState === "visible") void checkForLibraryUpdates();
+    }
+
+    const interval = window.setInterval(() => void checkForLibraryUpdates(), LIBRARY_SCAN_POLL_INTERVAL_MS);
+    window.addEventListener("focus", checkWhenVisible);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    void checkForLibraryUpdates();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", checkWhenVisible);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [config]);
 
   useEffect(() => {
     if (!appSettings.analyticsEnabled) return;
@@ -3820,9 +3957,9 @@ export function App() {
 
   const radioDuration = radioNowPlaying?.duration ?? 0;
   const radioHasTimedTrack = Boolean(isRadioPlaying && radioNowPlaying && radioDuration > 0);
-  const footerRadioTitle = radioNowPlaying?.title ?? radioStationName(radioStationState, radioStationUrl);
+  const footerRadioTitle = radioNowPlaying?.title ?? radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl]);
   const footerRadioMeta = radioNowPlaying
-    ? radioNowPlaying.artist || radioStationName(radioStationState, radioStationUrl)
+    ? radioNowPlaying.artist || radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl])
     : "Live broadcast";
   const seekDuration = isRadioPlaying ? (radioHasTimedTrack ? radioDuration : Math.max(radioElapsed, 1)) : playerDuration || currentTrack?.duration || 0;
   const seekPosition = isRadioPlaying ? (radioHasTimedTrack ? Math.min(radioElapsed, radioDuration) : 0) : position;
@@ -4121,6 +4258,7 @@ export function App() {
             <LibraryView
               activeView={activeView}
               config={config}
+              listenerName={listenerName}
               libraryStatus={libraryStatus}
               statusMessage={statusMessage}
               appSettings={appSettings}
@@ -4133,12 +4271,16 @@ export function App() {
               radioMessage={radioMessage}
               radioWaveformBars={radioWaveformBars}
               tuneInRadio={tuneInRadio}
+              onStartRadio={() => {
+                selectView("radio");
+                void tuneInRadio();
+              }}
               onAddFirstRadioStation={tuneInRadio}
-              libraryItems={libraryItems}
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
               listeningHistory={listeningHistory}
+              onSelectView={selectView}
               onClearListeningHistory={clearListeningHistory}
               songs={songLibrary}
               songLibraryStatus={songLibraryStatus}
@@ -4156,12 +4298,20 @@ export function App() {
               setPlaylistCreatorOpen={setPlaylistCreatorOpen}
               onSongContextMenu={openSongContextMenu}
               onRetryLibrary={() => void refreshLibrary()}
-              onSelectLibraryView={selectView}
               detailSelection={detailSelection}
               detailStatus={detailStatus}
               detailMessage={detailMessage}
               currentTrack={currentTrack}
+              currentTrackCoverUrl={currentTrackCoverUrl}
               isPlaying={isPlaying}
+              position={position}
+              duration={playerDuration || currentTrack?.duration || 0}
+              hasPrevious={currentIndex > 0}
+              hasNext={repeatMode === "all" || currentIndex < queue.length - 1}
+              onTogglePlayback={togglePlayback}
+              onPrevious={playPrevious}
+              onNext={() => playNext(false)}
+              onSeek={seekTo}
               favoriteIds={favoriteIds}
               favoriteBusyKey={favoriteBusyKey}
               onToggleFavorite={toggleFavorite}
@@ -4224,7 +4374,10 @@ export function App() {
               <CoverArt src={null} label="Radio" className="player-cover" fallbackIcon={<RadioTower size={20} />} />
             )
           ) : footerTrack ? (
-            <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
+            <button className="player-now-playing-trigger" type="button" onClick={() => selectView("nowPlaying")} aria-label={`Open Now Playing for ${footerTrack.title}`}>
+              <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
+              <Maximize2 size={14} aria-hidden="true" />
+            </button>
           ) : null}
           <div className="now-playing-copy">
             {isRadioPresentation ? (
@@ -5495,10 +5648,25 @@ function SettingsView({
           <div className="settings-station-list">
             {appSettings.radioStationUrls.map((stationUrl) => (
               <div className={`settings-station-row ${stationUrl === appSettings.radioStationUrl ? "active" : ""}`} key={stationUrl}>
-                <button className="settings-station-main" type="button" onClick={() => onSelectRadioStation(stationUrl)}>
-                  <RadioTower size={15} />
-                  <span>{stationUrl.replace(/^https?:\/\//, "")}</span>
-                </button>
+                <div className="settings-station-details">
+                  <button className="settings-station-main" type="button" onClick={() => onSelectRadioStation(stationUrl)}>
+                    <RadioTower size={15} />
+                    <span>{appSettings.radioStationNames[stationUrl] || stationUrl.replace(/^https?:\/\//, "")}</span>
+                  </button>
+                  <input
+                    className="settings-station-name"
+                    aria-label={`Display name for ${stationUrl}`}
+                    value={appSettings.radioStationNames[stationUrl] ?? ""}
+                    onChange={(event) => {
+                      const name = event.target.value.trim();
+                      const radioStationNames = { ...appSettings.radioStationNames };
+                      if (name) radioStationNames[stationUrl] = name;
+                      else delete radioStationNames[stationUrl];
+                      updateAppSettings({ ...appSettings, radioStationNames });
+                    }}
+                    placeholder="Display name (optional)"
+                  />
+                </div>
                 <button
                   className="icon-button"
                   type="button"
@@ -5526,7 +5694,7 @@ function SettingsView({
             Add
           </button>
         </form>
-        <p className="settings-note">Prism validates this against `/api/state` and plays the station stream from `/stream.mp3`.</p>
+        <p className="settings-note">Prism remembers the station name reported by `/api/state`; use Display name to override it. Streams play from `/stream.mp3`.</p>
       </section> : null}
 
       {activeTab === "privacy" ? <section className="settings-panel">
@@ -5871,7 +6039,8 @@ function RadioView({
   const [firstStationUrl, setFirstStationUrl] = useState("");
   const isPlaying = status === "playing";
   const isTuning = status === "checking";
-  const selectedStationLabel = stationUrl ? stationUrl.replace(/^https?:\/\//, "") : "No station selected";
+  const stationLabel = (url: string) => radioStationName(stationState, url, appSettings.radioStationNames[normalizeStationUrl(url)]);
+  const selectedStationLabel = stationUrl ? stationLabel(stationUrl) : "No station selected";
 
   if (!isPlaying) {
     return (
@@ -5893,7 +6062,7 @@ function RadioView({
                 <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)} disabled={isTuning}>
                   {savedStations.map((savedStationUrl) => (
                     <option value={savedStationUrl} key={savedStationUrl}>
-                      {savedStationUrl.replace(/^https?:\/\//, "")}
+                      {stationLabel(savedStationUrl)}
                     </option>
                   ))}
                 </select>
@@ -5933,7 +6102,7 @@ function RadioView({
 
   const nowPlaying = firstRadioTrack(stationState);
   const listenerCount = radioListenerCount(stationState);
-  const stationName = radioStationName(stationState, stationUrl);
+  const stationName = stationLabel(stationUrl);
   const showTiming = radioShowTiming(schedule, Date.now());
   const showName = stationState?.activeShow?.name ?? showTiming?.currentShow?.name;
   const personaId = showTiming?.currentShow?.personaId;
@@ -5976,7 +6145,7 @@ function RadioView({
 
         <div className="radio-copy">
           <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
-          <h3>
+          <h3 aria-label={radioTitle}>
             <span>{radioTitleParts.main}</span>
             {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
           </h3>
@@ -5989,7 +6158,7 @@ function RadioView({
               <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
                 {savedStations.map((savedStationUrl) => (
                   <option value={savedStationUrl} key={savedStationUrl}>
-                    {savedStationUrl.replace(/^https?:\/\//, "")}
+                    {stationLabel(savedStationUrl)}
                   </option>
                 ))}
               </select>
@@ -6038,6 +6207,7 @@ function RadioView({
 function LibraryView({
   activeView,
   config,
+  listenerName,
   libraryStatus,
   statusMessage,
   appSettings,
@@ -6050,12 +6220,13 @@ function LibraryView({
   radioMessage,
   radioWaveformBars,
   tuneInRadio,
+  onStartRadio,
   onAddFirstRadioStation,
-  libraryItems,
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
   listeningHistory,
+  onSelectView,
   onClearListeningHistory,
   songs,
   songLibraryStatus,
@@ -6072,12 +6243,20 @@ function LibraryView({
   searchStatus,
   setPlaylistCreatorOpen,
   onSongContextMenu,
-  onSelectLibraryView,
   detailSelection,
   detailStatus,
   detailMessage,
   currentTrack,
+  currentTrackCoverUrl,
   isPlaying,
+  position,
+  duration,
+  hasPrevious,
+  hasNext,
+  onTogglePlayback,
+  onPrevious,
+  onNext,
+  onSeek,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
@@ -6099,6 +6278,7 @@ function LibraryView({
 }: {
   activeView: View;
   config: NavidromeConfig | null;
+  listenerName: string;
   libraryStatus: LibraryStatus;
   statusMessage: string;
   appSettings: AppSettings;
@@ -6111,12 +6291,13 @@ function LibraryView({
   radioMessage: string;
   radioWaveformBars: number[];
   tuneInRadio: () => Promise<void>;
+  onStartRadio: () => void;
   onAddFirstRadioStation: (stationUrl: string) => Promise<void>;
-  libraryItems: Array<{ label: string; value: string }>;
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
   listeningHistory: ListeningHistoryEntry[];
+  onSelectView: (view: View) => void;
   onClearListeningHistory: () => void;
   songs: Song[];
   songLibraryStatus: "idle" | "loading" | "ready" | "error";
@@ -6133,12 +6314,20 @@ function LibraryView({
   searchStatus: "idle" | "searching" | "error";
   setPlaylistCreatorOpen: (open: boolean) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
-  onSelectLibraryView: (view: View) => void;
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
   currentTrack: Song | null;
+  currentTrackCoverUrl: string | null;
   isPlaying: boolean;
+  position: number;
+  duration: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onTogglePlayback: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onSeek: (position: number) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -6158,6 +6347,19 @@ function LibraryView({
   onQueueSong: (song: Song) => void;
   onRetryLibrary: () => void;
 }) {
+  const [isHomeScrollbarVisible, setIsHomeScrollbarVisible] = useState(false);
+  const homeScrollbarTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (homeScrollbarTimeoutRef.current !== null) window.clearTimeout(homeScrollbarTimeoutRef.current);
+  }, []);
+
+  function revealHomeScrollbar() {
+    setIsHomeScrollbarVisible(true);
+    if (homeScrollbarTimeoutRef.current !== null) window.clearTimeout(homeScrollbarTimeoutRef.current);
+    homeScrollbarTimeoutRef.current = window.setTimeout(() => setIsHomeScrollbarVisible(false), 700);
+  }
+
   if (activeView === "radio") {
     return (
       <RadioView
@@ -6190,7 +6392,10 @@ function LibraryView({
   const showLibraryError = libraryStatus === "error" && activeView !== "search";
 
   return (
-    <section className="browser-panel">
+    <section
+      className={`browser-panel ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
+      onScroll={activeView === "overview" || activeView === "nowPlaying" ? revealHomeScrollbar : undefined}
+    >
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
           config={config}
@@ -6219,9 +6424,10 @@ function LibraryView({
         />
       ) : (
         <>
-          <div className="panel-heading browser-heading">
-            <h3>{panelTitle}</h3>
-            <div className="heading-actions">
+          {activeView !== "overview" && activeView !== "nowPlaying" ? (
+            <div className="panel-heading browser-heading">
+              <h3>{panelTitle}</h3>
+              <div className="heading-actions">
               {activeView === "albums" ? (
                 <div className="view-toggle" aria-label="Album view">
                   <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
@@ -6248,8 +6454,9 @@ function LibraryView({
                   New Playlist
                 </button>
               ) : null}
+              </div>
             </div>
-          </div>
+          ) : null}
           {showLibraryError ? (
             <StateNotice
               tone="bad"
@@ -6268,16 +6475,35 @@ function LibraryView({
           {activeView === "overview" ? (
             <OverviewHome
               config={config}
-              libraryItems={libraryItems}
+              listenerName={listenerName}
+              albums={albums}
               recentAlbums={recentAlbums}
+              recentlyPlayedAlbums={recentlyPlayedAlbums}
+              listeningHistory={listeningHistory}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
-              favoriteIds={favoriteIds}
-              favoriteBusyKey={favoriteBusyKey}
-              onToggleFavorite={onToggleFavorite}
-              onSelectLibraryView={onSelectLibraryView}
-              onOpenAlbum={onOpenAlbum}
+              radioStationName={radioStationName(radioStationState, appSettings.radioStationUrl, appSettings.radioStationNames[normalizeStationUrl(appSettings.radioStationUrl)])}
+              radioStatus={radioStatus}
+              onPlaySong={onPlaySong}
               onPlayAlbum={onPlayAlbum}
+              onSelectView={onSelectView}
+              onStartRadio={onStartRadio}
+            />
+          ) : null}
+          {activeView === "nowPlaying" ? (
+            <NowPlayingView
+              config={config}
+              currentTrack={currentTrack}
+              currentTrackCoverUrl={currentTrackCoverUrl}
+              isPlaying={isPlaying}
+              position={position}
+              duration={duration}
+              hasPrevious={hasPrevious}
+              hasNext={hasNext}
+              onTogglePlayback={onTogglePlayback}
+              onPrevious={onPrevious}
+              onNext={onNext}
+              onSeek={onSeek}
             />
           ) : null}
           {activeView === "albums" ? (
@@ -6388,124 +6614,251 @@ function LibraryView({
 
 function OverviewHome({
   config,
-  libraryItems,
+  listenerName,
+  albums,
   recentAlbums,
+  recentlyPlayedAlbums,
+  listeningHistory,
   currentTrack,
   isPlaying,
-  favoriteIds,
-  favoriteBusyKey,
-  onToggleFavorite,
-  onSelectLibraryView,
-  onOpenAlbum,
+  radioStationName,
+  radioStatus,
+  onPlaySong,
   onPlayAlbum,
+  onSelectView,
+  onStartRadio,
 }: {
   config: NavidromeConfig | null;
-  libraryItems: Array<{ label: string; value: string }>;
+  listenerName: string;
+  albums: Album[];
   recentAlbums: Album[];
+  recentlyPlayedAlbums: Album[];
+  listeningHistory: ListeningHistoryEntry[];
   currentTrack: Song | null;
   isPlaying: boolean;
-  favoriteIds: FavoriteIds;
-  favoriteBusyKey: string;
-  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
-  onSelectLibraryView: (view: View) => void;
-  onOpenAlbum: (album: Album) => void;
+  radioStationName: string;
+  radioStatus: RadioStatus;
+  onPlaySong: (song: Song) => void;
   onPlayAlbum: (album: Album) => void;
+  onSelectView: (view: View) => void;
+  onStartRadio: () => void;
 }) {
-  const shortcutItems = libraryItems;
-  const visualAlbums = recentAlbums.slice(0, 5);
-  const featuredAlbum = visualAlbums[0] ?? null;
-  const featuredCoverUrl = config && featuredAlbum ? buildCoverArtUrl(config, featuredAlbum.coverArt, "520") : null;
-  const greeting = `Good ${getGreetingPeriod()}, ${formatDisplayName(config?.username)}`;
-  const librarySummary = libraryItems
-    .slice(0, 3)
-    .map((item) => `${item.value.replace(" loaded", "")} ${item.label.toLowerCase()}`)
-    .join(" · ");
-  const currentTrackSummary = currentTrack ? `${currentTrack.title} - ${currentTrack.artist ?? "Unknown artist"}` : "";
-  const shortcutMeta: Record<string, ReactNode> = {
-    Artists: <UserRound size={18} />,
-    Albums: <Disc3 size={18} />,
-    Playlists: <ListMusic size={18} />,
-    "Recently Added": <Plus size={18} />,
-    "Recently Played": <History size={18} />,
-    Favorites: <Star size={18} />,
-  };
+  const latestListen = listeningHistory[0]?.song;
+  const isContinuing = Boolean(latestListen && currentTrack?.id === latestListen.id && isPlaying);
+  const isRadioStarting = radioStatus === "checking";
+  const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
+  const visibleNewAlbums = recentAlbums.slice(0, 5);
+
+  useEffect(() => {
+    setShuffleAlbums(shuffled(albums).slice(0, 5));
+  }, [albums]);
+
+  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 5));
+
+  return (
+    <div className="home-dashboard">
+      <section className="home-dashboard-intro">
+        <div>
+          <p className="eyebrow">Your listening</p>
+          <h3>{greeting}{listenerName ? `, ${listenerName}` : ""}.</h3>
+          <p>{latestListen ? `Pick up where you left off with ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}.` : config ? "Start a record, and Prism will keep the good stuff close at hand." : "Connect your library to make this space yours."}</p>
+          {latestListen ? (
+            isContinuing ? (
+              <span className="home-continue-status"><Pause size={16} fill="currentColor" /> Listening now</span>
+            ) : (
+              <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(latestListen)}>
+                <Play size={16} fill="currentColor" />
+                Continue listening
+              </button>
+            )
+          ) : null}
+        </div>
+        <div className="home-art-cluster" aria-label="Albums from your library">
+          {visibleRecentAlbums.length ? visibleRecentAlbums.slice(0, 3).map((album, index) => (
+            <CoverArt
+              key={album.id}
+              src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+              label={album.name}
+              className={`home-cluster-art home-cluster-art-${index + 1}`}
+            />
+          )) : <div className="home-cluster-empty"><Music2 size={34} /></div>}
+        </div>
+      </section>
+      <section className="home-radio-card">
+        <div className="home-radio-mark"><RadioTower size={22} /></div>
+        <div>
+          <p className="eyebrow">Live from Subwave</p>
+          <h4>Listen to {radioStationName}</h4>
+          <p>A separate place for the live station, shows, and requests.</p>
+        </div>
+        <button className="secondary-button home-radio-button" type="button" onClick={onStartRadio} disabled={isRadioStarting}>
+          {isRadioStarting ? <Loader2 className="spin" size={16} /> : <Play size={16} fill="currentColor" />}
+          {isRadioStarting ? "Tuning in" : `Listen to ${radioStationName}`}
+        </button>
+      </section>
+      <HomeAlbumShelf title="Recently played" description="A few records to come back to." albums={visibleRecentAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyPlayed")} />
+      <HomeAlbumShelf title="Recently added" description="Fresh additions to your library." albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyAdded")} />
+      <HomeAlbumShelf title="Start listening" description="A few picks from your library." albums={shuffleAlbums} config={config} onPlayAlbum={onPlayAlbum} onRefresh={refreshShuffleAlbums} />
+    </div>
+  );
+}
+
+function HomeAlbumShelf({
+  title,
+  description,
+  albums,
+  config,
+  onPlayAlbum,
+  onOpenAlbum,
+  onRefresh,
+}: {
+  title: string;
+  description: string;
+  albums: Album[];
+  config: NavidromeConfig | null;
+  onPlayAlbum: (album: Album) => void;
+  onOpenAlbum?: () => void;
+  onRefresh?: () => void;
+}) {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [scrollCue, setScrollCue] = useState({ canScrollLeft: false, canScrollRight: false });
+
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row) return;
+
+    const updateScrollCue = () => {
+      const maxScrollLeft = Math.max(0, row.scrollWidth - row.clientWidth);
+      setScrollCue({
+        canScrollLeft: row.scrollLeft > 1,
+        canScrollRight: row.scrollLeft < maxScrollLeft - 1,
+      });
+    };
+
+    updateScrollCue();
+    row.addEventListener("scroll", updateScrollCue, { passive: true });
+    const resizeObserver = new ResizeObserver(updateScrollCue);
+    resizeObserver.observe(row);
+    return () => {
+      row.removeEventListener("scroll", updateScrollCue);
+      resizeObserver.disconnect();
+    };
+  }, [albums]);
+
+  if (!albums.length) return null;
+
+  return (
+    <section className="home-album-shelf">
+      <div className="home-shelf-heading">
+        <div>
+          <h4>{title}</h4>
+          <p>{description}</p>
+        </div>
+        {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
+        {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
+      </div>
+      <div className="home-album-carousel">
+        <div className="home-album-row" ref={rowRef} tabIndex={0} aria-label={`${title} albums`}>
+          {albums.map((album) => (
+            <div className="home-album" key={album.id}>
+              <PlayableCover
+                src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+                label={album.name}
+                className="home-album-cover"
+                onPlay={() => onPlayAlbum(album)}
+              />
+              <div className="home-album-copy">
+                <strong>{album.name}</strong>
+                <small>{album.artist || `${album.songCount ?? 0} tracks`}</small>
+              </div>
+            </div>
+          ))}
+        </div>
+        {scrollCue.canScrollLeft ? <ChevronLeft className="home-album-scroll-cue home-album-scroll-cue-left" size={18} aria-hidden="true" /> : null}
+        {scrollCue.canScrollRight ? <ChevronRight className="home-album-scroll-cue home-album-scroll-cue-right" size={18} aria-hidden="true" /> : null}
+      </div>
+    </section>
+  );
+}
+
+function NowPlayingView({
+  config,
+  currentTrack,
+  currentTrackCoverUrl,
+  isPlaying,
+  position,
+  duration,
+  hasPrevious,
+  hasNext,
+  onTogglePlayback,
+  onPrevious,
+  onNext,
+  onSeek,
+}: {
+  config: NavidromeConfig | null;
+  currentTrack: Song | null;
+  currentTrackCoverUrl: string | null;
+  isPlaying: boolean;
+  position: number;
+  duration: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onTogglePlayback: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onSeek: (position: number) => void;
+}) {
+  const hasTrack = Boolean(currentTrack);
+  const title = currentTrack?.title ?? "Your next listen starts here";
+  const byline = currentTrack
+    ? `${currentTrack.artist ?? "Unknown artist"}${currentTrack.album ? ` · ${currentTrack.album}` : ""}`
+    : config
+      ? "Pick an album, artist, or song from your library."
+      : "Connect your Navidrome server to bring your music home.";
+  const progress = Math.min(position, Math.max(duration, 1));
+  const progressRatio = progress / Math.max(duration, 1);
+  const progressFillEnd = `calc(11px + ${progressRatio * 100}% - ${22 * progressRatio}px)`;
 
   return (
     <div className="home-view">
-      <section className="home-hero">
-        <div className="home-hero-copy">
-          <p className="eyebrow">Home</p>
-          <h3>{greeting}</h3>
-          <p className="home-library-state">{config ? librarySummary : "Connect Navidrome to load your library."}</p>
-          {isPlaying && currentTrackSummary ? <p className="home-now-playing">Now playing: {currentTrackSummary}</p> : null}
+      <section className={`home-now-playing-hero ${hasTrack ? "has-track" : ""}`}>
+        {currentTrackCoverUrl ? (
+          <div className="home-cover-wash" style={{ backgroundImage: `url(${currentTrackCoverUrl})` }} aria-hidden="true" />
+        ) : null}
+        <div className="home-now-playing-art">
+          <CoverArt src={currentTrackCoverUrl} label={title} className="home-now-playing-cover" fallbackIcon={<Music2 size={42} />} />
         </div>
-        <div className="home-cover-stage">
-          {visualAlbums.map((album, index) => {
-            const coverUrl = config ? buildCoverArtUrl(config, album.coverArt, index === 0 ? "520" : "260") : null;
-
-            return (
-              <button
-                className={`home-cover-peek peek-${index + 1}`}
-                type="button"
-                key={album.id}
-                onClick={() => onOpenAlbum(album)}
-                aria-label={`Open ${album.name}`}
-              >
-                <CoverArt src={coverUrl} label={album.name} className="home-cover-art" />
-              </button>
-            );
-          })}
-          {!visualAlbums.length ? <CoverArt src={featuredCoverUrl} label="Prism library" className="home-cover-art home-cover-empty" /> : null}
-        </div>
-      </section>
-
-      <section>
-        <div className="section-label">
-          <h4>Library</h4>
-        </div>
-        <div className="home-shortcuts">
-          {shortcutItems.map((item) => (
-            <button
-              className="home-shortcut"
-              type="button"
-              key={item.label}
-              onClick={() => {
-                if (item.label === "Albums") onSelectLibraryView("albums");
-                if (item.label === "Artists") onSelectLibraryView("artists");
-                if (item.label === "Playlists") onSelectLibraryView("playlists");
-                if (item.label === "Recently Added") onSelectLibraryView("recentlyAdded");
-                if (item.label === "Recently Played") onSelectLibraryView("recentlyPlayed");
-                if (item.label === "Favorites") onSelectLibraryView("favorites");
-              }}
-            >
-              <span className="home-shortcut-icon">{shortcutMeta[item.label]}</span>
-              <span className="home-shortcut-copy">
-                <strong>{item.label}</strong>
-                <small>{item.value}</small>
-              </span>
-              <ChevronRight size={16} />
+        <div className="home-now-playing-copy">
+          <p className="eyebrow">{isPlaying ? "Now playing" : hasTrack ? "Paused" : "Ready when you are"}</p>
+          <h3>{title}</h3>
+          <p>{byline}</p>
+          <div className="home-playback-controls">
+            <button type="button" aria-label="Previous" onClick={onPrevious} disabled={!hasPrevious}><SkipBack size={18} /></button>
+            <button className="home-primary-play" type="button" aria-label={isPlaying ? "Pause" : "Play"} onClick={onTogglePlayback} disabled={!hasTrack}>
+              {isPlaying ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
             </button>
-          ))}
+            <button type="button" aria-label="Next" onClick={onNext} disabled={!hasNext}><SkipForward size={18} /></button>
+          </div>
+          <div className="home-seek-row">
+            <span>{formatDuration(position)}</span>
+            <input
+              className="home-seek-slider"
+              type="range"
+              min="0"
+              max={Math.max(duration, 1)}
+              step="1"
+              value={progress}
+              style={{ "--home-seek-fill-end": progressFillEnd } as CSSProperties}
+              onChange={(event) => onSeek(Number(event.target.value))}
+              disabled={!hasTrack || !duration}
+              aria-label="Seek"
+            />
+            <span>{formatDuration(duration)}</span>
+          </div>
         </div>
-      </section>
-
-      <section>
-        <div className="section-label">
-          <h4>Recently added</h4>
-          <button className="detail-back" type="button" onClick={() => onSelectLibraryView("albums")}>
-            View albums
-          </button>
-        </div>
-        <AlbumGrid
-          config={config}
-          albums={recentAlbums}
-          favoriteIds={favoriteIds}
-          favoriteBusyKey={favoriteBusyKey}
-          onToggleFavorite={onToggleFavorite}
-          onOpenAlbum={onOpenAlbum}
-          onPlayAlbum={onPlayAlbum}
-          withAlphabetRail={false}
-        />
       </section>
     </div>
   );
