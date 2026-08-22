@@ -69,6 +69,17 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Prepare Apple notarization key
+        id: apple_credentials
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          umask 077
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$api_key_path"
+          echo "api_key_path=$api_key_path" >> "$GITHUB_OUTPUT"
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
@@ -78,6 +89,13 @@ jobs:
           # runner supports it, and the script writes our background and icon
           # positions into the DMG's Finder metadata.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
+          # Tauri imports the certificate into an ephemeral keychain and signs
+          # the app and final DMG. It notarizes and staples the app bundle.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_PATH: ${{ steps.apple_credentials.outputs.api_key_path }}
         run: npm run tauri:build:installer
 
       - name: Name macOS installer for the release
@@ -98,6 +116,24 @@ jobs:
           suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
           target_dmg="src-tauri/target/release/bundle/dmg/Prism-player-${suffix}.dmg"
           mv "$source_dmg" "$target_dmg"
+
+      - name: Verify signed and notarized macOS installer
+        env:
+          APPLE_CERTIFICATE_IDENTITY: ${{ secrets.APPLE_CERTIFICATE_IDENTITY }}
+        run: |
+          dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          codesign --verify --strict --verbose=2 "$dmg"
+
+          mount_point="$(mktemp -d)"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_point"
+          trap 'hdiutil detach "$mount_point" -quiet || true' EXIT
+
+          app="$mount_point/Prism Player.app"
+          actual_identity="$(codesign -dvv "$app" 2>&1 | awk -F= '/^Authority=Developer ID Application:/ { print substr($0, 11); exit }')"
+          test "$actual_identity" = "$APPLE_CERTIFICATE_IDENTITY"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v7
