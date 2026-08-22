@@ -4031,8 +4031,14 @@ button.similar-chip:hover,
 
 .setup-modal,
 .playlist-modal {
-  position: relative;
-  width: min(620px, 100%);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 41;
+  width: min(620px, calc(100vw - 56px));
+  max-height: calc(100dvh - 56px);
+  overflow: auto;
   padding: 24px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
@@ -4043,7 +4049,7 @@ button.similar-chip:hover,
 }
 
 .playlist-modal {
-  width: min(680px, 100%);
+  width: min(680px, calc(100vw - 56px));
 }
 
 .confirm-backdrop {
@@ -4052,6 +4058,7 @@ button.similar-chip:hover,
 }
 
 .confirm-modal {
+  z-index: 51;
   display: grid;
   justify-items: center;
   gap: 16px;
