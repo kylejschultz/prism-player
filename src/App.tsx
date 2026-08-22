@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -69,6 +71,13 @@ type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
 
 const LIBRARY_SCAN_POLL_INTERVAL_MS = 5 * 60 * 1000;
+const MEDIA_SHORTCUTS = [
+  ["MediaPlayPause", "toggle"],
+  ["MediaTrackNext", "next"],
+  ["MediaTrackPrevious", "previous"],
+] as const;
+
+type MediaShortcutAction = (typeof MEDIA_SHORTCUTS)[number][1];
 
 function PrismDialog({
   open,
@@ -146,6 +155,10 @@ function isVersionNewer(candidate: string, current: string) {
 
 function isTauriDesktopApp() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function isAppForegrounded() {
+  return document.visibilityState === "visible" && document.hasFocus();
 }
 
 type NavidromeConfig = {
@@ -2004,6 +2017,9 @@ export function App() {
   const libraryScanCheckInFlightRef = useRef(false);
   const libraryRefreshInFlightRef = useRef(false);
   const libraryRefreshGenerationRef = useRef(0);
+  const desktopNotificationTimesRef = useRef(new Map<string, number>());
+  const mediaShortcutHandlerRef = useRef<(action: MediaShortcutAction) => void>(() => undefined);
+  const lastBackgroundTrackRef = useRef<string | null>(null);
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
@@ -2034,6 +2050,27 @@ export function App() {
       .sort((a, b) => a.name.localeCompare(b.name)),
     [config?.username, libraryData.playlists],
   );
+
+  async function notifyDesktop(key: string, title: string, body: string, cooldownMs = 15_000) {
+    if (!isTauriDesktopApp() || isAppForegrounded()) return;
+
+    const now = Date.now();
+    const lastNotification = desktopNotificationTimesRef.current.get(key) ?? 0;
+    if (now - lastNotification < cooldownMs) return;
+
+    try {
+      let granted = await isPermissionGranted();
+      if (!granted) granted = (await requestPermission()) === "granted";
+      if (!granted) return;
+      if (isAppForegrounded()) return;
+
+      desktopNotificationTimesRef.current.set(key, now);
+      sendNotification({ title, body });
+    } catch {
+      // Native notifications are optional: preview builds and restricted OS
+      // notification settings must never interrupt playback.
+    }
+  }
   const coverWashUrl = appSettings.coverWashEnabled && visualEffectsEnabled
     ? isRadioPlaying
       ? radioCoverUrl
@@ -3335,6 +3372,21 @@ export function App() {
     setIsPlaying(true);
   }
 
+  mediaShortcutHandlerRef.current = (action) => {
+    if (action === "toggle") {
+      togglePlayback();
+      return;
+    }
+
+    // Live radio has no meaningful next/previous track control. Returning
+    // here also prevents a media key from changing a paused local queue
+    // behind an active Subwave session.
+    if (activePlaybackSource === "radio" && radioStationUrl) return;
+
+    if (action === "next") playNext(false);
+    if (action === "previous") playPrevious();
+  };
+
   function setPlayerVolume(nextVolume: number) {
     const clampedVolume = Math.min(1, Math.max(0, nextVolume));
     const audio = audioRef.current;
@@ -3972,6 +4024,37 @@ export function App() {
   }, [currentTrack?.duration, playerDuration, position, queue.length, isPlaying, currentStreamUrl, isRadioPlaying]);
 
   useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    let active = true;
+    const registeredShortcuts: string[] = [];
+
+    void (async () => {
+      for (const [shortcut, action] of MEDIA_SHORTCUTS) {
+        try {
+          await register(shortcut, (event) => {
+            if (event.state === "Pressed") mediaShortcutHandlerRef.current(action);
+          });
+
+          if (!active) {
+            void unregister(shortcut).catch(() => undefined);
+            continue;
+          }
+          registeredShortcuts.push(shortcut);
+        } catch {
+          // Another app or the operating system may reserve a media key.
+          // Prism continues to expose the same controls in its player UI.
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+      void Promise.all(registeredShortcuts.map((shortcut) => unregister(shortcut).catch(() => undefined)));
+    };
+  }, []);
+
+  useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
     const controlsRadio = activePlaybackSource === "radio" && Boolean(radioStationUrl);
@@ -4033,6 +4116,37 @@ export function App() {
       navigator.mediaSession.setActionHandler("seekforward", null);
     };
   }, [activePlaybackSource, currentTrack, currentTrackCoverUrl, isPlaying, isRadioPlaying, playerDuration, position, radioCoverUrl, radioNowPlaying, radioStationUrl]);
+
+  useEffect(() => {
+    const activeRadio = activePlaybackSource === "radio" && radioStationUrl;
+    const trackKey = activeRadio
+      ? radioNowPlaying
+        ? `radio:${radioStationUrl}:${radioNowPlaying.subsonic_id ?? radioNowPlaying.title ?? "unknown"}`
+        : null
+      : isPlaying && currentTrack
+        ? `local:${currentTrack.id}`
+        : null;
+
+    if (!trackKey) return;
+
+    const previousTrackKey = lastBackgroundTrackRef.current;
+    lastBackgroundTrackRef.current = trackKey;
+    if (!previousTrackKey || previousTrackKey === trackKey) return;
+
+    const title = activeRadio ? radioNowPlaying?.title ?? "Subwave Radio" : currentTrack?.title ?? "Now playing";
+    const artist = activeRadio ? radioNowPlaying?.artist ?? "Subwave" : currentTrack?.artist ?? "Unknown artist";
+    void notifyDesktop("track-change", title, artist, 2_000);
+  }, [activePlaybackSource, currentTrack, isPlaying, radioNowPlaying, radioStationUrl]);
+
+  useEffect(() => {
+    if (!playerError) return;
+    void notifyDesktop("playback-error", "Playback needs attention", playerError);
+  }, [playerError]);
+
+  useEffect(() => {
+    if (radioStatus !== "error") return;
+    void notifyDesktop("radio-error", "Subwave needs attention", radioMessage || "The station could not keep playing.");
+  }, [radioMessage, radioStatus]);
 
   useEffect(() => {
     const trimmedQuery = searchQuery.trim();

@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Default desktop app permissions.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "global-shortcut:default",
+    "notification:default",
+    "window-state:default"
+  ]
 }
