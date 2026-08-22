@@ -189,13 +189,17 @@ type Song = {
   discNumber?: number;
 };
 
+type ListeningSource =
+  | { type: "album"; id: string; name: string; coverArt?: string; artist?: string }
+  | { type: "playlist"; id: string; name: string; coverArt?: string };
+
 type ListeningHistoryEntry = {
   id: string;
   song: Song;
   playedAt: string;
   playedSeconds: number;
   completed: boolean;
-  source: "library";
+  source: ListeningSource | "library";
 };
 
 type Playlist = {
@@ -739,12 +743,24 @@ function loadListeningHistory(): ListeningHistoryEntry[] {
         typeof value.playedAt === "string" &&
         Number.isFinite(value.playedSeconds) &&
         typeof value.completed === "boolean" &&
-        value.source === "library"
+        (value.source === "library" || isListeningSource(value.source))
       );
     });
   } catch {
     return [];
   }
+}
+
+function isListeningSource(source: unknown): source is ListeningSource {
+  if (!source || typeof source !== "object") return false;
+  const value = source as Partial<ListeningSource>;
+  return (value.type === "album" || value.type === "playlist") && typeof value.id === "string" && typeof value.name === "string";
+}
+
+function albumListeningSource(song: Song): ListeningSource | "library" {
+  return song.albumId && song.album
+    ? { type: "album", id: song.albumId, name: song.album, coverArt: song.coverArt, artist: song.artist }
+    : "library";
 }
 
 function createListeningHistoryId() {
@@ -1840,6 +1856,7 @@ export function App() {
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePlaybackSource, setActivePlaybackSource] = useState<"local" | "radio">("local");
+  const [playlistPlaybackSource, setPlaylistPlaybackSource] = useState<Playlist | null>(null);
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
@@ -1988,7 +2005,9 @@ export function App() {
       playedAt: new Date().toISOString(),
       playedSeconds: Math.round(seconds),
       completed,
-      source: "library",
+      source: playlistPlaybackSource
+        ? { type: "playlist", id: playlistPlaybackSource.id, name: playlistPlaybackSource.name }
+        : albumListeningSource(currentTrack),
     };
     locallyRecordedPlayRef.current = `${playKey}:${entry.id}`;
 
@@ -2536,7 +2555,7 @@ export function App() {
 
     try {
       const playlistDetail = await fetchPlaylistDetail(config, playlist.id);
-      replaceQueue(playlistDetail.entry ?? []);
+      replaceQueue(playlistDetail.entry ?? [], 0, playlist);
     } catch (error) {
       setDetailStatus("error");
       setDetailMessage(getErrorMessage(error));
@@ -2899,11 +2918,12 @@ export function App() {
     setPosition(0);
   }
 
-  function replaceQueue(songs: Song[], startIndex = 0) {
+  function replaceQueue(songs: Song[], startIndex = 0, playlistSource: Playlist | null = null) {
     if (!songs.length) return;
     recordListeningHistory();
     tuneOutRadio();
     setActivePlaybackSource("local");
+    setPlaylistPlaybackSource(playlistSource);
     setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
@@ -2944,6 +2964,7 @@ export function App() {
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     tuneOutRadio();
     setActivePlaybackSource("local");
+    setPlaylistPlaybackSource(null);
     setSuppressLocalFooter(false);
 
     if (existingIndex >= 0) {
@@ -3751,16 +3772,13 @@ export function App() {
   useEffect(() => {
     if (!currentTrack || !isPlaying || activePlaybackSource !== "local") return;
 
-    const duration = playerDuration || currentTrack.duration || 0;
-    const threshold = duration > 0 ? Math.min(240, Math.max(30, duration * 0.5)) : 30;
-    if (position >= threshold) recordListeningHistory(false, position);
+    if (position >= 5) recordListeningHistory(false, position);
   }, [activePlaybackSource, currentTrack, isPlaying, playerDuration, position]);
 
   useEffect(() => {
     if (!config || !currentTrack || !isPlaying) return;
 
-    const duration = playerDuration || currentTrack.duration || 0;
-    const listenThreshold = duration > 0 ? Math.min(240, Math.max(5, duration * 0.5)) : 30;
+    const listenThreshold = 5;
     const playKey = `${currentTrack.id}:${currentStreamUrl ?? ""}`;
 
     if (position < listenThreshold || scrobbledPlayRef.current === playKey) return;
@@ -6486,6 +6504,8 @@ function LibraryView({
               radioStatus={radioStatus}
               onPlaySong={onPlaySong}
               onPlayAlbum={onPlayAlbum}
+              onOpenAlbum={onOpenAlbum}
+              onOpenPlaylist={onOpenPlaylist}
               onSelectView={onSelectView}
               onStartRadio={onStartRadio}
             />
@@ -6625,6 +6645,8 @@ function OverviewHome({
   radioStatus,
   onPlaySong,
   onPlayAlbum,
+  onOpenAlbum,
+  onOpenPlaylist,
   onSelectView,
   onStartRadio,
 }: {
@@ -6640,6 +6662,8 @@ function OverviewHome({
   radioStatus: RadioStatus;
   onPlaySong: (song: Song) => void;
   onPlayAlbum: (album: Album) => void;
+  onOpenAlbum: (album: Album) => void;
+  onOpenPlaylist: (playlist: Playlist) => void;
   onSelectView: (view: View) => void;
   onStartRadio: () => void;
 }) {
@@ -6699,10 +6723,47 @@ function OverviewHome({
           {isRadioStarting ? "Tuning in" : `Listen to ${radioStationName}`}
         </button>
       </section>
-      <HomeAlbumShelf title="Recently played" description="A few records to come back to." albums={visibleRecentAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyPlayed")} />
-      <HomeAlbumShelf title="Recently added" description="Fresh additions to your library." albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={() => onSelectView("recentlyAdded")} />
+      <HomeListeningShelf history={listeningHistory} fallbackAlbums={visibleRecentAlbums} config={config} onPlaySong={onPlaySong} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onOpenPlaylist={onOpenPlaylist} onSelectView={onSelectView} />
+      <HomeAlbumShelf title="Recently added" description="Fresh additions to your library." albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onSeeAll={() => onSelectView("recentlyAdded")} />
       <HomeAlbumShelf title="Start listening" description="A few picks from your library." albums={shuffleAlbums} config={config} onPlayAlbum={onPlayAlbum} onRefresh={refreshShuffleAlbums} />
     </div>
+  );
+}
+
+function HomeListeningShelf({ history, fallbackAlbums, config, onPlaySong, onPlayAlbum, onOpenAlbum, onOpenPlaylist, onSelectView }: {
+  history: ListeningHistoryEntry[];
+  fallbackAlbums: Album[];
+  config: NavidromeConfig | null;
+  onPlaySong: (song: Song) => void;
+  onPlayAlbum: (album: Album) => void;
+  onOpenAlbum: (album: Album) => void;
+  onOpenPlaylist: (playlist: Playlist) => void;
+  onSelectView: (view: View) => void;
+}) {
+  const items = Array.from(new Map(history.map((entry) => {
+    const source = entry.source === "library" ? albumListeningSource(entry.song) : entry.source;
+    const key = source === "library" ? `track:${entry.song.id}` : `${source.type}:${source.id}`;
+    return [key, { source, song: entry.song }];
+  })).values()).slice(0, 5);
+
+  return (
+    <section className="home-album-shelf">
+      <div className="home-shelf-heading"><div><h4>Recently played</h4><p>A few listens to come back to.</p></div><button className="home-shelf-action" type="button" onClick={() => onSelectView("recentlyPlayed")}>See all <ChevronRight size={15} /></button></div>
+      <div className="home-album-carousel"><div className="home-album-row" tabIndex={0} aria-label="Recently played">
+        {(items.length ? items.map(({ source, song }) => {
+          const playlist = source !== "library" && source.type === "playlist" ? source : null;
+          const album = source !== "library" && source.type === "album" ? source : null;
+          const label = playlist?.name ?? album?.name ?? song.album ?? song.title ?? "Unknown release";
+          const byline = playlist ? "Playlist" : album?.artist ?? song.artist ?? "Album";
+          const coverArt = playlist?.coverArt ?? album?.coverArt ?? song.coverArt;
+          const open = playlist ? () => onOpenPlaylist({ id: playlist.id, name: playlist.name }) : album ? () => onOpenAlbum({ id: album.id, name: album.name, artist: album.artist ?? song.artist ?? "" }) : null;
+          return <div className="home-album" key={`${label}-${song.id}`} role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ?? undefined} onKeyDown={(event) => { if (open && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open(); } }}>
+            <PlayableCover src={config && coverArt ? buildCoverArtUrl(config, coverArt, "320") : null} label={label} className="home-album-cover" onOpen={open ?? undefined} onPlay={() => onPlaySong(song)} />
+            <div className="home-album-copy"><strong>{label}</strong><small>{byline}</small></div>
+          </div>;
+        }) : fallbackAlbums.map((album) => <div className="home-album" key={album.id} role="button" tabIndex={0} onClick={() => onOpenAlbum(album)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenAlbum(album); } }}><PlayableCover src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null} label={album.name} className="home-album-cover" onOpen={() => onOpenAlbum(album)} onPlay={() => onPlayAlbum(album)} /><div className="home-album-copy"><strong>{album.name}</strong><small>{album.artist || `${album.songCount ?? 0} tracks`}</small></div></div>))}
+      </div></div>
+    </section>
   );
 }
 
@@ -6713,6 +6774,7 @@ function HomeAlbumShelf({
   config,
   onPlayAlbum,
   onOpenAlbum,
+  onSeeAll,
   onRefresh,
 }: {
   title: string;
@@ -6720,7 +6782,8 @@ function HomeAlbumShelf({
   albums: Album[];
   config: NavidromeConfig | null;
   onPlayAlbum: (album: Album) => void;
-  onOpenAlbum?: () => void;
+  onOpenAlbum?: (album: Album) => void;
+  onSeeAll?: () => void;
   onRefresh?: () => void;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
@@ -6758,16 +6821,17 @@ function HomeAlbumShelf({
           <p>{description}</p>
         </div>
         {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
-        {onOpenAlbum ? <button className="home-shelf-action" type="button" onClick={onOpenAlbum}>See all <ChevronRight size={15} /></button> : null}
+        {onSeeAll ? <button className="home-shelf-action" type="button" onClick={onSeeAll}>See all <ChevronRight size={15} /></button> : null}
       </div>
       <div className="home-album-carousel">
         <div className="home-album-row" ref={rowRef} tabIndex={0} aria-label={`${title} albums`}>
           {albums.map((album) => (
-            <div className="home-album" key={album.id}>
+            <div className="home-album" key={album.id} role={onOpenAlbum ? "button" : undefined} tabIndex={onOpenAlbum ? 0 : undefined} onClick={onOpenAlbum ? () => onOpenAlbum(album) : undefined} onKeyDown={(event) => { if (onOpenAlbum && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenAlbum(album); } }}>
               <PlayableCover
                 src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
                 label={album.name}
                 className="home-album-cover"
+                onOpen={onOpenAlbum ? () => onOpenAlbum(album) : undefined}
                 onPlay={() => onPlayAlbum(album)}
               />
               <div className="home-album-copy">
@@ -7682,13 +7746,13 @@ function PlayableCover({
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
       {onOpen ? (
-        <button className="cover-open-button" type="button" onClick={onOpen} aria-label={`Open ${label}`}>
+        <button className="cover-open-button" type="button" onClick={(event) => { event.stopPropagation(); onOpen(); }} aria-label={`Open ${label}`}>
           {cover}
         </button>
       ) : (
         cover
       )}
-      <button className="cover-play-button" type="button" onClick={onPlay} disabled={disabled} aria-label={`Play ${label}`}>
+      <button className="cover-play-button" type="button" onClick={(event) => { event.stopPropagation(); onPlay(); }} disabled={disabled} aria-label={`Play ${label}`}>
         <Play size={18} fill="currentColor" />
       </button>
     </div>

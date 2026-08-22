@@ -1542,9 +1542,9 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   width: 100%;
   min-height: 0;
   overflow-x: clip;
-  padding: clamp(26px, 5vw, 72px);
+  padding: clamp(14px, 2vw, 30px) clamp(26px, 5vw, 72px) clamp(26px, 5vw, 72px);
   align-content: start;
-  gap: clamp(28px, 4vw, 52px);
+  gap: clamp(20px, 3vw, 34px);
 }
 
 .home-dashboard-intro {
