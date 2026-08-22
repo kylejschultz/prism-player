@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/kylejschultz/prism-player/compare/v0.3.0...v0.4.0) (2026-08-17)
+
+
+### Features
+
+* Add opt-in Discord Rich Presence ([#82](https://github.com/kylejschultz/prism-player/issues/82)) ([2bd42b0](https://github.com/kylejschultz/prism-player/commit/2bd42b0fa6f8db87b653d06fa3411456eadc5b3f))
+* Let listeners resize and collapse the app sidebar ([#78](https://github.com/kylejschultz/prism-player/issues/78)) ([f5c4f31](https://github.com/kylejschultz/prism-player/commit/f5c4f316edc4641a1aa727272451ece4c86e09c4))
+* Make both player sidebars easier to manage ([#83](https://github.com/kylejschultz/prism-player/issues/83)) ([427cf84](https://github.com/kylejschultz/prism-player/commit/427cf84bf7148861626e8e9c0d20e9ab3f9694d2))
+
+
+### Bug Fixes
+
+* Keep library and lyric scrolling inside their panes ([#81](https://github.com/kylejschultz/prism-player/issues/81)) ([daf84bb](https://github.com/kylejschultz/prism-player/commit/daf84bb1486c30bf0c87e60c38a24faa605db906))
+
 ## [0.3.0](https://github.com/kylejschultz/prism-player/compare/v0.2.0...v0.3.0) (2026-08-14)
 
 

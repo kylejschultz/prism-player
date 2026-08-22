@@ -20,7 +20,7 @@ The `Enforce release PR source` workflow should be required on `release`. It blo
 
 The packaging workflow is intentionally separate from pull request CI because Tauri bundling is slower and produces release artifacts. Run it manually from Actions when a development build is needed; published releases automatically build and attach both the macOS DMG and Windows NSIS installer.
 
-After both release installers are attached, the same workflow posts a Discord release card, pings the configured Prism release role, and provides direct macOS and Windows download buttons plus the GitHub release link. Set the `DISCORD_RELEASE_WEBHOOK_URL` and `RELEASE_PLEASE_TOKEN` repository secrets before publishing. Set `DISCORD_ANNOUNCEMENT_ROLE_ID` to the Discord role ID; set `DISABLE_DISCORD_RELEASE_ANNOUNCEMENT=true` to suppress posts temporarily.
+After both release installers are attached, the same workflow posts the generated changelog to the configured `#releases` Discord webhook. It never pings a role; product announcements are posted separately in the announcement channel. Set the `DISCORD_RELEASE_WEBHOOK_URL` and `RELEASE_PLEASE_TOKEN` repository secrets before publishing. Set `DISABLE_DISCORD_RELEASE_ANNOUNCEMENT=true` to suppress changelog posts temporarily.
 
 ## Commit Convention
 
@@ -47,7 +47,7 @@ Use Conventional Commits for commit messages and pull request titles:
    - `src-tauri/tauri.conf.json` version bump
 8. Merge the release PR when the changelog and version look right.
 9. release-please creates the Git tag and GitHub release.
-10. The `Build` workflow runs on the published release, builds the macOS DMG and Windows NSIS installer, stores them as workflow artifacts, and uploads them to the GitHub release.
+10. The `Build` workflow runs on the published release, builds the macOS DMG and Windows NSIS installer, stores them as workflow artifacts, and uploads them to the GitHub release. The DMG is named `Prism-player-vX.Y.Z.dmg`.
 
 ## Versioning
 
