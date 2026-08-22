@@ -69,18 +69,15 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Install macOS packaging dependency
-        run: python -m pip install --disable-pip-version-check dmgbuild
-
       - name: Build macOS installer
+        env:
+          # Tauri skips Finder's layout script on CI by default. GitHub's macOS
+          # runner supports it, and the script writes our background and icon
+          # positions into the DMG's Finder metadata.
+          TAURI_BUNDLER_DMG_IGNORE_CI: "true"
         run: npm run tauri:build:installer
 
       - name: Name macOS installer for the release

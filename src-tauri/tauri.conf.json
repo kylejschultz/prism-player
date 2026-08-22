@@ -38,7 +38,22 @@
     ],
     "macOS": {
       "signingIdentity": "-",
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "dmg": {
+        "background": "../scripts/macos-installer-background.png",
+        "windowSize": {
+          "width": 1000,
+          "height": 620
+        },
+        "appPosition": {
+          "x": 265,
+          "y": 315
+        },
+        "applicationFolderPosition": {
+          "x": 735,
+          "y": 315
+        }
+      }
     }
   }
 }
