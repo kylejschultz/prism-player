@@ -10,6 +10,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
+import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
 import {
   AlertCircle,
   CalendarDays,
@@ -63,6 +64,7 @@ type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
 type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
+type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "error";
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
@@ -121,6 +123,10 @@ function PrismAlertDialog({
       </AlertDialog.Portal>
     </AlertDialog.Root>
   );
+}
+
+function libraryCatalogKey(config: Pick<NavidromeConfig, "serverUrl" | "username">) {
+  return `${normalizeServerUrl(config.serverUrl).toLowerCase()}::${config.username.trim().toLowerCase()}`;
 }
 
 type AvailableUpdate = {
@@ -1688,7 +1694,11 @@ async function fetchAlbumDetail(config: NavidromeConfig, albumId: string): Promi
   return response.album;
 }
 
-async function fetchSongLibrary(config: NavidromeConfig, albums: Album[]) {
+async function fetchSongLibrary(
+  config: NavidromeConfig,
+  albums: Album[],
+  onProgress?: (completed: number, total: number) => void,
+) {
   const songs: Song[] = [];
   const batchSize = 10;
 
@@ -1696,6 +1706,7 @@ async function fetchSongLibrary(config: NavidromeConfig, albums: Album[]) {
     const batch = albums.slice(index, index + batchSize);
     const details = await Promise.all(batch.map((album) => fetchAlbumDetail(config, album.id)));
     songs.push(...details.flatMap((album) => album.song ?? []));
+    onProgress?.(Math.min(index + batch.length, albums.length), albums.length);
   }
 
   return songs.sort((left, right) => `${left.title}\u0000${left.artist ?? ""}`.localeCompare(`${right.title}\u0000${right.artist ?? ""}`));
@@ -1920,6 +1931,8 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
+  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>(() => (loadStoredConfig() ? "hydrating" : "idle"));
+  const [catalogProgress, setCatalogProgress] = useState<{ completed: number; total: number } | null>(null);
   const [listenerName, setListenerName] = useState("");
   const [songLibrary, setSongLibrary] = useState<Song[]>([]);
   const [songLibraryStatus, setSongLibraryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -2027,6 +2040,10 @@ export function App() {
   const desktopNotificationTimesRef = useRef(new Map<string, number>());
   const mediaShortcutHandlerRef = useRef<(action: MediaShortcutAction) => void>(() => undefined);
   const lastBackgroundTrackRef = useRef<string | null>(null);
+  const libraryDataRef = useRef<LibraryData>(emptyLibraryData);
+  const catalogSongsCompleteRef = useRef(false);
+  const catalogSongSyncInFlightRef = useRef(false);
+  const catalogHydratedKeyRef = useRef("");
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
 
@@ -2540,6 +2557,27 @@ export function App() {
     await queryClient.invalidateQueries({ queryKey: navidromeKeys.root(nextConfig) });
   }
 
+  async function syncFullSongCatalog(syncConfig: NavidromeConfig, albums: Album[]) {
+    if (catalogSongsCompleteRef.current || catalogSongSyncInFlightRef.current) return;
+    catalogSongSyncInFlightRef.current = true;
+    setCatalogStatus("syncing");
+    setCatalogProgress({ completed: 0, total: albums.length });
+
+    try {
+      const songs = await fetchSongLibrary(syncConfig, albums, (completed, total) => setCatalogProgress({ completed, total }));
+      setSongLibrary(songs);
+      setSongLibraryStatus("ready");
+      catalogSongsCompleteRef.current = true;
+      setCatalogStatus("ready");
+    } catch {
+      // The base catalog remains usable. A later launch or Songs visit retries this optional sync.
+      setCatalogStatus("error");
+    } finally {
+      setCatalogProgress(null);
+      catalogSongSyncInFlightRef.current = false;
+    }
+  }
+
   async function refreshLibrary(nextConfig = config) {
     if (!nextConfig || libraryRefreshInFlightRef.current) return false;
 
@@ -2547,8 +2585,8 @@ export function App() {
     libraryRefreshInFlightRef.current = true;
 
     setStatus("checking");
-    setLibraryStatus("loading");
-    setStatusMessage("Checking Navidrome and loading library...");
+    if (libraryDataRef.current.albums.length === 0) setLibraryStatus("loading");
+    setStatusMessage(libraryDataRef.current.albums.length ? "Refreshing library in the background..." : "Checking Navidrome and loading library...");
 
     try {
       const resolvedConfig = await navidromeClient.resolveConfig(nextConfig);
@@ -2561,6 +2599,7 @@ export function App() {
       await storeNativePassword(resolvedConfig.password);
       writeStoredConfig(resolvedConfig);
       setLibraryData(nextLibrary);
+      libraryDataRef.current = nextLibrary;
       setListenerName(nextListenerName);
       setConfig(resolvedConfig);
       setForm(resolvedConfig);
@@ -2570,13 +2609,21 @@ export function App() {
       libraryScanWasInProgressRef.current = Boolean(scanStatus?.scanning);
       const lastScan = scanTimestamp(scanStatus?.lastScan);
       if (lastScan) lastLibraryScanRef.current = lastScan;
+      void syncFullSongCatalog(resolvedConfig, nextLibrary.albums);
       return true;
     } catch (error) {
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
 
       setStatus("error");
-      setLibraryStatus("error");
-      setStatusMessage(getErrorMessage(error));
+      if (libraryDataRef.current.albums.length) {
+        setLibraryStatus("ready");
+        setCatalogStatus("stale");
+        setStatusMessage("Showing your saved library. Prism will refresh it when Navidrome is available.");
+      } else {
+        setLibraryStatus("error");
+        setCatalogStatus("error");
+        setStatusMessage(getErrorMessage(error));
+      }
       return false;
     } finally {
       libraryRefreshInFlightRef.current = false;
@@ -3031,6 +3078,8 @@ export function App() {
     try {
       setSongLibrary(await fetchSongLibrary(config, libraryData.albums));
       setSongLibraryStatus("ready");
+      catalogSongsCompleteRef.current = true;
+      setCatalogStatus("ready");
     } catch {
       setSongLibraryStatus("error");
     }
@@ -3465,6 +3514,10 @@ export function App() {
     libraryRefreshGenerationRef.current += 1;
     lastLibraryScanRef.current = null;
     libraryScanWasInProgressRef.current = false;
+    const catalogKey = config ? libraryCatalogKey(config) : null;
+    if (catalogKey) void deleteLibraryCatalog(catalogKey).catch(() => undefined);
+    catalogHydratedKeyRef.current = "";
+    catalogSongsCompleteRef.current = false;
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(LAST_PLAYED_TRACK_KEY);
     localStorage.removeItem(PLAYBACK_STATE_KEY);
@@ -3472,6 +3525,7 @@ export function App() {
     setForm(emptyConfig);
     setListenerName("");
     setLibraryData(emptyLibraryData);
+    libraryDataRef.current = emptyLibraryData;
     setSongLibrary([]);
     setSongLibraryStatus("idle");
     setDetailSelection(null);
@@ -3487,6 +3541,8 @@ export function App() {
     setIsPlaying(false);
     setStatus("idle");
     setLibraryStatus("idle");
+    setCatalogStatus("idle");
+    setCatalogProgress(null);
     setStatusMessage("Add a Navidrome server to start syncing.");
     setSetupOpen(true);
     setActiveView("settings");
@@ -3572,6 +3628,58 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    const catalogKey = libraryCatalogKey(config);
+    let cancelled = false;
+    catalogHydratedKeyRef.current = "";
+    catalogSongsCompleteRef.current = false;
+    setCatalogStatus("hydrating");
+
+    void readLibraryCatalog<LibraryData, Song>(catalogKey)
+      .then((snapshot) => {
+        if (cancelled) return;
+        if (snapshot?.version === 1) {
+          setLibraryData(snapshot.library);
+          libraryDataRef.current = snapshot.library;
+          setSongLibrary(snapshot.songs);
+          setSongLibraryStatus(snapshot.songs.length ? "ready" : "idle");
+          catalogSongsCompleteRef.current = snapshot.songsComplete;
+          setLibraryStatus("ready");
+          setCatalogStatus("stale");
+          setStatusMessage(`Showing your saved library from ${new Date(snapshot.savedAt).toLocaleString()}. Refreshing in the background...`);
+        } else {
+          setCatalogStatus("idle");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogStatus("error");
+      })
+      .finally(() => {
+        if (!cancelled) catalogHydratedKeyRef.current = catalogKey;
+      });
+
+    return () => { cancelled = true; };
+  }, [config?.serverUrl, config?.username]);
+
+  useEffect(() => {
+    if (!config) return;
+    const catalogKey = libraryCatalogKey(config);
+    if (catalogHydratedKeyRef.current !== catalogKey || libraryData.albums.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      void writeLibraryCatalog<LibraryData, Song>({
+        key: catalogKey,
+        version: 1,
+        savedAt: new Date().toISOString(),
+        library: libraryData,
+        songs: songLibrary,
+        songsComplete: catalogSongsCompleteRef.current,
+      }).catch(() => setCatalogStatus("error"));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [config?.serverUrl, config?.username, libraryData, songLibrary]);
 
   useEffect(() => {
     if (config) {
@@ -4932,6 +5040,8 @@ export function App() {
           setForm={setForm}
           status={status}
           statusMessage={statusMessage}
+          catalogStatus={catalogStatus}
+          catalogProgress={catalogProgress}
           onSave={saveConnection}
           onClose={() => setSetupOpen(false)}
         />
@@ -6101,6 +6211,8 @@ function FirstRunWizard({
   setForm,
   status,
   statusMessage,
+  catalogStatus,
+  catalogProgress,
   onSave,
   onClose,
 }: {
@@ -6108,6 +6220,8 @@ function FirstRunWizard({
   setForm: (config: NavidromeConfig) => void;
   status: ConnectionStatus;
   statusMessage: string;
+  catalogStatus: CatalogStatus;
+  catalogProgress: { completed: number; total: number } | null;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onClose: () => void;
 }) {
@@ -6123,7 +6237,7 @@ function FirstRunWizard({
         <p className="eyebrow">First run</p>
         <Dialog.Title asChild><h2 id="setup-title">Connect Prism to Navidrome</h2></Dialog.Title>
         <Dialog.Description asChild><p className="setup-copy">
-          Add your server once and Prism will use it for library browsing. Playback comes after the live data spine.
+          Add your server once and Prism will build a local, metadata-only library cache. Your music will open much faster after this first sync.
         </p></Dialog.Description>
 
         <form className="wizard-form" onSubmit={onSave}>
@@ -6155,6 +6269,9 @@ function FirstRunWizard({
         </form>
 
         <p className={`wizard-status ${status === "error" ? "bad" : ""}`}>{statusMessage}</p>
+        {catalogStatus === "syncing" && catalogProgress ? (
+          <p className="wizard-status">Building local catalog: {catalogProgress.completed} of {catalogProgress.total} albums.</p>
+        ) : null}
       </section>
     </PrismDialog>
   );
