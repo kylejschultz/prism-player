@@ -99,12 +99,10 @@ jobs:
           # positions into the DMG's Finder metadata.
           TAURI_BUNDLER_DMG_IGNORE_CI: "true"
           # Tauri imports the certificate into an ephemeral keychain and signs
-          # the app and final DMG. It notarizes and staples the app bundle.
+          # the app. Notarization is performed explicitly below so the Actions
+          # log always includes Apple's submission ID and current status.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
-          APPLE_API_KEY_PATH: ${{ steps.apple_credentials.outputs.api_key_path }}
         run: npm run tauri:build:installer
 
       - name: Name macOS installer for the release
@@ -126,12 +124,63 @@ jobs:
           target_dmg="src-tauri/target/release/bundle/dmg/Prism-player-${suffix}.dmg"
           mv "$source_dmg" "$target_dmg"
 
+      - name: Notarize macOS installer
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_PATH: ${{ steps.apple_credentials.outputs.api_key_path }}
+        run: |
+          dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          if [[ -z "$dmg" ]]; then
+            echo "::error::No macOS DMG was produced."
+            exit 1
+          fi
+
+          submission_json="$(xcrun notarytool submit "$dmg" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --output-format json)"
+          printf '%s\n' "$submission_json"
+          submission_id="$(node -e 'let d=""; process.stdin.on("data", c => d += c).on("end", () => { const id = JSON.parse(d).id; if (!id) process.exit(1); process.stdout.write(id); })' <<< "$submission_json")"
+          echo "Apple notarization submission: $submission_id"
+
+          for attempt in {1..60}; do
+            if status_json="$(xcrun notarytool info "$submission_id" \
+              --key "$APPLE_API_KEY_PATH" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" \
+              --output-format json)"; then
+              status="$(node -e 'let d=""; process.stdin.on("data", c => d += c).on("end", () => process.stdout.write(JSON.parse(d).status || "unknown"))' <<< "$status_json")"
+              echo "Apple notarization status (attempt $attempt/60): $status"
+              if [[ "$status" == "Accepted" ]]; then
+                xcrun stapler staple -v "$dmg"
+                exit 0
+              fi
+              if [[ "$status" == "Invalid" || "$status" == "Rejected" ]]; then
+                xcrun notarytool log "$submission_id" \
+                  --key "$APPLE_API_KEY_PATH" \
+                  --key-id "$APPLE_API_KEY_ID" \
+                  --issuer "$APPLE_API_ISSUER_ID"
+                exit 1
+              fi
+            else
+              echo "::warning::Could not read Apple notarization status; retrying."
+            fi
+            sleep 30
+          done
+
+          echo "::error::Apple notarization did not finish within 30 minutes (submission $submission_id)."
+          exit 1
+
       - name: Verify signed and notarized macOS installer
         env:
           APPLE_CERTIFICATE_IDENTITY: ${{ secrets.APPLE_CERTIFICATE_IDENTITY }}
         run: |
           dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
           codesign --verify --strict --verbose=2 "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --verbose=4 "$dmg"
 
           mount_point="$(mktemp -d)"
           hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_point"
@@ -141,7 +190,6 @@ jobs:
           actual_identity="$(codesign -dvv "$app" 2>&1 | awk -F= '/^Authority=Developer ID Application:/ { print substr($0, 11); exit }')"
           test "$actual_identity" = "$APPLE_CERTIFICATE_IDENTITY"
           codesign --verify --deep --strict --verbose=2 "$app"
-          xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=4 "$app"
 
       - name: Upload DMG artifact
