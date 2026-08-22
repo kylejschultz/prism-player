@@ -77,7 +77,16 @@ jobs:
         run: |
           umask 077
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$api_key_path"
+          export API_KEY_PATH="$api_key_path"
+          node <<'NODE'
+          const fs = require("fs");
+
+          const key = Buffer.from(process.env.APPLE_API_KEY_BASE64, "base64");
+          if (!key.toString("utf8").includes("-----BEGIN PRIVATE KEY-----")) {
+            throw new Error("APPLE_API_KEY_BASE64 did not decode to an App Store Connect private key.");
+          }
+          fs.writeFileSync(process.env.API_KEY_PATH, key, { mode: 0o600 });
+          NODE
           echo "api_key_path=$api_key_path" >> "$GITHUB_OUTPUT"
 
       - name: Install frontend dependencies
