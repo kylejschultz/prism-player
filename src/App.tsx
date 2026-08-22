@@ -572,19 +572,12 @@ function readStoredConfig(): StoredNavidromeConfig | null {
 }
 
 function loadStoredConfig(): NavidromeConfig | null {
-  const stored = readStoredConfig();
-  if (!stored?.password || isTauriDesktopApp()) return null;
-  return {
-    serverUrl: stored.serverUrl,
-    username: stored.username,
-    password: stored.password,
-  };
+  // Browser previews deliberately do not persist a Navidrome password.
+  return null;
 }
 
 function writeStoredConfig(config: NavidromeConfig) {
-  const stored: StoredNavidromeConfig = isTauriDesktopApp()
-    ? { serverUrl: config.serverUrl, username: config.username }
-    : config;
+  const stored: StoredNavidromeConfig = { serverUrl: config.serverUrl, username: config.username };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
 }
 
@@ -602,9 +595,7 @@ async function loadNativeStoredConfig(): Promise<NavidromeConfig | null> {
   const stored = readStoredConfig();
   if (!stored) return null;
 
-  if (!isTauriDesktopApp()) {
-    return stored.password ? { ...stored, password: stored.password } : null;
-  }
+  if (!isTauriDesktopApp()) return null;
 
   const password = await invoke<string | null>("get_navidrome_password");
   if (password) return { ...stored, password };
@@ -3358,7 +3349,12 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!isTauriDesktopApp()) return;
+    if (!isTauriDesktopApp()) {
+      // Remove a password that may have been saved by an older browser preview.
+      const stored = readStoredConfig();
+      if (stored?.password) writeStoredConfig({ ...stored, password: stored.password });
+      return;
+    }
 
     if (!appSettings.discordPresenceEnabled) {
       setDiscordPresenceStatus("idle");
@@ -5670,7 +5666,7 @@ function SettingsView({
         <p className="settings-note">
           {isTauriDesktopApp()
             ? "Your password is stored in this device’s secure credential store."
-            : "Browser previews keep the password in this browser only. Use the installed desktop app for native secure storage."}
+            : "Browser previews use your password for this session only. Use the installed desktop app for native secure storage."}
         </p>
 
         <div className="form-actions">
