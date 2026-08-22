@@ -2586,9 +2586,25 @@ button.similar-chip:hover,
   background: rgba(255, 255, 255, 0.032);
 }
 
+.virtual-song-list {
+  position: relative;
+}
+
+.virtual-song-list > .track-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.virtual-song-list > .track-row.alternating {
+  background: rgba(255, 255, 255, 0.032);
+}
+
 /* Keep the hover surface consistent over both alternating row colors. */
 .track-list > .track-row:hover,
-.disc-group > .track-row:hover {
+.disc-group > .track-row:hover,
+.virtual-song-list > .track-row:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
