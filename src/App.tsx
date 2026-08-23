@@ -154,6 +154,11 @@ type NavidromeConfig = {
   password: string;
 };
 
+type StoredNavidromeConfig = Omit<NavidromeConfig, "password"> & {
+  // Present only in installations created before native credential storage.
+  password?: string;
+};
+
 type AppSettings = {
   lastVolume: number;
   defaultAlbumView: AlbumViewMode;
@@ -588,12 +593,12 @@ function cleanBiography(value?: string) {
   return document.body.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-function loadStoredConfig(): NavidromeConfig | null {
+function readStoredConfig(): StoredNavidromeConfig | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as NavidromeConfig;
-    if (!parsed.serverUrl || !parsed.username || !parsed.password) return null;
+    const parsed = JSON.parse(raw) as StoredNavidromeConfig;
+    if (!parsed.serverUrl || !parsed.username) return null;
     return {
       serverUrl: parsed.serverUrl,
       username: parsed.username,
@@ -602,6 +607,42 @@ function loadStoredConfig(): NavidromeConfig | null {
   } catch {
     return null;
   }
+}
+
+function loadStoredConfig(): NavidromeConfig | null {
+  // Browser previews deliberately do not persist a Navidrome password.
+  return null;
+}
+
+function writeStoredConfig(config: NavidromeConfig) {
+  const stored: StoredNavidromeConfig = { serverUrl: config.serverUrl, username: config.username };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+async function storeNativePassword(password: string) {
+  if (!isTauriDesktopApp()) return;
+  await invoke("set_navidrome_password", { password });
+}
+
+async function clearNativePassword() {
+  if (!isTauriDesktopApp()) return;
+  await invoke("clear_navidrome_password");
+}
+
+async function loadNativeStoredConfig(): Promise<NavidromeConfig | null> {
+  const stored = readStoredConfig();
+  if (!stored) return null;
+
+  if (!isTauriDesktopApp()) return null;
+
+  const password = await invoke<string | null>("get_navidrome_password");
+  if (password) return { ...stored, password };
+
+  // One-time migration for versions that saved the password in localStorage.
+  if (!stored.password) return null;
+  await storeNativePassword(stored.password);
+  writeStoredConfig({ ...stored, password: stored.password });
+  return { ...stored, password: stored.password };
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -2430,6 +2471,8 @@ export function App() {
         fetchNavidromeProfileName(resolvedConfig).catch(() => ""),
       ]);
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
+      await storeNativePassword(resolvedConfig.password);
+      writeStoredConfig(resolvedConfig);
       setLibraryData(nextLibrary);
       setListenerName(nextListenerName);
       setConfig(resolvedConfig);
@@ -2437,7 +2480,6 @@ export function App() {
       setStatus("connected");
       setLibraryStatus("ready");
       setStatusMessage(`Connected to ${resolvedConfig.serverUrl}.`);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(resolvedConfig));
       libraryScanWasInProgressRef.current = Boolean(scanStatus?.scanning);
       const lastScan = scanTimestamp(scanStatus?.lastScan);
       if (lastScan) lastLibraryScanRef.current = lastScan;
@@ -3301,7 +3343,15 @@ export function App() {
     updateAppSettings({ ...appSettings, lastVolume: clampedVolume });
   }
 
-  function resetConnection() {
+  async function resetConnection() {
+    try {
+      await clearNativePassword();
+    } catch (error) {
+      setStatus("error");
+      setStatusMessage(`Could not remove the saved password. ${getErrorMessage(error)}`);
+      return;
+    }
+
     libraryRefreshGenerationRef.current += 1;
     lastLibraryScanRef.current = null;
     libraryScanWasInProgressRef.current = false;
@@ -3333,7 +3383,12 @@ export function App() {
   }
 
   useEffect(() => {
-    if (!isTauriDesktopApp()) return;
+    if (!isTauriDesktopApp()) {
+      // Remove a password that may have been saved by an older browser preview.
+      const stored = readStoredConfig();
+      if (stored?.password) writeStoredConfig({ ...stored, password: stored.password });
+      return;
+    }
 
     if (!appSettings.discordPresenceEnabled) {
       setDiscordPresenceStatus("idle");
@@ -3384,10 +3439,35 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!isTauriDesktopApp()) return;
+
+    let cancelled = false;
+    void loadNativeStoredConfig()
+      .then((storedConfig) => {
+        if (cancelled || !storedConfig) return;
+        setConfig(storedConfig);
+        setForm(storedConfig);
+        setSetupOpen(false);
+        setLibraryStatus("loading");
+        setStatus("checking");
+        setStatusMessage("Loading your saved Navidrome connection...");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setStatus("error");
+        setStatusMessage(`Could not access the saved password. ${getErrorMessage(error)}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (config) {
       void refreshLibrary(config);
     }
-  }, []);
+  }, [config]);
 
   useEffect(() => {
     if (!config) return;
@@ -5603,6 +5683,11 @@ function SettingsView({
             autoComplete="current-password"
           />
         </label>
+        <p className="settings-note">
+          {isTauriDesktopApp()
+            ? "Your password is stored in this device’s secure credential store."
+            : "Browser previews use your password for this session only. Use the installed desktop app for native secure storage."}
+        </p>
 
         <div className="form-actions">
           <button className="connect-button" type="submit" disabled={status === "checking"}>

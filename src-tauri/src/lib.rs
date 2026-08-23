@@ -1,9 +1,40 @@
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
 const DISCORD_CLIENT_ID: &str = "1537904664740364418";
+const KEYRING_SERVICE: &str = "com.kylejschultz.prism-player";
+const NAVIDROME_PASSWORD_ACCOUNT: &str = "navidrome-password";
+
+fn navidrome_password_entry() -> Result<Entry, String> {
+    Entry::new(KEYRING_SERVICE, NAVIDROME_PASSWORD_ACCOUNT).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_navidrome_password() -> Result<Option<String>, String> {
+    match navidrome_password_entry()?.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
+fn set_navidrome_password(password: String) -> Result<(), String> {
+    navidrome_password_entry()?
+        .set_password(&password)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn clear_navidrome_password() -> Result<(), String> {
+    match navidrome_password_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,7 +169,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(DiscordPresenceClient::default())
-        .invoke_handler(tauri::generate_handler![update_discord_presence, clear_discord_presence])
+        .invoke_handler(tauri::generate_handler![
+            update_discord_presence,
+            clear_discord_presence,
+            get_navidrome_password,
+            set_navidrome_password,
+            clear_navidrome_password
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Prism Player");
 }
