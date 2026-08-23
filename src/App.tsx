@@ -3046,6 +3046,21 @@ export function App() {
     }
   }
 
+  function handleSidebarPlaylistMenuOpenChange(open: boolean) {
+    // A playlist's right-click menu is rendered in its own Radix portal. Keep
+    // the sidebar flyout open while that related menu owns focus, rather than
+    // treating the portal boundary as an outside interaction.
+    if (!open && libraryContextMenu?.type === "playlist") return;
+    setSidebarPlaylistMenuOpen(open);
+  }
+
+  function keepSidebarPlaylistMenuOpenForPlaylistContext(event: Event) {
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest(".library-context-menu")) {
+      event.preventDefault();
+    }
+  }
+
   function clearDetail() {
     setDetailSelection(null);
     setDetailStatus("idle");
@@ -4440,7 +4455,7 @@ export function App() {
           <DropdownMenu.Root
             modal={false}
             open={sidebarPlaylistMenuOpen || libraryContextMenu?.type === "playlist"}
-            onOpenChange={setSidebarPlaylistMenuOpen}
+            onOpenChange={handleSidebarPlaylistMenuOpenChange}
           >
             <DropdownMenu.Trigger asChild>
               <button
@@ -4461,6 +4476,8 @@ export function App() {
                 sideOffset={10}
                 collisionPadding={12}
                 aria-label="Playlists"
+                onFocusOutside={keepSidebarPlaylistMenuOpenForPlaylistContext}
+                onInteractOutside={keepSidebarPlaylistMenuOpenForPlaylistContext}
               >
                 <DropdownMenu.Item asChild>
                   <button className="sidebar-playlist-menu-all" type="button" onClick={() => selectView("playlists")}>
