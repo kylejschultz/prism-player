@@ -17,6 +17,9 @@
     "tauri:build:installer": "tauri build --bundles dmg"
   },
   "dependencies": {
+    "@radix-ui/react-alert-dialog": "^1.1.23",
+    "@radix-ui/react-context-menu": "^2.3.7",
+    "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@tauri-apps/api": "^2.8.0",
     "lucide-react": "^1.31.0",
