@@ -59,6 +59,12 @@ Prism checks that the address is a Subwave station before connecting. You can sa
 
 Once you're tuned in, Prism shows what is playing and keeps the station controls close by. Use the request button when you want to send something to the station.
 
+## Desktop controls
+
+The installed desktop app restores its last usable window size, position, and maximized state when it opens again. It also listens for your system media play/pause, next, and previous keys while Prism is in the background. Next and previous apply only to library playback; live Subwave radio correctly ignores them.
+
+Prism can show a native notification when playback or radio needs attention, and for track changes while the app is not in the foreground. Notification permission is requested by the operating system the first time it is needed and can be changed later in system settings. Browser previews keep working without native window restoration, global media keys, or native notifications.
+
 ## Status
 
 Prism is pre-1.0 software. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
