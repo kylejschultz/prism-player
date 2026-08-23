@@ -221,6 +221,12 @@ jobs:
     name: Windows installer
     if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'macos')
     runs-on: windows-latest
+    # Azure's federated credential is scoped to this protected GitHub
+    # environment, rather than a branch or release tag.
+    environment: production
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -256,6 +262,51 @@ jobs:
 
       - name: Build NSIS installer
         run: npm run tauri:build -- --bundles nsis
+
+      - name: Authenticate to Azure
+        uses: azure/login@v3
+        with:
+          client-id: 2a3f5d33-4ec8-4902-9dd9-0f3c3814f44b
+          tenant-id: d1beef85-a78d-461e-a423-ef8739f4ee5e
+          subscription-id: 3d356ab6-6a15-40b7-b322-fed2734b2e0d
+
+      - name: Sign Windows installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: https://wus2.codesigning.azure.net/
+          signing-account-name: kjschultz-prism-player
+          certificate-profile-name: prism-public
+          files-folder: ${{ github.workspace }}\src-tauri\target\release\bundle\nsis
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          # The Azure CLI session from azure/login is the sole supported
+          # credential source for this signing step.
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: Verify Windows installer signature
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) {
+            throw "No Windows installer was produced."
+          }
+
+          $signature = Get-AuthenticodeSignature $installer.FullName
+          if ($signature.Status -ne 'Valid') {
+            throw "Installer signature is $($signature.Status): $($signature.StatusMessage)"
+          }
+          Write-Host "Signed by: $($signature.SignerCertificate.Subject)"
 
       - name: Upload NSIS artifact
         uses: actions/upload-artifact@v7
