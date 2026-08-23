@@ -2009,6 +2009,7 @@ export function App() {
   const [playlistSeedSongs, setPlaylistSeedSongs] = useState<Song[] | null>(null);
   const [playlistCreateStatus, setPlaylistCreateStatus] = useState<"idle" | "saving" | "error">("idle");
   const [playlistCreateMessage, setPlaylistCreateMessage] = useState("");
+  const [sidebarPlaylistMenuOpen, setSidebarPlaylistMenuOpen] = useState(false);
   const [songContextMenu, setSongContextMenu] = useState<SongContextMenuState>(null);
   const [libraryContextMenu, setLibraryContextMenu] = useState<LibraryContextMenuState>(null);
   const [playlistDeleteTarget, setPlaylistDeleteTarget] = useState<Playlist | null>(null);
@@ -3580,7 +3581,6 @@ export function App() {
       presence: {
         title: track.title ?? "Live radio",
         artist: track.artist ?? (radioPresence ? "Subwave" : "Unknown artist"),
-        album: track.album ?? null,
         station: radioPresence ? radioStationName(radioStationState, radioStationUrl, appSettings.radioStationNames[radioStationUrl]) : null,
         playing: radioPresence ? true : isPlaying,
         startedAt: radioPresence || !isPlaying ? null : Date.now() - Math.round(position * 1000),
@@ -3686,7 +3686,7 @@ export function App() {
     if (config) {
       void refreshLibrary(config);
     }
-  }, [config]);
+  }, [config?.serverUrl, config?.username, config?.password]);
 
   useEffect(() => {
     if (!config) return;
@@ -4437,7 +4437,11 @@ export function App() {
             <Music2 size={18} />
             Songs
           </button>
-          <DropdownMenu.Root modal={false}>
+          <DropdownMenu.Root
+            modal={false}
+            open={sidebarPlaylistMenuOpen || libraryContextMenu?.type === "playlist"}
+            onOpenChange={setSidebarPlaylistMenuOpen}
+          >
             <DropdownMenu.Trigger asChild>
               <button
                 className={`nav-item nav-child nav-parent nav-playlist-trigger ${activeView === "playlists" ? "active" : ""}`}
