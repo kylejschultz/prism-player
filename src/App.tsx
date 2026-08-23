@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   AlertCircle,
   CalendarDays,
@@ -68,8 +70,46 @@ type SongSortDirection = "asc" | "desc";
 
 const LIBRARY_SCAN_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
-function ViewportModal({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return createPortal(<div className={`modal-backdrop ${className}`.trim()}>{children}</div>, document.body);
+function PrismDialog({
+  open,
+  onOpenChange,
+  children,
+  className = "",
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className={`modal-backdrop ${className}`.trim()} />
+        <Dialog.Content asChild>{children}</Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function PrismAlertDialog({
+  open,
+  onOpenChange,
+  children,
+  className = "",
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className={`modal-backdrop ${className}`.trim()} />
+        <AlertDialog.Content asChild>{children}</AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
+  );
 }
 
 type AvailableUpdate = {
@@ -247,14 +287,12 @@ type BrowserSnapshot = {
 type SongContextMenuState = {
   song: Song;
   songs: Song[];
-  x: number;
-  y: number;
 } | null;
 
 type LibraryContextMenuState =
-  | { type: "album"; item: Album; x: number; y: number }
-  | { type: "artist"; item: Artist; x: number; y: number }
-  | { type: "playlist"; item: Playlist; x: number; y: number }
+  | { type: "album"; item: Album }
+  | { type: "artist"; item: Artist }
+  | { type: "playlist"; item: Playlist }
   | null;
 
 type FavoriteKind = "song" | "album" | "artist";
@@ -2825,11 +2863,10 @@ export function App() {
   }
 
   function openSongContextMenu(event: MouseEvent<HTMLElement>, song: Song, selectedSongs: Song[] = [song]) {
-    event.preventDefault();
     setLibraryContextMenu(null);
     setPlaylistAddStatus("idle");
     setPlaylistAddMessage("");
-    setSongContextMenu({ song, songs: selectedSongs.some((selectedSong) => selectedSong.id === song.id) ? selectedSongs : [song], x: event.clientX, y: event.clientY });
+    setSongContextMenu({ song, songs: selectedSongs.some((selectedSong) => selectedSong.id === song.id) ? selectedSongs : [song] });
   }
 
   function openLibraryContextMenu(event: MouseEvent<HTMLElement>) {
@@ -2844,27 +2881,24 @@ export function App() {
     if (type === "album") {
       const item = albumLookup.get(id);
       if (!item) return;
-      event.preventDefault();
       setSongContextMenu(null);
-      setLibraryContextMenu({ type, item, x: event.clientX, y: event.clientY });
+      setLibraryContextMenu({ type, item });
       return;
     }
 
     if (type === "artist") {
       const item = artistLookup.get(id);
       if (!item) return;
-      event.preventDefault();
       setSongContextMenu(null);
-      setLibraryContextMenu({ type, item, x: event.clientX, y: event.clientY });
+      setLibraryContextMenu({ type, item });
       return;
     }
 
     if (type === "playlist") {
       const item = playlistLookup.get(id);
       if (!item) return;
-      event.preventDefault();
       setSongContextMenu(null);
-      setLibraryContextMenu({ type, item, x: event.clientX, y: event.clientY });
+      setLibraryContextMenu({ type, item });
     }
   }
 
@@ -3938,33 +3972,6 @@ export function App() {
   }, [currentTrack?.duration, playerDuration, position, queue.length, isPlaying, currentStreamUrl, isRadioPlaying]);
 
   useEffect(() => {
-    function closeContextMenus(event: PointerEvent) {
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      if (target?.closest(".song-context-menu, .library-context-menu")) return;
-      setSongContextMenu(null);
-      setLibraryContextMenu(null);
-      setPlaylistAddStatus("idle");
-      setPlaylistAddMessage("");
-    }
-
-    function closeContextMenusWithEscape(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      setSongContextMenu(null);
-      setLibraryContextMenu(null);
-      setPlaylistAddStatus("idle");
-      setPlaylistAddMessage("");
-    }
-
-    window.addEventListener("pointerdown", closeContextMenus);
-    window.addEventListener("keydown", closeContextMenusWithEscape);
-
-    return () => {
-      window.removeEventListener("pointerdown", closeContextMenus);
-      window.removeEventListener("keydown", closeContextMenusWithEscape);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
     const controlsRadio = activePlaybackSource === "radio" && Boolean(radioStationUrl);
@@ -4071,6 +4078,19 @@ export function App() {
   }, [isRadioPlaying]);
 
   return (
+    <ContextMenu.Root
+      open={Boolean(songContextMenu || libraryContextMenu)}
+      onOpenChange={(open) => {
+        if (!open) {
+          setSongContextMenu(null);
+          setLibraryContextMenu(null);
+          setPlaylistAddStatus("idle");
+          setPlaylistAddMessage("");
+        }
+      }}
+      modal={false}
+    >
+      <ContextMenu.Trigger asChild>
     <main
       className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
@@ -4742,12 +4762,12 @@ export function App() {
         />
       ) : null}
       {playlistCreatorOpen ? (
-        <ViewportModal>
-          <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-create-title">
+        <PrismDialog open={playlistCreatorOpen} onOpenChange={(open) => !open && closePlaylistCreator()}>
+          <section className="playlist-modal" aria-labelledby="playlist-create-title">
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">Playlist</p>
-                <h3 id="playlist-create-title">New Playlist</h3>
+                <Dialog.Title asChild><h3 id="playlist-create-title">New Playlist</h3></Dialog.Title>
               </div>
               <button className="icon-button" type="button" onClick={closePlaylistCreator} aria-label="Close new playlist">
                 <X size={16} />
@@ -4769,7 +4789,7 @@ export function App() {
               onCancel={closePlaylistCreator}
             />
           </section>
-        </ViewportModal>
+        </PrismDialog>
       ) : null}
       {songContextMenu ? (
         <SongPlaylistMenu
@@ -4802,7 +4822,6 @@ export function App() {
           favoriteBusy={favoriteBusyKey === `song:${songContextMenu.song.id}`}
           onToggleFavorite={(favorite) => void toggleFavorite("song", songContextMenu.song.id, favorite)}
           onCreatePlaylist={() => createPlaylistFromSongs(songContextMenu.song.title, songContextMenu.songs)}
-          onClose={() => setSongContextMenu(null)}
         />
       ) : null}
       {libraryContextMenu ? (
@@ -4862,19 +4881,18 @@ export function App() {
               .then((detail) => Promise.all((detail.album ?? []).slice(0, 50).map((album) => fetchAlbumDetail(config, album.id))))
               .then((albums) => createPlaylistFromSongs(artist.name, albums.flatMap((album) => album.song ?? [])));
           }}
-          onClose={() => setLibraryContextMenu(null)}
         />
       ) : null}
       {playlistDeleteTarget ? (
-        <ViewportModal className="confirm-backdrop">
-          <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="context-playlist-delete-title">
+        <PrismAlertDialog open={Boolean(playlistDeleteTarget)} onOpenChange={(open) => !open && setPlaylistDeleteTarget(null)} className="confirm-backdrop">
+          <section className="playlist-modal confirm-modal" aria-labelledby="context-playlist-delete-title">
             <div className="confirm-icon" aria-hidden="true">
               <Trash2 size={22} />
             </div>
             <div className="confirm-copy">
               <p className="eyebrow">Delete Playlist</p>
-              <h3 id="context-playlist-delete-title">{playlistDeleteTarget.name}</h3>
-              <p>This removes the playlist from Navidrome. The songs stay in your library.</p>
+              <AlertDialog.Title asChild><h3 id="context-playlist-delete-title">{playlistDeleteTarget.name}</h3></AlertDialog.Title>
+              <AlertDialog.Description asChild><p>This removes the playlist from Navidrome. The songs stay in your library.</p></AlertDialog.Description>
             </div>
             <div className="confirm-actions">
               <button
@@ -4899,9 +4917,11 @@ export function App() {
               <p className={`confirm-status ${playlistDeleteStatus === "error" ? "bad" : ""}`}>{playlistDeleteMessage}</p>
             ) : null}
           </section>
-        </ViewportModal>
+        </PrismAlertDialog>
       ) : null}
     </main>
+      </ContextMenu.Trigger>
+    </ContextMenu.Root>
   );
 }
 
@@ -5917,8 +5937,8 @@ function FirstRunWizard({
   onClose: () => void;
 }) {
   return (
-    <ViewportModal>
-      <section className="setup-modal" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+    <PrismDialog open onOpenChange={(open) => !open && onClose()}>
+      <section className="setup-modal" aria-labelledby="setup-title">
         <button className="icon-button close-button" type="button" aria-label="Close setup" onClick={onClose}>
           <X size={18} />
         </button>
@@ -5926,10 +5946,10 @@ function FirstRunWizard({
           <Music2 size={42} />
         </div>
         <p className="eyebrow">First run</p>
-        <h2 id="setup-title">Connect Prism to Navidrome</h2>
-        <p className="setup-copy">
+        <Dialog.Title asChild><h2 id="setup-title">Connect Prism to Navidrome</h2></Dialog.Title>
+        <Dialog.Description asChild><p className="setup-copy">
           Add your server once and Prism will use it for library browsing. Playback comes after the live data spine.
-        </p>
+        </p></Dialog.Description>
 
         <form className="wizard-form" onSubmit={onSave}>
           <input
@@ -5961,7 +5981,7 @@ function FirstRunWizard({
 
         <p className={`wizard-status ${status === "error" ? "bad" : ""}`}>{statusMessage}</p>
       </section>
-    </ViewportModal>
+    </PrismDialog>
   );
 }
 
@@ -8412,12 +8432,12 @@ function PlaylistDetailPanel({
         </div>
       </div>
       {editing ? (
-        <ViewportModal>
-          <section className="playlist-modal" role="dialog" aria-modal="true" aria-labelledby="playlist-edit-title">
+        <PrismDialog open={editing} onOpenChange={(open) => !open && setEditing(false)}>
+          <section className="playlist-modal" aria-labelledby="playlist-edit-title">
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">Playlist</p>
-                <h3 id="playlist-edit-title">Edit Details</h3>
+                <Dialog.Title asChild><h3 id="playlist-edit-title">Edit Details</h3></Dialog.Title>
               </div>
               <button className="icon-button" type="button" onClick={() => setEditing(false)} aria-label="Close playlist details">
                 <X size={16} />
@@ -8465,18 +8485,18 @@ function PlaylistDetailPanel({
               </div>
             </form>
           </section>
-        </ViewportModal>
+        </PrismDialog>
       ) : null}
       {confirmingDelete ? (
-        <ViewportModal className="confirm-backdrop">
-          <section className="playlist-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title">
+        <PrismAlertDialog open={confirmingDelete} onOpenChange={(open) => !open && setConfirmingDelete(false)} className="confirm-backdrop">
+          <section className="playlist-modal confirm-modal" aria-labelledby="playlist-delete-title">
             <div className="confirm-icon" aria-hidden="true">
               <Trash2 size={22} />
             </div>
             <div className="confirm-copy">
               <p className="eyebrow">Delete Playlist</p>
-              <h3 id="playlist-delete-title">{playlist.name}</h3>
-              <p>This removes the playlist from Navidrome. The songs stay in your library.</p>
+              <AlertDialog.Title asChild><h3 id="playlist-delete-title">{playlist.name}</h3></AlertDialog.Title>
+              <AlertDialog.Description asChild><p>This removes the playlist from Navidrome. The songs stay in your library.</p></AlertDialog.Description>
             </div>
             <div className="confirm-actions">
               <button className="secondary-button" type="button" disabled={status === "saving"} onClick={() => setConfirmingDelete(false)}>
@@ -8489,7 +8509,7 @@ function PlaylistDetailPanel({
             </div>
             {message ? <p className={`confirm-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
           </section>
-        </ViewportModal>
+        </PrismAlertDialog>
       ) : null}
       <EditablePlaylistTrackList
         songs={draftSongs}
@@ -9037,7 +9057,6 @@ function LibraryContextMenu({
   onAddArtist,
   onCreateAlbumPlaylist,
   onCreateArtistPlaylist,
-  onClose,
 }: {
   menu: Exclude<LibraryContextMenuState, null>;
   favoriteIds: FavoriteIds;
@@ -9057,19 +9076,14 @@ function LibraryContextMenu({
   onAddArtist: (playlist: Playlist, artist: Artist) => void;
   onCreateAlbumPlaylist: (album: Album) => void;
   onCreateArtistPlaylist: (artist: Artist) => void;
-  onClose: () => void;
 }) {
   const title = menu.item.name;
   const menuLabel = menu.type === "album" ? "Album" : menu.type === "artist" ? "Artist" : "Playlist";
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
-      <DropdownMenu.Trigger asChild>
-        <span className="context-menu-anchor" style={{ left: menu.x, top: menu.y }} />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content className="song-context-menu library-context-menu" side="right" align="start" sideOffset={4} collisionPadding={12} aria-label={`${menuLabel} actions for ${title}`}>
+    <ContextMenu.Portal>
+      <ContextMenu.Content className="song-context-menu library-context-menu" collisionPadding={12} aria-label={`${menuLabel} actions for ${title}`}>
       <div className="song-context-heading">
         <div>
           <p className="eyebrow">{menuLabel}</p>
@@ -9079,15 +9093,15 @@ function LibraryContextMenu({
       <div className="song-context-section">
         {menu.type === "album" ? (
           <>
-            <button className="song-context-action" type="button" onClick={() => onOpenAlbum(menu.item)}>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onOpenAlbum(menu.item)}>
               <Disc3 size={15} />
               Open Album
-            </button>
-            <button className="song-context-action" type="button" onClick={() => onPlayAlbum(menu.item)}>
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onPlayAlbum(menu.item)}>
               <Play size={15} fill="currentColor" />
               Play Album
-            </button>
-            <button
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button
               className="song-context-action"
               type="button"
               disabled={favoriteBusyKey === `album:${menu.item.id}`}
@@ -9099,21 +9113,21 @@ function LibraryContextMenu({
                 <Star size={15} fill={favoriteIds.albums.has(menu.item.id) ? "currentColor" : "none"} />
               )}
               {favoriteIds.albums.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
-            </button>
+            </button></ContextMenu.Item>
             <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddAlbum(playlist, menu.item)} onCreateNew={() => onCreateAlbumPlaylist(menu.item)} />
           </>
         ) : null}
         {menu.type === "artist" ? (
           <>
-            <button className="song-context-action" type="button" onClick={() => onOpenArtist(menu.item)}>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onOpenArtist(menu.item)}>
               <UserRound size={15} />
               Open Artist
-            </button>
-            <button className="song-context-action" type="button" onClick={() => onPlayArtist(menu.item)}>
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onPlayArtist(menu.item)}>
               <Play size={15} fill="currentColor" />
               Play Artist
-            </button>
-            <button
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button
               className="song-context-action"
               type="button"
               disabled={favoriteBusyKey === `artist:${menu.item.id}`}
@@ -9125,34 +9139,33 @@ function LibraryContextMenu({
                 <Star size={15} fill={favoriteIds.artists.has(menu.item.id) ? "currentColor" : "none"} />
               )}
               {favoriteIds.artists.has(menu.item.id) ? "Remove Favorite" : "Add Favorite"}
-            </button>
+            </button></ContextMenu.Item>
             <AddToPlaylistSubmenu playlists={sortedPlaylists} status={status} onAdd={(playlist) => onAddArtist(playlist, menu.item)} onCreateNew={() => onCreateArtistPlaylist(menu.item)} />
           </>
         ) : null}
         {menu.type === "playlist" ? (
           <>
-            <button className="song-context-action" type="button" onClick={() => onOpenPlaylist(menu.item)}>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onOpenPlaylist(menu.item)}>
               <ListMusic size={15} />
               Open Playlist
-            </button>
-            <button className="song-context-action" type="button" onClick={() => onPlayPlaylist(menu.item)}>
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onPlayPlaylist(menu.item)}>
               <Play size={15} fill="currentColor" />
               Play Playlist
-            </button>
-            <button className="song-context-action" type="button" onClick={() => onEditPlaylist(menu.item)}>
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onEditPlaylist(menu.item)}>
               <Settings size={15} />
               Edit Details
-            </button>
-            <button className="song-context-action danger-context-action" type="button" onClick={() => onDeletePlaylist(menu.item)}>
+            </button></ContextMenu.Item>
+            <ContextMenu.Item asChild><button className="song-context-action danger-context-action" type="button" onClick={() => onDeletePlaylist(menu.item)}>
               <Trash2 size={15} />
               Delete Playlist
-            </button>
+            </button></ContextMenu.Item>
           </>
         ) : null}
       </div>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+      </ContextMenu.Content>
+    </ContextMenu.Portal>
   );
 }
 
@@ -9168,14 +9181,14 @@ function AddToPlaylistSubmenu({
   onCreateNew: () => void;
 }) {
   return (
-    <DropdownMenu.Sub>
-      <DropdownMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
+    <ContextMenu.Sub>
+      <ContextMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
         <ListMusic size={15} />
         <span>Add to playlist</span>
         <ChevronRight size={15} />
-      </DropdownMenu.SubTrigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
+      </ContextMenu.SubTrigger>
+      <ContextMenu.Portal>
+        <ContextMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
           {playlists.length ? (
             <div className="song-context-list">
               {playlists.map((playlist) => (
@@ -9195,9 +9208,9 @@ function AddToPlaylistSubmenu({
             <Plus size={15} />
             Add to new playlist
           </button>
-        </DropdownMenu.SubContent>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Sub>
+        </ContextMenu.SubContent>
+      </ContextMenu.Portal>
+    </ContextMenu.Sub>
   );
 }
 
@@ -9216,7 +9229,6 @@ function SongPlaylistMenu({
   favoriteBusy,
   onToggleFavorite,
   onCreatePlaylist,
-  onClose,
 }: {
   menu: Exclude<SongContextMenuState, null>;
   playlists: Playlist[];
@@ -9232,17 +9244,12 @@ function SongPlaylistMenu({
   favoriteBusy: boolean;
   onToggleFavorite: (favorite: boolean) => void;
   onCreatePlaylist: () => void;
-  onClose: () => void;
 }) {
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <DropdownMenu.Root open onOpenChange={(open) => !open && onClose()} modal={false}>
-      <DropdownMenu.Trigger asChild>
-        <span className="context-menu-anchor" style={{ left: menu.x, top: menu.y }} />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content className="song-context-menu" side="right" align="start" sideOffset={4} collisionPadding={12} aria-label={`${menu.songs.length === 1 ? "Song" : `${menu.songs.length} selected songs`} actions for ${menu.song.title}`}>
+    <ContextMenu.Portal>
+      <ContextMenu.Content className="song-context-menu" collisionPadding={12} aria-label={`${menu.songs.length === 1 ? "Song" : `${menu.songs.length} selected songs`} actions for ${menu.song.title}`}>
       <div className="song-context-heading">
         <div>
           <p className="eyebrow">{menu.songs.length === 1 ? "Song" : `${menu.songs.length} songs selected`}</p>
@@ -9251,41 +9258,41 @@ function SongPlaylistMenu({
       </div>
       {message ? <p className={`song-context-status ${status === "error" ? "bad" : ""}`}>{message}</p> : null}
       <div className="song-context-section">
-        <button className="song-context-action" type="button" onClick={() => onPlayNow(menu.song)}>
+        <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onPlayNow(menu.song)}>
           <Play size={15} fill="currentColor" />
           Play Now
-        </button>
-        <button className="song-context-action" type="button" onClick={() => onPlayNext(menu.song)}>
+        </button></ContextMenu.Item>
+        <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onPlayNext(menu.song)}>
           <ListMusic size={15} />
           Play Next
-        </button>
-        <button className="song-context-action" type="button" onClick={() => onQueueSong(menu.song)}>
+        </button></ContextMenu.Item>
+        <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onQueueSong(menu.song)}>
           <Plus size={15} />
           Add to Queue
-        </button>
+        </button></ContextMenu.Item>
       </div>
       <div className="song-context-section">
-        <button className="song-context-action" type="button" onClick={() => onOpenAlbum(menu.song)} disabled={!menu.song.albumId}>
+        <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onOpenAlbum(menu.song)} disabled={!menu.song.albumId}>
           <Disc3 size={15} />
           Go to Album
-        </button>
-        <button className="song-context-action" type="button" onClick={() => onOpenArtist(menu.song)} disabled={!menu.song.artistId}>
+        </button></ContextMenu.Item>
+        <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onOpenArtist(menu.song)} disabled={!menu.song.artistId}>
           <UserRound size={15} />
           Go to Artist
-        </button>
-        <button className="song-context-action" type="button" onClick={() => onToggleFavorite(!isFavorite)} disabled={favoriteBusy}>
+        </button></ContextMenu.Item>
+        <ContextMenu.Item asChild><button className="song-context-action" type="button" onClick={() => onToggleFavorite(!isFavorite)} disabled={favoriteBusy}>
           {favoriteBusy ? <Loader2 size={15} className="spin" /> : <Star size={15} fill={isFavorite ? "currentColor" : "none"} />}
           {isFavorite ? "Remove Favorite" : "Add Favorite"}
-        </button>
+        </button></ContextMenu.Item>
       </div>
-      <DropdownMenu.Sub>
-        <DropdownMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
+      <ContextMenu.Sub>
+        <ContextMenu.SubTrigger className="song-context-action song-context-submenu-trigger">
           <ListMusic size={15} />
           <span>Add to playlist</span>
           <ChevronRight size={15} />
-        </DropdownMenu.SubTrigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
+        </ContextMenu.SubTrigger>
+        <ContextMenu.Portal>
+          <ContextMenu.SubContent className="song-context-menu song-context-flyout" sideOffset={4} collisionPadding={12} aria-label="Choose playlist">
             {sortedPlaylists.length ? (
               <div className="song-context-list">
                 {sortedPlaylists.map((playlist) => (
@@ -9311,12 +9318,11 @@ function SongPlaylistMenu({
               <Plus size={15} />
               Add to new playlist
             </button>
-          </DropdownMenu.SubContent>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Sub>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+          </ContextMenu.SubContent>
+        </ContextMenu.Portal>
+      </ContextMenu.Sub>
+      </ContextMenu.Content>
+    </ContextMenu.Portal>
   );
 }
 
