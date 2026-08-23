@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
@@ -11,6 +11,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
   CalendarDays,
@@ -7620,58 +7621,82 @@ function SearchSongList({
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
   const [sortKey, setSortKey] = useState<SongSortKey>("title");
   const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
   const sortedSongs = useMemo(() => sortSongs(songs, sortKey, sortDirection), [songs, sortKey, sortDirection]);
+  const songIndexes = useMemo(() => new Map(songs.map((song, index) => [song.id, index])), [songs]);
+  const virtualizer = useVirtualizer({
+    count: sortedSongs.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => 35,
+    overscan: 12,
+    getItemKey: (index) => sortedSongs[index]?.id ?? index,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const setSongListRef = useCallback((element: HTMLDivElement | null) => {
+    listRef.current = element;
+    setScrollElement(element?.closest<HTMLElement>(".browser-panel") ?? null);
+  }, [listRef]);
 
   return (
-    <div className="track-list song-browser-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Songs">
+    <div className="track-list song-browser-list" ref={setSongListRef} tabIndex={0} onKeyDown={handleKeyDown} role="list" aria-label="Songs">
       <SongListHeader showTrackNumber={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />
-      {sortedSongs.map((song) => {
-        const index = songs.findIndex((listSong) => listSong.id === song.id);
-        return (
-        <div
-          className={`track-row song-browser-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
-          key={song.id}
-          onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
-          onClick={(event) => selectTrack(event, index)}
-        >
-          <button
-            className="track-play"
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onPlaySong(song);
-            }}
-            aria-label={`Play ${song.title}`}
-          >
-            <Play size={15} strokeWidth={1.6} />
-          </button>
-          <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
-          <span className="track-artist">{song.artist || "Unknown artist"}</span>
-          <span className="track-album">{song.album || "Unknown album"}</span>
-          <span className="track-duration">{formatDuration(song.duration)}</span>
-          <FavoriteButton
-            active={favoriteIds.songs.has(song.id)}
-            busy={favoriteBusyKey === `song:${song.id}`}
-            label={song.title}
-            onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
-          />
-          <button
-            className="track-queue"
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onQueueSong(song);
-            }}
-            aria-label={`Queue ${song.title}`}
-          >
-            <Plus size={14} />
-          </button>
-        </div>
-        );
-      })}
+      <div className="virtual-song-list" style={{ height: `${virtualizer.getTotalSize()}px` }} aria-setsize={sortedSongs.length}>
+        {virtualItems.map((virtualItem) => {
+          const song = sortedSongs[virtualItem.index];
+          const index = songIndexes.get(song.id);
+          if (index == null) return null;
+
+          return (
+            <div
+              className={`track-row song-browser-row ${virtualItem.index % 2 ? "alternating" : ""} ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
+              key={virtualItem.key}
+              ref={virtualizer.measureElement}
+              style={{ transform: `translateY(${virtualItem.start}px)` }}
+              data-index={virtualItem.index}
+              role="listitem"
+              aria-posinset={virtualItem.index + 1}
+              onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+              onClick={(event) => selectTrack(event, index)}
+            >
+              <button
+                className="track-play"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPlaySong(song);
+                }}
+                aria-label={`Play ${song.title}`}
+              >
+                <Play size={15} strokeWidth={1.6} />
+              </button>
+              <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
+              <span className="track-artist">{song.artist || "Unknown artist"}</span>
+              <span className="track-album">{song.album || "Unknown album"}</span>
+              <span className="track-duration">{formatDuration(song.duration)}</span>
+              <FavoriteButton
+                active={favoriteIds.songs.has(song.id)}
+                busy={favoriteBusyKey === `song:${song.id}`}
+                label={song.title}
+                onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
+              />
+              <button
+                className="track-queue"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onQueueSong(song);
+                }}
+                aria-label={`Queue ${song.title}`}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
