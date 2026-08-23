@@ -41,7 +41,6 @@ fn clear_navidrome_password() -> Result<(), String> {
 struct DiscordPresence {
     title: String,
     artist: String,
-    album: Option<String>,
     station: Option<String>,
     playing: bool,
     started_at: Option<i64>,
@@ -98,21 +97,13 @@ fn publish_discord_presence(app: &tauri::AppHandle, presence: DiscordPresence) -
 
 fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'static> {
     let station = presence.station.filter(|station| !station.trim().is_empty());
-    let is_radio = station.is_some();
     let state = if let Some(station) = station {
         format!("{} · Live on {station}", presence.artist)
     } else {
-        presence
-            .album
-            .filter(|album| !album.trim().is_empty())
-            .map_or_else(|| presence.artist.clone(), |album| format!("{} · {album}", presence.artist))
+        presence.artist.clone()
     };
     let title = presence.title;
-    let track_details = if is_radio {
-        format!("{title} · {}", presence.artist)
-    } else {
-        title.clone()
-    };
+    let track_details = title.clone();
     let details = if presence.playing {
         track_details
     } else {
@@ -120,11 +111,7 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
     };
     let mut activity = activity::Activity::new()
         .activity_type(activity::ActivityType::Listening)
-        .status_display_type(if is_radio {
-            activity::StatusDisplayType::Details
-        } else {
-            activity::StatusDisplayType::State
-        })
+        .status_display_type(activity::StatusDisplayType::Details)
         .details(details)
         .state(state)
         .buttons(vec![
