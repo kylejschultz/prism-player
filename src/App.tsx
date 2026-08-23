@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { useQueryClient } from "@tanstack/react-query";
+import { navidromeClient, navidromeKeys } from "./data/navidrome";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -161,7 +163,7 @@ function isAppForegrounded() {
   return document.visibilityState === "visible" && document.hasFocus();
 }
 
-type NavidromeConfig = {
+export type NavidromeConfig = {
   serverUrl: string;
   username: string;
   password: string;
@@ -188,7 +190,7 @@ type AppSettings = {
   radioStationNames: Record<string, string>;
 };
 
-type Album = {
+export type Album = {
   id: string;
   name: string;
   artist: string;
@@ -198,13 +200,13 @@ type Album = {
   year?: number;
 };
 
-type Artist = {
+export type Artist = {
   id: string;
   name: string;
   albumCount?: number;
 };
 
-type ArtistInfo = {
+export type ArtistInfo = {
   biography?: string;
   musicBrainzId?: string;
   lastFmUrl?: string;
@@ -214,7 +216,7 @@ type ArtistInfo = {
   similarArtist?: Artist[];
 };
 
-type LibraryData = {
+export type LibraryData = {
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
@@ -227,14 +229,14 @@ type LibraryData = {
   };
 };
 
-type SearchResults = {
+export type SearchResults = {
   artists: Artist[];
   albums: Album[];
   songs: Song[];
   playlists: Playlist[];
 };
 
-type Song = {
+export type Song = {
   id: string;
   title: string;
   albumId?: string;
@@ -260,7 +262,7 @@ type ListeningHistoryEntry = {
   source: ListeningSource | "library";
 };
 
-type Playlist = {
+export type Playlist = {
   id: string;
   name: string;
   songCount?: number;
@@ -272,15 +274,15 @@ type Playlist = {
   changed?: string;
 };
 
-type AlbumDetail = Album & {
+export type AlbumDetail = Album & {
   song?: Song[];
 };
 
-type PlaylistDetail = Playlist & {
+export type PlaylistDetail = Playlist & {
   entry?: Song[];
 };
 
-type ArtistDetail = Artist & {
+export type ArtistDetail = Artist & {
   album?: Album[];
   info?: ArtistInfo | null;
 };
@@ -308,19 +310,19 @@ type LibraryContextMenuState =
   | { type: "playlist"; item: Playlist }
   | null;
 
-type FavoriteKind = "song" | "album" | "artist";
+export type FavoriteKind = "song" | "album" | "artist";
 type FavoriteIds = {
   songs: Set<string>;
   albums: Set<string>;
   artists: Set<string>;
 };
-type PlaylistDetailsUpdate = {
+export type PlaylistDetailsUpdate = {
   name: string;
   comment: string;
   public: boolean;
 };
 
-type LyricsPayload = {
+export type LyricsPayload = {
   lyrics?: {
     value?: string;
     synced?: boolean;
@@ -354,7 +356,7 @@ type RadioTrack = {
   timestamp?: number;
 };
 
-type RadioLikeStatus = {
+export type RadioLikeStatus = {
   enabled?: boolean;
   songId?: string | null;
   liked?: boolean;
@@ -364,7 +366,7 @@ type RadioLikeStatus = {
   error?: string;
 };
 
-type RadioStationState = {
+export type RadioStationState = {
   nowPlaying?: RadioTrack | null;
   now_playing?: RadioTrack;
   current?: RadioTrack;
@@ -394,7 +396,7 @@ type RadioSessionTurn = {
   text?: string;
 };
 
-type RadioSessionPayload = {
+export type RadioSessionPayload = {
   messages?: RadioSessionTurn[];
 };
 
@@ -403,7 +405,7 @@ type RadioStationLocale = "en-GB" | "en-US";
 type RadioSchedulePersona = { id?: string; name?: string; tagline?: string };
 type RadioScheduleShow = { id?: string; name?: string; topic?: string; mood?: string; personaId?: string; guestPersonaIds?: string[] };
 
-type RadioSchedulePayload = {
+export type RadioSchedulePayload = {
   personas?: RadioSchedulePersona[];
   shows?: RadioScheduleShow[];
   schedule?: Record<string, Array<string | null>>;
@@ -423,7 +425,7 @@ type RadioNowPlayingResponse = {
 
 type RadioRequestStatus = "pending" | "resolved" | "failed" | "unknown";
 
-type RadioRequestResult = {
+export type RadioRequestResult = {
   success: boolean;
   pending?: boolean;
   ack?: string;
@@ -1525,6 +1527,9 @@ async function fetchRadioState(stationUrl: string): Promise<RadioStationState> {
   });
 }
 
+// Transitional compatibility helpers. New call sites use data/navidrome.ts;
+// this block will be deleted once #118's persistent catalog lands on top of it.
+/* eslint-disable @typescript-eslint/no-unused-vars */
 async function navidromeRequest<T>(
   config: NavidromeConfig,
   endpoint: string,
@@ -1814,6 +1819,7 @@ async function fetchSearchResults(config: NavidromeConfig, query: string): Promi
   };
 }
 
+/* eslint-enable @typescript-eslint/no-unused-vars */
 function formatDuration(seconds?: number) {
   if (!seconds || !Number.isFinite(seconds)) return "-:--";
   const wholeSeconds = Math.max(0, Math.floor(seconds));
@@ -1902,6 +1908,7 @@ function snapshotEquals(left: BrowserSnapshot | null, right: BrowserSnapshot | n
 }
 
 export function App() {
+  const queryClient = useQueryClient();
   const [initialPlaybackSnapshot] = useState(() => loadPlaybackSnapshot());
   const [activeView, setActiveView] = useState<View>("overview");
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
@@ -2490,6 +2497,49 @@ export function App() {
     setVolume(defaultSettings.lastVolume);
   }
 
+  // These wrappers are the migration seam for server-owned data. They make
+  // repeated navigation reuse a response while preserving the existing local
+  // playback and navigation state machine.
+  function loadLibraryData(nextConfig: NavidromeConfig) {
+    return queryClient.fetchQuery({
+      queryKey: navidromeKeys.library(nextConfig),
+      queryFn: () => navidromeClient.library(nextConfig),
+    });
+  }
+
+  function loadAlbumDetail(nextConfig: NavidromeConfig, albumId: string) {
+    return queryClient.fetchQuery({
+      queryKey: navidromeKeys.album(nextConfig, albumId),
+      queryFn: () => navidromeClient.album(nextConfig, albumId),
+    });
+  }
+
+  function loadArtistDetail(nextConfig: NavidromeConfig, artistId: string) {
+    return queryClient.fetchQuery({
+      queryKey: navidromeKeys.artist(nextConfig, artistId),
+      queryFn: () => navidromeClient.artist(nextConfig, artistId),
+    });
+  }
+
+  function loadPlaylistDetail(nextConfig: NavidromeConfig, playlistId: string) {
+    return queryClient.fetchQuery({
+      queryKey: navidromeKeys.playlist(nextConfig, playlistId),
+      queryFn: () => navidromeClient.playlist(nextConfig, playlistId),
+    });
+  }
+
+  function loadSearchResults(nextConfig: NavidromeConfig, query: string) {
+    return queryClient.fetchQuery({
+      queryKey: navidromeKeys.search(nextConfig, query),
+      queryFn: () => navidromeClient.search(nextConfig, query),
+      staleTime: 15_000,
+    });
+  }
+
+  async function invalidateNavidromeData(nextConfig: NavidromeConfig) {
+    await queryClient.invalidateQueries({ queryKey: navidromeKeys.root(nextConfig) });
+  }
+
   async function refreshLibrary(nextConfig = config) {
     if (!nextConfig || libraryRefreshInFlightRef.current) return false;
 
@@ -2501,11 +2551,11 @@ export function App() {
     setStatusMessage("Checking Navidrome and loading library...");
 
     try {
-      const resolvedConfig = await resolveNavidromeConfig(nextConfig);
+      const resolvedConfig = await navidromeClient.resolveConfig(nextConfig);
       const [scanStatus, nextLibrary, nextListenerName] = await Promise.all([
-        fetchNavidromeScanStatus(resolvedConfig).catch(() => null),
-        fetchLibrary(resolvedConfig),
-        fetchNavidromeProfileName(resolvedConfig).catch(() => ""),
+        navidromeClient.scanStatus(resolvedConfig).catch(() => null),
+        loadLibraryData(resolvedConfig),
+        navidromeClient.profileName(resolvedConfig).catch(() => ""),
       ]);
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
       await storeNativePassword(resolvedConfig.password);
@@ -2568,7 +2618,7 @@ export function App() {
     setActiveView("albums");
 
     try {
-      const albumDetail = await fetchAlbumDetail(config, albumId);
+      const albumDetail = await loadAlbumDetail(config, albumId);
       setBackStack((currentStack) => [...currentStack, origin].slice(-40));
       setForwardStack([]);
       setDetailSelection({ type: "album", data: albumDetail });
@@ -2593,7 +2643,7 @@ export function App() {
     setActiveView("artists");
 
     try {
-      const artistDetail = await fetchArtistDetail(config, artistId);
+      const artistDetail = await loadArtistDetail(config, artistId);
       setBackStack((currentStack) => [...currentStack, origin].slice(-40));
       setForwardStack([]);
       setDetailSelection({ type: "artist", data: artistDetail });
@@ -2618,7 +2668,7 @@ export function App() {
     setActiveView("playlists");
 
     try {
-      const playlistDetail = await fetchPlaylistDetail(config, playlistId);
+      const playlistDetail = await loadPlaylistDetail(config, playlistId);
       setBackStack((currentStack) => [...currentStack, origin].slice(-40));
       setForwardStack([]);
       setDetailSelection({ type: "playlist", data: playlistDetail });
@@ -2645,7 +2695,7 @@ export function App() {
     if (!config) return;
 
     try {
-      const albumDetail = await fetchAlbumDetail(config, album.id);
+      const albumDetail = await loadAlbumDetail(config, album.id);
       replaceQueue(sortAlbumSongs(albumDetail.song ?? []));
     } catch (error) {
       setDetailStatus("error");
@@ -2657,9 +2707,9 @@ export function App() {
     if (!config) return;
 
     try {
-      const artistDetail = "album" in artist ? artist : await fetchArtistDetail(config, artist.id);
+      const artistDetail = "album" in artist ? artist : await loadArtistDetail(config, artist.id);
       const albums = artistDetail.album ?? [];
-      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => fetchAlbumDetail(config, album.id)));
+      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => loadAlbumDetail(config, album.id)));
       replaceQueue(albumDetails.flatMap((album) => album.song ?? []));
     } catch (error) {
       setDetailStatus("error");
@@ -2671,7 +2721,7 @@ export function App() {
     if (!config) return;
 
     try {
-      const playlistDetail = await fetchPlaylistDetail(config, playlist.id);
+      const playlistDetail = await loadPlaylistDetail(config, playlist.id);
       replaceQueue(playlistDetail.entry ?? [], 0, playlist);
     } catch (error) {
       setDetailStatus("error");
@@ -2696,20 +2746,22 @@ export function App() {
     setPlaylistCreateMessage("Creating playlist...");
 
     try {
-      await createPlaylist(config, trimmedName, seedSongs);
-      let nextLibrary = await fetchLibrary(config);
+      await navidromeClient.createPlaylist(config, trimmedName, seedSongs);
+      await invalidateNavidromeData(config);
+      let nextLibrary = await loadLibraryData(config);
 
       let createdPlaylist = [...nextLibrary.playlists]
         .filter((playlist) => playlist.name === trimmedName)
         .sort((a, b) => (b.changed ?? b.created ?? "").localeCompare(a.changed ?? a.created ?? ""))[0];
 
       if (createdPlaylist && (trimmedDescription || playlistPublic)) {
-        await updatePlaylistDetails(config, createdPlaylist.id, {
+        await navidromeClient.updatePlaylist(config, createdPlaylist.id, {
           name: trimmedName,
           comment: trimmedDescription,
           public: playlistPublic,
         });
-        nextLibrary = await fetchLibrary(config);
+        await invalidateNavidromeData(config);
+        nextLibrary = await loadLibraryData(config);
         createdPlaylist =
           nextLibrary.playlists.find((playlist) => playlist.id === createdPlaylist?.id) ??
           [...nextLibrary.playlists]
@@ -2740,10 +2792,11 @@ export function App() {
   async function savePlaylistDetails(playlist: Playlist, details: PlaylistDetailsUpdate) {
     if (!config) return;
 
-    await updatePlaylistDetails(config, playlist.id, details);
+    await navidromeClient.updatePlaylist(config, playlist.id, details);
+    await invalidateNavidromeData(config);
     const [nextLibrary, updatedPlaylist] = await Promise.all([
-      fetchLibrary(config),
-      fetchPlaylistDetail(config, playlist.id),
+      loadLibraryData(config),
+      loadPlaylistDetail(config, playlist.id),
     ]);
 
     setLibraryData(nextLibrary);
@@ -2753,8 +2806,9 @@ export function App() {
   async function deletePlaylistAndReturn(playlist: Playlist) {
     if (!config) return;
 
-    await deletePlaylist(config, playlist.id);
-    const nextLibrary = await fetchLibrary(config);
+    await navidromeClient.deletePlaylist(config, playlist.id);
+    await invalidateNavidromeData(config);
+    const nextLibrary = await loadLibraryData(config);
     setLibraryData(nextLibrary);
     setDetailSelection(null);
     selectView("playlists");
@@ -2780,10 +2834,11 @@ export function App() {
   async function removeSongFromPlaylistAndRefresh(playlist: PlaylistDetail, index: number) {
     if (!config) return;
 
-    await removePlaylistSong(config, playlist.id, index);
+    await navidromeClient.removePlaylistSong(config, playlist.id, index);
+    await invalidateNavidromeData(config);
     const [nextLibrary, updatedPlaylist] = await Promise.all([
-      fetchLibrary(config),
-      fetchPlaylistDetail(config, playlist.id),
+      loadLibraryData(config),
+      loadPlaylistDetail(config, playlist.id),
     ]);
     setLibraryData(nextLibrary);
     setDetailSelection({ type: "playlist", data: updatedPlaylist });
@@ -2792,10 +2847,11 @@ export function App() {
   async function reorderPlaylistAndRefresh(playlist: PlaylistDetail, songs: Song[]) {
     if (!config) return;
 
-    await replacePlaylistSongs(config, playlist, songs);
+    await navidromeClient.replacePlaylistSongs(config, playlist, songs);
+    await invalidateNavidromeData(config);
     const [nextLibrary, updatedPlaylist] = await Promise.all([
-      fetchLibrary(config),
-      fetchPlaylistDetail(config, playlist.id),
+      loadLibraryData(config),
+      loadPlaylistDetail(config, playlist.id),
     ]);
     setLibraryData(nextLibrary);
     setDetailSelection({ type: "playlist", data: updatedPlaylist });
@@ -2808,11 +2864,12 @@ export function App() {
     setPlaylistAddMessage(`Adding ${songs.length === 1 ? "song" : `${songs.length} songs`} to ${playlist.name}...`);
 
     try {
-      await addSongsToPlaylist(config, playlist.id, songs);
+      await navidromeClient.addPlaylistSongs(config, playlist.id, songs);
+      await invalidateNavidromeData(config);
       const [nextLibrary, updatedPlaylist] = await Promise.all([
-        fetchLibrary(config),
+        loadLibraryData(config),
         detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id
-          ? fetchPlaylistDetail(config, playlist.id).catch(() => null)
+          ? loadPlaylistDetail(config, playlist.id).catch(() => null)
           : Promise.resolve(null),
       ]);
 
@@ -2834,7 +2891,7 @@ export function App() {
     if (!config) return;
 
     try {
-      const detail = await fetchAlbumDetail(config, album.id);
+      const detail = await loadAlbumDetail(config, album.id);
       await addSongsToSelectedPlaylist(playlist, sortAlbumSongs(detail.song ?? []));
     } catch (error) {
       setPlaylistAddStatus("error");
@@ -2846,9 +2903,9 @@ export function App() {
     if (!config) return;
 
     try {
-      const detail = await fetchArtistDetail(config, artist.id);
+      const detail = await loadArtistDetail(config, artist.id);
       const albums = detail.album ?? [];
-      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => fetchAlbumDetail(config, album.id)));
+      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => loadAlbumDetail(config, album.id)));
       await addSongsToSelectedPlaylist(playlist, albumDetails.flatMap((album) => album.song ?? []));
     } catch (error) {
       setPlaylistAddStatus("error");
@@ -2863,8 +2920,9 @@ export function App() {
     setFavoriteBusyKey(busyKey);
 
     try {
-      await setNavidromeFavorite(config, kind, id, favorite);
-      const nextLibrary = await fetchLibrary(config);
+      await navidromeClient.setFavorite(config, kind, id, favorite);
+      await invalidateNavidromeData(config);
+      const nextLibrary = await loadLibraryData(config);
       setLibraryData(nextLibrary);
       setSongContextMenu(null);
     } catch (error) {
@@ -3622,7 +3680,7 @@ export function App() {
     setLyricsLines([]);
     setLyricsMessage("");
 
-    void fetchLyrics(config, currentTrack)
+    void navidromeClient.lyrics(config, currentTrack).then(normalizeLyrics)
       .then((lines) => {
         if (cancelled) return;
         setLyricsLines(lines);
@@ -3950,8 +4008,11 @@ export function App() {
     if (position < listenThreshold || scrobbledPlayRef.current === playKey) return;
 
     scrobbledPlayRef.current = playKey;
-    void scrobbleSong(config, currentTrack)
-      .then(() => fetchLibrary(config))
+    void navidromeClient.scrobble(config, currentTrack)
+      .then(async () => {
+        await invalidateNavidromeData(config);
+        return loadLibraryData(config);
+      })
       .then((nextLibrary) => setLibraryData(nextLibrary))
       .catch(() => {
         scrobbledPlayRef.current = "";
@@ -4160,7 +4221,7 @@ export function App() {
     setSearchStatus("searching");
 
     const timeout = window.setTimeout(() => {
-      void fetchSearchResults(config, trimmedQuery)
+      void loadSearchResults(config, trimmedQuery)
         .then((results) => {
           setSearchResults(results);
           setSearchStatus("idle");
@@ -4987,12 +5048,12 @@ export function App() {
           onAddArtist={(playlist, artist) => void addArtistToPlaylist(playlist, artist)}
           onCreateAlbumPlaylist={(album) => {
             if (!config) return;
-            void fetchAlbumDetail(config, album.id).then((detail) => createPlaylistFromSongs(album.name, sortAlbumSongs(detail.song ?? [])));
+            void loadAlbumDetail(config, album.id).then((detail) => createPlaylistFromSongs(album.name, sortAlbumSongs(detail.song ?? [])));
           }}
           onCreateArtistPlaylist={(artist) => {
             if (!config) return;
-            void fetchArtistDetail(config, artist.id)
-              .then((detail) => Promise.all((detail.album ?? []).slice(0, 50).map((album) => fetchAlbumDetail(config, album.id))))
+            void loadArtistDetail(config, artist.id)
+              .then((detail) => Promise.all((detail.album ?? []).slice(0, 50).map((album) => loadAlbumDetail(config, album.id))))
               .then((albums) => createPlaylistFromSongs(artist.name, albums.flatMap((album) => album.song ?? [])));
           }}
         />
