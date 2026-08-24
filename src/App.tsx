@@ -306,6 +306,10 @@ type BrowserSnapshot = {
   settingsTab?: SettingsTab;
 };
 
+type PrismHistoryState = {
+  prismSnapshot: BrowserSnapshot;
+};
+
 type SongContextMenuState = {
   song: Song;
   songs: Song[];
@@ -2050,6 +2054,49 @@ export function App() {
   const catalogHydratedKeyRef = useRef("");
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
+  const navigationStateRef = useRef({
+    snapshot: { activeView, detailSelection, settingsTab } satisfies BrowserSnapshot,
+    backStack,
+    forwardStack,
+  });
+
+  navigationStateRef.current = {
+    snapshot: { activeView, detailSelection, settingsTab },
+    backStack,
+    forwardStack,
+  };
+
+  useEffect(() => {
+    window.history.replaceState({ prismSnapshot: navigationStateRef.current.snapshot } satisfies PrismHistoryState, "");
+
+    const handlePopState = (event: PopStateEvent) => {
+      const target = (event.state as PrismHistoryState | null)?.prismSnapshot;
+      if (!target) return;
+
+      const { snapshot, backStack: currentBackStack, forwardStack: currentForwardStack } = navigationStateRef.current;
+      if (snapshotEquals(snapshot, target)) return;
+
+      if (snapshotEquals(currentBackStack[currentBackStack.length - 1] ?? null, target)) {
+        setBackStack(currentBackStack.slice(0, -1));
+        setForwardStack([snapshot, ...currentForwardStack].slice(0, 40));
+      } else if (snapshotEquals(currentForwardStack[0] ?? null, target)) {
+        setBackStack([...currentBackStack, snapshot].slice(-40));
+        setForwardStack(currentForwardStack.slice(1));
+      } else {
+        setBackStack([]);
+        setForwardStack([]);
+      }
+
+      setActiveView(target.activeView);
+      setDetailSelection(target.detailSelection);
+      if (target.settingsTab) setSettingsTab(target.settingsTab);
+      setDetailStatus("idle");
+      setDetailMessage("");
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const hasConfig = Boolean(config);
   const currentTrack = queue[currentIndex] ?? null;
@@ -2688,6 +2735,7 @@ export function App() {
       setForwardStack([]);
       setDetailSelection(null);
       setActiveView("overview");
+      replaceBrowserHistory({ activeView: "overview", detailSelection: null, settingsTab });
     }
   }
 
@@ -2701,8 +2749,8 @@ export function App() {
 
     try {
       const albumDetail = await loadAlbumDetail(config, albumId);
-      setBackStack((currentStack) => [...currentStack, origin].slice(-40));
-      setForwardStack([]);
+      const nextSnapshot: BrowserSnapshot = { activeView: "albums", detailSelection: { type: "album", data: albumDetail }, settingsTab };
+      pushBrowserHistory(nextSnapshot, origin);
       setDetailSelection({ type: "album", data: albumDetail });
       setDetailStatus("idle");
       setDetailMessage("");
@@ -2726,8 +2774,8 @@ export function App() {
 
     try {
       const artistDetail = await loadArtistDetail(config, artistId);
-      setBackStack((currentStack) => [...currentStack, origin].slice(-40));
-      setForwardStack([]);
+      const nextSnapshot: BrowserSnapshot = { activeView: "artists", detailSelection: { type: "artist", data: artistDetail }, settingsTab };
+      pushBrowserHistory(nextSnapshot, origin);
       setDetailSelection({ type: "artist", data: artistDetail });
       setDetailStatus("idle");
       setDetailMessage("");
@@ -2751,8 +2799,8 @@ export function App() {
 
     try {
       const playlistDetail = await loadPlaylistDetail(config, playlistId);
-      setBackStack((currentStack) => [...currentStack, origin].slice(-40));
-      setForwardStack([]);
+      const nextSnapshot: BrowserSnapshot = { activeView: "playlists", detailSelection: { type: "playlist", data: playlistDetail }, settingsTab };
+      pushBrowserHistory(nextSnapshot, origin);
       setDetailSelection({ type: "playlist", data: playlistDetail });
       if (editAfterOpen) {
         setPlaylistEditRequestKey((key) => key + 1);
@@ -3104,19 +3152,24 @@ export function App() {
     return { activeView, detailSelection, settingsTab };
   }
 
-  function pushBrowserHistory(origin = currentSnapshot()) {
+  function pushBrowserHistory(nextSnapshot: BrowserSnapshot, origin = currentSnapshot()) {
     setBackStack((currentStack) => {
       if (snapshotEquals(currentStack[currentStack.length - 1] ?? null, origin)) return currentStack;
       return [...currentStack, origin].slice(-40);
     });
     setForwardStack([]);
+    window.history.pushState({ prismSnapshot: nextSnapshot } satisfies PrismHistoryState, "");
+  }
+
+  function replaceBrowserHistory(snapshot: BrowserSnapshot) {
+    window.history.replaceState({ prismSnapshot: snapshot } satisfies PrismHistoryState, "");
   }
 
   function selectView(view: View) {
     const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null, settingsTab };
     if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
 
-    pushBrowserHistory();
+    pushBrowserHistory(nextSnapshot);
     clearDetail();
     setActiveView(view);
     if (view === "songs" && config && songLibraryStatus !== "ready" && songLibraryStatus !== "loading") void loadSongLibrary();
@@ -3131,7 +3184,7 @@ export function App() {
     const nextSnapshot: BrowserSnapshot = { activeView: "settings", detailSelection: null, settingsTab: tab };
     if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
 
-    pushBrowserHistory();
+    pushBrowserHistory(nextSnapshot);
     setSettingsTab(tab);
     clearDetail();
     setActiveView("settings");
@@ -3140,7 +3193,7 @@ export function App() {
   function selectSettingsTab(tab: SettingsTab) {
     if (settingsTab === tab) return;
 
-    pushBrowserHistory();
+    pushBrowserHistory({ ...currentSnapshot(), settingsTab: tab });
     setSettingsTab(tab);
   }
 
@@ -3149,30 +3202,14 @@ export function App() {
     setSearchFocused(false);
   }
 
-  function applySnapshot(snapshot: BrowserSnapshot) {
-    setActiveView(snapshot.activeView);
-    setDetailSelection(snapshot.detailSelection);
-    if (snapshot.settingsTab) setSettingsTab(snapshot.settingsTab);
-    setDetailStatus("idle");
-    setDetailMessage("");
-  }
-
   function navigateBack() {
-    const previous = backStack[backStack.length - 1];
-    if (!previous) return;
-
-    setBackStack(backStack.slice(0, -1));
-    setForwardStack([currentSnapshot(), ...forwardStack].slice(0, 40));
-    applySnapshot(previous);
+    if (!backStack.length) return;
+    window.history.back();
   }
 
   function navigateForward() {
-    const next = forwardStack[0];
-    if (!next) return;
-
-    setForwardStack(forwardStack.slice(1));
-    setBackStack([...backStack, currentSnapshot()].slice(-40));
-    applySnapshot(next);
+    if (!forwardStack.length) return;
+    window.history.forward();
   }
 
   function resetPlaybackPosition() {
@@ -3588,6 +3625,7 @@ export function App() {
     setStatusMessage("Add a Navidrome server to start syncing.");
     setSetupOpen(true);
     setActiveView("settings");
+    replaceBrowserHistory({ activeView: "settings", detailSelection: null, settingsTab: "connection" });
   }
 
   useEffect(() => {
