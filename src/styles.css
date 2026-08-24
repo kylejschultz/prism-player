@@ -2194,6 +2194,44 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   line-height: 1.12;
 }
 
+.album-detail-hero {
+  align-items: center;
+}
+
+.album-detail-title {
+  margin-bottom: 8px;
+}
+
+.album-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.album-title-row h3 {
+  margin: 0;
+}
+
+.album-artist-link,
+.album-artist-label {
+  margin: 4px 0 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(244, 241, 236, 0.78);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.album-artist-link:hover,
+.album-artist-link:focus-visible,
+.artist-name-link:hover,
+.artist-name-link:focus-visible {
+  color: #f2d985;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .album-hero,
 .artist-hero,
 .playlist-hero {
@@ -2660,6 +2698,13 @@ button.similar-chip:hover,
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.artist-name-link {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
 }
 
 .playlist-track-editor {
