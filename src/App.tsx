@@ -2270,7 +2270,9 @@ export function App() {
     setRadioStationInput(activeStation);
   }
 
-  function applyRadioStationState(nextState: RadioStationState) {
+  function applyRadioStationState(nextState: RadioStationState, requestGeneration = radioGenerationRef.current) {
+    if (requestGeneration !== radioGenerationRef.current) return;
+
     if (radioPromoteTimerRef.current != null) {
       window.clearTimeout(radioPromoteTimerRef.current);
       radioPromoteTimerRef.current = null;
@@ -2323,12 +2325,16 @@ export function App() {
     setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "checking"));
     setRadioMessage("Checking station...");
 
+    const requestGeneration = radioGenerationRef.current;
+
     try {
       const [nextState, nextSession] = await Promise.all([
         fetchRadioState(origin),
         fetchRadioSession(origin).catch(() => null),
       ]);
-      applyRadioStationState(nextState);
+      if (requestGeneration !== radioGenerationRef.current) return null;
+
+      applyRadioStationState(nextState, requestGeneration);
       if (nextSession) applyRadioSession(nextSession);
       saveRadioStation(origin, radioStationName(nextState, origin));
       setRadioStatus((currentStatus) => (currentStatus === "playing" ? "playing" : "ready"));
@@ -2362,6 +2368,10 @@ export function App() {
       setRadioMessage("Enter a valid Subwave station URL.");
       return;
     }
+
+    // Invalidate in-flight metadata before starting another connection. A
+    // station can answer an earlier request after audio has already resumed.
+    radioGenerationRef.current += 1;
 
     // A previous station's state must never be presented as the next station
     // is connecting. The footer has a dedicated tuning state until fresh
@@ -3848,8 +3858,9 @@ export function App() {
       .then(applyRadioSession)
       .catch(() => setRadioSession(null));
     const interval = window.setInterval(() => {
+      const requestGeneration = radioGenerationRef.current;
       void fetchRadioState(radioStationUrl)
-        .then(applyRadioStationState)
+        .then((nextState) => applyRadioStationState(nextState, requestGeneration))
         .catch(() => undefined);
       void fetchRadioSchedule(radioStationUrl)
         .then(setRadioSchedule)
@@ -4969,8 +4980,9 @@ export function App() {
                     onClose={() => setRadioPopover(null)}
                     onResolved={() => {
                       if (!radioStationUrl) return;
+                      const requestGeneration = radioGenerationRef.current;
                       void fetchRadioState(radioStationUrl)
-                        .then(applyRadioStationState)
+                        .then((nextState) => applyRadioStationState(nextState, requestGeneration))
                         .catch(() => undefined);
                     }}
                   />
