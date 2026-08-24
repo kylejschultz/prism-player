@@ -1699,6 +1699,7 @@ async function fetchSongLibrary(
   config: NavidromeConfig,
   albums: Album[],
   onProgress?: (completed: number, total: number) => void,
+  onSongs?: (songs: Song[]) => void,
 ) {
   const songs: Song[] = [];
   const batchSize = 10;
@@ -1708,6 +1709,7 @@ async function fetchSongLibrary(
     const details = await Promise.all(batch.map((album) => fetchAlbumDetail(config, album.id)));
     songs.push(...details.flatMap((album) => album.song ?? []));
     onProgress?.(Math.min(index + batch.length, albums.length), albums.length);
+    onSongs?.(sortSongs(songs, "title", "asc"));
   }
 
   return songs.sort((left, right) => `${left.title}\u0000${left.artist ?? ""}`.localeCompare(`${right.title}\u0000${right.artist ?? ""}`));
@@ -2574,9 +2576,30 @@ export function App() {
     catalogSongSyncInFlightRef.current = true;
     setCatalogStatus("syncing");
     setCatalogProgress({ completed: 0, total: albums.length });
+    setSongLibraryStatus("loading");
 
     try {
-      const songs = await fetchSongLibrary(syncConfig, albums, (completed, total) => setCatalogProgress({ completed, total }));
+      if (!albums.length) {
+        setSongLibrary([]);
+        setSongLibraryStatus("ready");
+        catalogSongsCompleteRef.current = true;
+        setCatalogStatus("ready");
+        return;
+      }
+
+      let songsAreUsable = false;
+      const songs = await fetchSongLibrary(
+        syncConfig,
+        albums,
+        (completed, total) => setCatalogProgress({ completed, total }),
+        (nextSongs) => {
+          setSongLibrary(nextSongs);
+          if (!songsAreUsable) {
+            songsAreUsable = true;
+            setSongLibraryStatus("ready");
+          }
+        },
+      );
       setSongLibrary(songs);
       setSongLibraryStatus("ready");
       catalogSongsCompleteRef.current = true;
@@ -3101,15 +3124,7 @@ export function App() {
 
   async function loadSongLibrary() {
     if (!config) return;
-    setSongLibraryStatus("loading");
-    try {
-      setSongLibrary(await fetchSongLibrary(config, libraryData.albums));
-      setSongLibraryStatus("ready");
-      catalogSongsCompleteRef.current = true;
-      setCatalogStatus("ready");
-    } catch {
-      setSongLibraryStatus("error");
-    }
+    await syncFullSongCatalog(config, libraryData.albums);
   }
 
   function openSettings(tab: SettingsTab = "connection") {
@@ -7852,20 +7867,22 @@ function ListeningHistoryView({
 }
 
 function useTrackSelection(songs: Song[]) {
-  const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set());
-  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+  const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(() => new Set());
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const selectAllTracks = () => {
-    setSelectedIndexes(new Set(songs.map((_, index) => index)));
-    setSelectionAnchor(songs.length ? 0 : null);
+    setSelectedSongIds(new Set(songs.map((song) => song.id)));
+    setSelectionAnchorId(songs[0]?.id ?? null);
   };
 
   useEffect(() => {
-    setSelectedIndexes((current) => {
-      const next = new Set([...current].filter((index) => index < songs.length));
+    const availableIds = new Set(songs.map((song) => song.id));
+    setSelectedSongIds((current) => {
+      const next = new Set([...current].filter((id) => availableIds.has(id)));
       return next.size === current.size ? current : next;
     });
+    setSelectionAnchorId((current) => current && !availableIds.has(current) ? null : current);
   }, [songs]);
 
   useEffect(() => {
@@ -7881,26 +7898,27 @@ function useTrackSelection(songs: Song[]) {
     const song = songs[index];
     if (!song) return;
 
-    if (event.shiftKey && selectionAnchor != null) {
+    const selectionAnchor = selectionAnchorId ? songs.findIndex((candidate) => candidate.id === selectionAnchorId) : -1;
+    if (event.shiftKey && selectionAnchor >= 0) {
       const rangeStart = Math.min(selectionAnchor, index);
       const rangeEnd = Math.max(selectionAnchor, index);
-      setSelectedIndexes(new Set(songs.slice(rangeStart, rangeEnd + 1).map((_, rangeIndex) => rangeStart + rangeIndex)));
+      setSelectedSongIds(new Set(songs.slice(rangeStart, rangeEnd + 1).map((candidate) => candidate.id)));
       return;
     }
 
     if (event.metaKey || event.ctrlKey) {
-      setSelectedIndexes((current) => {
+      setSelectedSongIds((current) => {
         const next = new Set(current);
-        if (next.has(index)) next.delete(index);
-        else next.add(index);
+        if (next.has(song.id)) next.delete(song.id);
+        else next.add(song.id);
         return next;
       });
-      setSelectionAnchor(index);
+      setSelectionAnchorId(song.id);
       return;
     }
 
-    setSelectedIndexes(new Set([index]));
-    setSelectionAnchor(index);
+    setSelectedSongIds(new Set([song.id]));
+    setSelectionAnchorId(song.id);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -7911,8 +7929,8 @@ function useTrackSelection(songs: Song[]) {
   };
 
   return {
-    isSelected: (index: number) => selectedIndexes.has(index),
-    selectedSongs: songs.filter((_, index) => selectedIndexes.has(index)),
+    isSelected: (index: number) => Boolean(songs[index] && selectedSongIds.has(songs[index].id)),
+    selectedSongs: songs.filter((song) => selectedSongIds.has(song.id)),
     selectTrack,
     handleKeyDown,
     listRef,
