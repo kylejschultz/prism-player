@@ -97,13 +97,11 @@ fn publish_discord_presence(app: &tauri::AppHandle, presence: DiscordPresence) -
 
 fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'static> {
     let station = presence.station.filter(|station| !station.trim().is_empty());
-    let state = if let Some(station) = station {
-        format!("{} · Live on {station}", presence.artist)
-    } else {
-        presence.artist.clone()
-    };
     let title = presence.title;
-    let track_details = title.clone();
+    // Discord uses `details` for the compact activity line in the online list.
+    // Include the artist there so it identifies the song without relying on the
+    // expanded profile card's secondary line.
+    let track_details = format!("{title} · {}", presence.artist);
     let details = if presence.playing {
         track_details
     } else {
@@ -113,7 +111,6 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
         .activity_type(activity::ActivityType::Listening)
         .status_display_type(activity::StatusDisplayType::Details)
         .details(details)
-        .state(state)
         .buttons(vec![
             activity::Button::new("Get Prism", "https://prismplayer.app"),
             activity::Button::new("Join the Discord", "https://discord.gg/hzeAqu7EwF"),
@@ -123,6 +120,10 @@ fn build_discord_activity(presence: DiscordPresence) -> activity::Activity<'stat
                 .large_image("prism-player")
                 .large_text("Prism Player"),
         );
+
+    if let Some(station) = station {
+        activity = activity.state(format!("Live on {station}"));
+    }
 
     if presence.playing {
         if let Some(started_at) = presence.started_at {
