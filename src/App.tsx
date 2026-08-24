@@ -7007,6 +7007,7 @@ function LibraryView({
                 favoriteIds={favoriteIds}
                 favoriteBusyKey={favoriteBusyKey}
                 onToggleFavorite={onToggleFavorite}
+                onOpenArtist={onOpenArtist}
                 onPlaySong={onPlaySong}
                 onQueueSong={onQueueSong}
                 onSongContextMenu={onSongContextMenu}
@@ -7469,6 +7470,7 @@ function FavoritesView({
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
+            onOpenArtist={onOpenArtist}
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
             onSongContextMenu={onSongContextMenu}
@@ -7603,6 +7605,7 @@ function SearchResultsView({
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
+            onOpenArtist={onOpenArtist}
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
             onSongContextMenu={onSongContextMenu}
@@ -7653,6 +7656,7 @@ function SearchSongList({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenArtist,
   onPlaySong,
   onQueueSong,
   onSongContextMenu,
@@ -7662,6 +7666,7 @@ function SearchSongList({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenArtist: (artist: Artist) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
@@ -7721,7 +7726,7 @@ function SearchSongList({
                 <Play size={15} strokeWidth={1.6} />
               </button>
               <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
-              <span className="track-artist">{song.artist || "Unknown artist"}</span>
+              <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
               <span className="track-album">{song.album || "Unknown album"}</span>
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
@@ -7746,6 +7751,29 @@ function SearchSongList({
         })}
       </div>
     </div>
+  );
+}
+
+function ArtistNameLink({ song, onOpenArtist }: { song: Song; onOpenArtist: (artist: Artist) => void }) {
+  const label = song.artist || "Unknown artist";
+
+  if (!song.artistId) {
+    return <span className="track-artist">{label}</span>;
+  }
+
+  return (
+    <button
+      className="track-artist artist-name-link"
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenArtist({ id: song.artistId!, name: label });
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      aria-label={`Open ${label}`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -8608,6 +8636,7 @@ function PlaylistDetailPanel({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenArtist,
   onPlayPlaylist,
   onSavePlaylistDetails,
   onDeletePlaylist,
@@ -8624,6 +8653,7 @@ function PlaylistDetailPanel({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenArtist: (artist: Artist) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -8893,6 +8923,7 @@ function PlaylistDetailPanel({
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
+        onOpenArtist={onOpenArtist}
         onPlaySong={(song) => onReplaceQueue(draftSongs, Math.max(0, draftSongs.findIndex((playlistSong) => playlistSong.id === song.id)))}
         onQueueSong={onQueueSong}
         onSongContextMenu={onSongContextMenu}
@@ -9071,6 +9102,7 @@ function DetailPanel({
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
+        onOpenArtist={onOpenArtist}
         onPlayPlaylist={onPlayPlaylist}
         onSavePlaylistDetails={onSavePlaylistDetails}
         onDeletePlaylist={onDeletePlaylist}
@@ -9091,23 +9123,25 @@ function DetailPanel({
 
   return (
     <section className="detail-panel">
-      <div className="panel-heading">
-        <h3>{album.name}</h3>
-        <span>{songs.length} tracks</span>
-      </div>
-      <div className="album-hero">
+      <div className="album-hero album-detail-hero">
         <PlayableCover src={albumCover} label={album.name} className="detail-cover" disabled={!songs.length} onPlay={() => onReplaceQueue(songs)} />
         <div>
-          <div className="detail-title">
-            <p className="eyebrow">{album.artist}</p>
-            <h3>{album.name}</h3>
+          <div className="detail-title album-detail-title">
+            <div className="album-title-row">
+              <h3>{album.name}</h3>
+              <FavoriteButton
+                active={favoriteIds.albums.has(album.id)}
+                busy={favoriteBusyKey === `album:${album.id}`}
+                label={album.name}
+                onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+              />
+            </div>
+            {album.artistId ? (
+              <button className="album-artist-link" type="button" onClick={() => onOpenArtist({ id: album.artistId!, name: album.artist })}>
+                {album.artist}
+              </button>
+            ) : <p className="album-artist-label">{album.artist}</p>}
           </div>
-          <FavoriteButton
-            active={favoriteIds.albums.has(album.id)}
-            busy={favoriteBusyKey === `album:${album.id}`}
-            label={album.name}
-            onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
-          />
           <div className="detail-stats">
             <span>{album.year ?? "Year unavailable"}</span>
             <span>{songs.length} tracks</span>
@@ -9131,6 +9165,7 @@ function DetailPanel({
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
+        onOpenArtist={onOpenArtist}
         onPlaySong={(song) => onReplaceQueue(songs, Math.max(0, songs.findIndex((albumSong) => albumSong.id === song.id)))}
         onSongContextMenu={onSongContextMenu}
       />
@@ -9144,6 +9179,7 @@ function TrackList({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenArtist,
   emptyText = "No tracks available for this album.",
   onPlaySong,
   onSongContextMenu,
@@ -9153,6 +9189,7 @@ function TrackList({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenArtist: (artist: Artist) => void;
   emptyText?: string;
   onPlaySong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
@@ -9216,7 +9253,7 @@ function TrackList({
               >
                 {song.title}
               </button>
-              <span className="track-artist">{song.artist || "Unknown artist"}</span>
+              <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
@@ -9248,6 +9285,7 @@ function EditablePlaylistTrackList({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenArtist,
   onPlaySong,
   onQueueSong,
   onSongContextMenu,
@@ -9265,6 +9303,7 @@ function EditablePlaylistTrackList({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenArtist: (artist: Artist) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
@@ -9334,7 +9373,7 @@ function EditablePlaylistTrackList({
             >
               {song.title}
             </button>
-            <span className="track-artist">{song.artist || "Unknown artist"}</span>
+            <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
             <span className="track-album">{song.album || "Unknown album"}</span>
             <span className="track-duration">{formatDuration(song.duration)}</span>
             <FavoriteButton
