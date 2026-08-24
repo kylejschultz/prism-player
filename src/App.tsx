@@ -9012,10 +9012,6 @@ function DetailPanel({
 
     return (
       <section className="detail-panel">
-        <div className="panel-heading">
-          <h3>{artist.name}</h3>
-          <span>{artist.album?.length ?? 0} albums</span>
-        </div>
         <div className="artist-hero">
           <PlayableCover src={firstCover} label={artist.name} className="artist-cover" rounded onPlay={() => onPlayArtist(artist)} />
           <div>
