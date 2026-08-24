@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/kylejschultz/prism-player/compare/v0.4.1...v0.5.0) (2026-08-19)
+
+
+### Features
+
+* Make Home a music discovery dashboard ([#92](https://github.com/kylejschultz/prism-player/issues/92)) ([#102](https://github.com/kylejschultz/prism-player/issues/102)) ([0120369](https://github.com/kylejschultz/prism-player/commit/0120369d6ed649aa4accc1679b31e65d29423b4d))
+
+## [0.4.1](https://github.com/kylejschultz/prism-player/compare/v0.4.0...v0.4.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* Fixed track-row play icons so clicking the glyph starts playback instead of selecting text. ([#94](https://github.com/kylejschultz/prism-player/issues/94))
+
 ## [0.4.0](https://github.com/kylejschultz/prism-player/compare/v0.3.0...v0.4.0) (2026-08-17)
 
 
