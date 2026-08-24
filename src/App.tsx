@@ -4707,7 +4707,7 @@ export function App() {
               tuneInRadio={tuneInRadio}
               onStartRadio={() => {
                 selectView("radio");
-                void tuneInRadio();
+                if (radioStatus !== "playing") void tuneInRadio();
               }}
               onAddFirstRadioStation={tuneInRadio}
               albums={libraryData.albums}
