@@ -4,24 +4,25 @@ export type WhatsNewRelease = {
   previewForVersion?: string;
   title: string;
   highlights: string[];
+  action?: { label: string; settingsTab: "playback" };
 };
 
 // Add polished, user-facing release highlights here as each version is prepared.
 // Keeping this curated means the in-app experience stays concise even when the
 // full GitHub changelog includes maintenance and developer-facing changes.
 const prismOneHighlights = [
-  "Library & Radio — Faster large-library browsing, incremental song loading, a persistent local catalog, automatic refresh after Navidrome scans, and steadier radio playback and metadata.",
-  "Customization — Curated color themes, album-art background wash, centered artwork controls, and a mute toggle.",
-  "Gapless & Crossfade — Preload the next queued track for smoother album sequencing, or choose a 1–12 second crossfade in Settings → Playback.",
-  "Navigation & Discovery — Native trackpad back/forward gestures, better click-through navigation across your library, and more meaningful recent listening on Home.",
-  "Desktop Polish — Secure credential storage, restored window and playback state, richer Discord activity, plus signed Windows and notarized macOS builds.",
+  "Library & Radio: Faster large-library browsing, incremental song loading, a persistent local catalog, automatic refresh after Navidrome scans, and steadier radio playback and metadata.",
+  "Customization: Curated color themes, album-art background wash, centered artwork controls, and a mute toggle.",
+  "Gapless & Crossfade: Preload the next queued track for smoother album sequencing, or enable a 1–12 second crossfade in Settings.",
+  "Navigation & Discovery: Native trackpad back/forward gestures, better click-through navigation across your library, and more meaningful recent listening on Home.",
+  "Desktop Polish: Secure credential storage, restored window and playback state, richer Discord activity, plus signed Windows and notarized macOS builds.",
 ];
 
 export const WHATS_NEW_RELEASES: WhatsNewRelease[] = [
   // The manual dev build still identifies as 0.5.0. Keeping this preview entry
   // lets the final cross-platform smoke test exercise the exact 1.0 copy.
-  { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
-  { version: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
+  { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights, action: { label: "Open Playback Settings", settingsTab: "playback" } },
+  { version: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights, action: { label: "Open Playback Settings", settingsTab: "playback" } },
 ];
 
 function versionParts(version: string) {
