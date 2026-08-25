@@ -5372,14 +5372,7 @@ export function App() {
         />
       ) : null}
       {whatsNewOpen && whatsNewReleases.length ? (
-        <WhatsNewDialog
-          releases={whatsNewReleases}
-          onClose={dismissWhatsNew}
-          onOpenSettings={(tab) => {
-            dismissWhatsNew();
-            openSettings(tab);
-          }}
-        />
+        <WhatsNewDialog releases={whatsNewReleases} onClose={dismissWhatsNew} />
       ) : null}
       {playlistCreatorOpen ? (
         <PrismDialog open={playlistCreatorOpen} onOpenChange={(open) => !open && closePlaylistCreator()}>
@@ -6163,15 +6156,7 @@ function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismis
   );
 }
 
-function WhatsNewDialog({
-  releases,
-  onClose,
-  onOpenSettings,
-}: {
-  releases: WhatsNewRelease[];
-  onClose: () => void;
-  onOpenSettings: (tab: "playback") => void;
-}) {
+function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; onClose: () => void }) {
   const latestRelease = releases[0];
 
   return (
@@ -6199,7 +6184,6 @@ function WhatsNewDialog({
           ))}
         </div>
         <div className="whats-new-actions">
-          {latestRelease.action ? <button className="secondary-button" type="button" onClick={() => onOpenSettings(latestRelease.action!.settingsTab)}>{latestRelease.action.label}</button> : null}
           <button className="connect-button" type="button" onClick={onClose}>Got it</button>
         </div>
       </section>
