@@ -1069,8 +1069,10 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   flex: 1 1 auto;
   min-height: 0;
   max-height: 100%;
-  padding: 0 14px;
-  background: transparent;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.22);
   overflow: auto;
 }
 
@@ -1105,12 +1107,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .browser-heading {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 12px 0 10px;
-  background: linear-gradient(180deg, rgba(28, 22, 16, 0.82) 0%, rgba(28, 22, 16, 0.58) 62%, transparent 100%);
-  backdrop-filter: blur(12px);
+  padding: 0 0 10px;
+  background: transparent;
 }
 
 .panel-heading {
