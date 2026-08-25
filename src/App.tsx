@@ -64,6 +64,7 @@ import packageJson from "../package.json";
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
 type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
+type ColorTheme = "prism" | "ocean" | "orchid" | "evergreen";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "error";
@@ -191,12 +192,20 @@ type AppSettings = {
   discordPresenceEnabled: boolean;
   updateDismissedVersion: string;
   coverWashEnabled: boolean;
+  colorTheme: ColorTheme;
   lowPerformanceMode: boolean;
   showSharedPlaylists: boolean;
   radioStationUrl: string;
   radioStationUrls: string[];
   radioStationNames: Record<string, string>;
 };
+
+const colorThemes: Array<{ id: ColorTheme; label: string; description: string; swatches: [string, string, string] }> = [
+  { id: "prism", label: "Prism", description: "Warm gold and ember", swatches: ["#f0d27b", "#be4d3b", "#429184"] },
+  { id: "ocean", label: "Ocean", description: "Blue and sea-glass", swatches: ["#73c7f2", "#397ec4", "#5dc6b2"] },
+  { id: "orchid", label: "Orchid", description: "Violet and rose", swatches: ["#d3a5f7", "#ba5b92", "#8765c5"] },
+  { id: "evergreen", label: "Evergreen", description: "Fern and amber", swatches: ["#a9d88a", "#3f8b72", "#d3aa57"] },
+];
 
 export type Album = {
   id: string;
@@ -521,6 +530,7 @@ const defaultSettings: AppSettings = {
   discordPresenceEnabled: false,
   updateDismissedVersion: "",
   coverWashEnabled: true,
+  colorTheme: "prism",
   lowPerformanceMode: false,
   showSharedPlaylists: true,
   radioStationUrl: "",
@@ -716,6 +726,7 @@ function loadStoredSettings(): AppSettings {
       discordPresenceEnabled: Boolean(parsed.discordPresenceEnabled),
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
+      colorTheme: colorThemes.some((theme) => theme.id === parsed.colorTheme) ? parsed.colorTheme as ColorTheme : defaultSettings.colorTheme,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
       showSharedPlaylists: parsed.showSharedPlaylists ?? defaultSettings.showSharedPlaylists,
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
@@ -4466,7 +4477,7 @@ export function App() {
     >
       <ContextMenu.Trigger asChild>
     <main
-      className={`app-shell ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
+      className={`app-shell theme-${appSettings.colorTheme} ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${coverWashUrl ? "with-cover-wash" : ""}`}
       style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
@@ -6122,9 +6133,31 @@ function SettingsView({
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Appearance</p>
-            <h3>Album cover wash</h3>
+            <h3>Color and cover wash</h3>
           </div>
           <Waves size={18} />
+        </div>
+        <div className="theme-picker" role="group" aria-label="Color theme">
+          <p className="settings-label">Color theme</p>
+          <div className="theme-options">
+            {colorThemes.map((theme) => (
+              <button
+                className={`theme-option ${appSettings.colorTheme === theme.id ? "active" : ""}`}
+                type="button"
+                key={theme.id}
+                aria-pressed={appSettings.colorTheme === theme.id}
+                onClick={() => updateAppSettings({ ...appSettings, colorTheme: theme.id })}
+              >
+                <span className="theme-swatches" aria-hidden="true">
+                  {theme.swatches.map((color) => <span style={{ backgroundColor: color }} key={color} />)}
+                </span>
+                <span className="theme-option-copy">
+                  <strong>{theme.label}</strong>
+                  <small>{theme.description}</small>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
         <label className="settings-checkbox">
           <input
