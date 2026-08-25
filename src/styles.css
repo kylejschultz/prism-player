@@ -2289,8 +2289,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .cover-play-button {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  top: 50%;
+  left: 50%;
   display: grid;
   place-items: center;
   width: 34px;
@@ -2300,7 +2300,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   color: #18140d;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
   opacity: 0;
-  transform: translateY(4px);
+  transform: translate(-50%, calc(-50% + 4px));
+  transition: opacity 160ms ease, transform 160ms ease;
 }
 
 .playable-cover:hover .cover-play-button,
@@ -2309,7 +2310,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .artist-hero:focus-within .cover-play-button,
 .album-hero:focus-within .cover-play-button {
   opacity: 1;
-  transform: translateY(0);
+  transform: translate(-50%, -50%);
 }
 
 .cover-play-button:disabled {
@@ -4312,18 +4313,20 @@ button.similar-chip:hover,
 
 .player-now-playing-trigger svg {
   position: absolute;
-  right: 5px;
-  bottom: 5px;
+  top: 50%;
+  left: 50%;
   padding: 3px;
   border-radius: 5px;
   background: rgba(12, 12, 11, 0.76);
   opacity: 0;
-  transition: opacity 150ms ease;
+  transform: translate(-50%, calc(-50% + 3px));
+  transition: opacity 150ms ease, transform 150ms ease;
 }
 
 .player-now-playing-trigger:hover svg,
 .player-now-playing-trigger:focus-visible svg {
   opacity: 1;
+  transform: translate(-50%, -50%);
 }
 
 .now-playing-copy {
