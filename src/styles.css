@@ -114,8 +114,8 @@ textarea {
   pointer-events: none;
   background-position: center;
   background-size: cover;
-  opacity: 0.62;
-  filter: blur(54px) saturate(150%);
+  opacity: 0.68;
+  filter: blur(46px) saturate(150%);
   transform: scale(1.08);
 }
 
@@ -125,7 +125,7 @@ textarea {
   content: "";
   background:
     radial-gradient(circle at 22% 16%, rgba(240, 210, 123, 0.08), transparent 28rem),
-    linear-gradient(135deg, rgba(15, 17, 16, 0.58), rgba(23, 21, 20, 0.68) 54%, rgba(11, 12, 12, 0.76));
+    linear-gradient(135deg, rgba(15, 17, 16, 0.46), rgba(23, 21, 20, 0.56) 54%, rgba(11, 12, 12, 0.64));
 }
 
 .sidebar,
@@ -1070,9 +1070,9 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   min-height: 0;
   max-height: 100%;
   padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.055);
   border-radius: 8px;
-  background: rgba(10, 10, 10, 0.42);
+  background: rgba(10, 10, 10, 0.22);
   overflow: auto;
 }
 
@@ -1107,13 +1107,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .browser-heading {
-  position: sticky;
-  top: -14px;
-  z-index: 1;
-  padding: 14px 0 10px;
-  margin-top: -14px;
-  background: linear-gradient(180deg, rgba(20, 22, 20, 0.96), rgba(20, 22, 20, 0.82));
-  backdrop-filter: blur(16px);
+  padding: 0 0 10px;
+  background: transparent;
 }
 
 .panel-heading {
@@ -1356,8 +1351,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   pointer-events: none;
   background-position: center;
   background-size: cover;
-  opacity: 0.58;
-  filter: blur(46px) saturate(145%);
+  opacity: 0.64;
+  filter: blur(40px) saturate(145%);
   transform: scale(1.08);
 }
 
@@ -1366,7 +1361,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   inset: 0;
   content: "";
   background:
-    linear-gradient(112deg, rgba(13, 13, 12, 0.48), rgba(13, 13, 12, 0.68) 58%, rgba(13, 13, 12, 0.5)),
+    linear-gradient(112deg, rgba(13, 13, 12, 0.38), rgba(13, 13, 12, 0.56) 58%, rgba(13, 13, 12, 0.4)),
     radial-gradient(circle at 78% 20%, rgba(240, 210, 123, 0.12), transparent 44%);
 }
 
@@ -3318,8 +3313,8 @@ button.similar-chip:hover,
   pointer-events: none;
   background-position: center;
   background-size: cover;
-  opacity: 0.68;
-  filter: blur(40px) saturate(155%);
+  opacity: 0.72;
+  filter: blur(34px) saturate(155%);
   transform: scale(1.08);
 }
 
@@ -3327,7 +3322,7 @@ button.similar-chip:hover,
   position: absolute;
   inset: 0;
   content: "";
-  background: linear-gradient(115deg, rgba(13, 13, 12, 0.32), rgba(13, 13, 12, 0.64) 58%, rgba(13, 13, 12, 0.44));
+  background: linear-gradient(115deg, rgba(13, 13, 12, 0.24), rgba(13, 13, 12, 0.52) 58%, rgba(13, 13, 12, 0.36));
 }
 
 .radio-cover-card,
