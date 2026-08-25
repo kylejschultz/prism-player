@@ -4207,7 +4207,8 @@ button.similar-chip:hover,
 }
 
 .setup-modal,
-.playlist-modal {
+.playlist-modal,
+.whats-new-modal {
   position: fixed;
   top: 50%;
   left: 50%;
@@ -4227,6 +4228,10 @@ button.similar-chip:hover,
 
 .playlist-modal {
   width: min(680px, calc(100vw - 56px));
+}
+
+.whats-new-modal {
+  width: min(500px, calc(100vw - 56px));
 }
 
 .confirm-backdrop {
@@ -4317,6 +4322,17 @@ button.similar-chip:hover,
   color: #fff8e8;
 }
 
+.whats-new-art {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 16px;
+  border-radius: 999px;
+  background: rgba(var(--prism-highlight-rgb), 0.18);
+  color: var(--prism-accent-strong);
+}
+
 .setup-modal h2 {
   margin-top: 6px;
   font-size: 22px;
@@ -4324,12 +4340,50 @@ button.similar-chip:hover,
   line-height: 1.08;
 }
 
+.whats-new-modal h2 {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 600;
+}
+
 .setup-copy,
+.whats-new-copy,
 .wizard-status {
   margin-top: 10px;
   color: rgba(244, 241, 236, 0.68);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.whats-new-release-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.whats-new-release {
+  display: grid;
+  gap: 8px;
+}
+
+.whats-new-release h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.whats-new-release ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 19px;
+  color: rgba(244, 241, 236, 0.78);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.whats-new-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
 }
 
 .wizard-status.bad {
@@ -4954,7 +5008,8 @@ button.similar-chip:hover,
 
 .song-context-menu,
 .playlist-modal,
-.setup-modal {
+.setup-modal,
+.whats-new-modal {
   outline: 1px solid rgba(255, 255, 255, 0.035);
 }
 

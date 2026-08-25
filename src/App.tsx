@@ -11,6 +11,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
+import { getCurrentReleaseNotes, getUnreadReleaseNotes, type WhatsNewRelease } from "./whatsNew";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
@@ -191,6 +192,7 @@ type AppSettings = {
   analyticsPromptDismissed: boolean;
   discordPresenceEnabled: boolean;
   updateDismissedVersion: string;
+  lastSeenWhatsNewVersion: string;
   coverWashEnabled: boolean;
   colorTheme: ColorTheme;
   lowPerformanceMode: boolean;
@@ -529,6 +531,7 @@ const defaultSettings: AppSettings = {
   analyticsPromptDismissed: false,
   discordPresenceEnabled: false,
   updateDismissedVersion: "",
+  lastSeenWhatsNewVersion: "",
   coverWashEnabled: true,
   colorTheme: "prism",
   lowPerformanceMode: false,
@@ -725,6 +728,7 @@ function loadStoredSettings(): AppSettings {
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
       discordPresenceEnabled: Boolean(parsed.discordPresenceEnabled),
       updateDismissedVersion: typeof parsed.updateDismissedVersion === "string" ? parsed.updateDismissedVersion : "",
+      lastSeenWhatsNewVersion: typeof parsed.lastSeenWhatsNewVersion === "string" ? parsed.lastSeenWhatsNewVersion : "",
       coverWashEnabled: parsed.coverWashEnabled ?? defaultSettings.coverWashEnabled,
       colorTheme: colorThemes.some((theme) => theme.id === parsed.colorTheme) ? parsed.colorTheme as ColorTheme : defaultSettings.colorTheme,
       lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
@@ -1944,6 +1948,7 @@ export function App() {
   const [config, setConfig] = useState<NavidromeConfig | null>(() => loadStoredConfig());
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "checking" | "up-to-date" | "available" | "error">("idle");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
@@ -2078,6 +2083,17 @@ export function App() {
     backStack,
     forwardStack,
   };
+
+  const currentReleaseNotes = useMemo(() => getCurrentReleaseNotes(APP_VERSION), []);
+  const unreadReleaseNotes = useMemo(
+    () => getUnreadReleaseNotes(APP_VERSION, appSettings.lastSeenWhatsNewVersion),
+    [appSettings.lastSeenWhatsNewVersion],
+  );
+  const whatsNewReleases = unreadReleaseNotes.length ? unreadReleaseNotes : currentReleaseNotes ? [currentReleaseNotes] : [];
+
+  useEffect(() => {
+    if (unreadReleaseNotes.length) setWhatsNewOpen(true);
+  }, [unreadReleaseNotes]);
 
   useEffect(() => {
     window.history.replaceState({ prismSnapshot: navigationStateRef.current.snapshot } satisfies PrismHistoryState, "");
@@ -2274,6 +2290,11 @@ export function App() {
 
     setAppSettings(normalizedSettings);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalizedSettings));
+  }
+
+  function dismissWhatsNew() {
+    updateAppSettings({ ...appSettings, lastSeenWhatsNewVersion: APP_VERSION });
+    setWhatsNewOpen(false);
   }
 
   function saveRadioStation(origin: string, discoveredName?: string) {
@@ -4760,6 +4781,8 @@ export function App() {
               availableUpdate={availableUpdate}
               updateCheckStatus={updateCheckStatus}
               onCheckForUpdates={() => void checkForUpdates()}
+              canOpenWhatsNew={Boolean(currentReleaseNotes)}
+              onOpenWhatsNew={() => setWhatsNewOpen(true)}
               onSave={saveConnection}
               onReset={resetConnection}
             />
@@ -5157,6 +5180,9 @@ export function App() {
           onSave={saveConnection}
           onClose={() => setSetupOpen(false)}
         />
+      ) : null}
+      {whatsNewOpen && whatsNewReleases.length ? (
+        <WhatsNewDialog releases={whatsNewReleases} onClose={dismissWhatsNew} />
       ) : null}
       {playlistCreatorOpen ? (
         <PrismDialog open={playlistCreatorOpen} onOpenChange={(open) => !open && closePlaylistCreator()}>
@@ -5940,6 +5966,41 @@ function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismis
   );
 }
 
+function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; onClose: () => void }) {
+  const latestRelease = releases[0];
+
+  return (
+    <PrismDialog open onOpenChange={(open) => !open && onClose()}>
+      <section className="whats-new-modal" aria-labelledby="whats-new-title">
+        <button className="icon-button close-button" type="button" aria-label="Close what’s new" onClick={onClose}>
+          <X size={18} />
+        </button>
+        <div className="whats-new-art" aria-hidden="true">
+          <Star size={30} />
+        </div>
+        <p className="eyebrow">What’s new</p>
+        <Dialog.Title asChild><h2 id="whats-new-title">Prism {latestRelease.version}</h2></Dialog.Title>
+        <Dialog.Description asChild><p className="whats-new-copy">
+          {releases.length === 1 ? latestRelease.title : `Here’s what changed since Prism ${releases[releases.length - 1]?.version}.`}
+        </p></Dialog.Description>
+        <div className="whats-new-release-list">
+          {releases.map((release) => (
+            <section className="whats-new-release" key={release.version}>
+              {releases.length > 1 ? <h3>Prism {release.version}</h3> : null}
+              <ul>
+                {release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
+              </ul>
+            </section>
+          ))}
+        </div>
+        <div className="whats-new-actions">
+          <button className="connect-button" type="button" onClick={onClose}>Got it</button>
+        </div>
+      </section>
+    </PrismDialog>
+  );
+}
+
 function SettingsView({
   form,
   setForm,
@@ -5959,6 +6020,8 @@ function SettingsView({
   availableUpdate,
   updateCheckStatus,
   onCheckForUpdates,
+  canOpenWhatsNew,
+  onOpenWhatsNew,
   onSave,
   onReset,
 }: {
@@ -5980,6 +6043,8 @@ function SettingsView({
   availableUpdate: AvailableUpdate | null;
   updateCheckStatus: "idle" | "checking" | "up-to-date" | "available" | "error";
   onCheckForUpdates: () => void;
+  canOpenWhatsNew: boolean;
+  onOpenWhatsNew: () => void;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
@@ -6320,6 +6385,12 @@ function SettingsView({
           <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
           <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
         </div>
+        {canOpenWhatsNew ? <div className="form-actions about-whats-new-action">
+          <button className="secondary-button" type="button" onClick={onOpenWhatsNew}>
+            <Star size={16} />
+            What’s New
+          </button>
+        </div> : null}
       </section> : null}
 
       {activeTab === "advanced" ? <section className="settings-panel">
