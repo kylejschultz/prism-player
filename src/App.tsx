@@ -55,6 +55,7 @@ import {
   MessageCircle,
   UserRound,
   Volume2,
+  VolumeX,
   Waves,
   X,
 } from "lucide-react";
@@ -1998,6 +1999,7 @@ export function App() {
   const [radioStatus, setRadioStatus] = useState<RadioStatus>("idle");
   const [radioMessage, setRadioMessage] = useState(appSettings.radioStationUrl ? "Ready to tune in." : "Add a Subwave station URL to start.");
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
+  const [isMuted, setIsMuted] = useState(false);
   const [radioClockNow, setRadioClockNow] = useState(() => Date.now());
   const [radioWaveformBars, setRadioWaveformBars] = useState<number[]>(idleRadioWaveformBars);
   const [radioPopover, setRadioPopover] = useState<"schedule" | "request" | "booth" | null>(null);
@@ -3581,6 +3583,10 @@ export function App() {
     updateAppSettings({ ...appSettings, lastVolume: clampedVolume });
   }
 
+  function toggleMuted() {
+    setIsMuted((muted) => !muted);
+  }
+
   async function resetConnection() {
     try {
       await clearNativePassword();
@@ -3891,6 +3897,11 @@ export function App() {
     if (!audio) return;
     audio.volume = volume;
   }, [volume]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = isMuted;
+    if (radioAudioRef.current) radioAudioRef.current.muted = isMuted;
+  }, [isMuted]);
 
   useEffect(() => {
     setRadioStationInput(appSettings.radioStationUrl);
@@ -5073,8 +5084,10 @@ export function App() {
         </div>
 
         <div className="player-actions">
-          <div className="volume-control">
-            <Volume2 size={16} />
+          <div className={`volume-control ${isMuted ? "muted" : ""}`}>
+            <button className="volume-mute-button" type="button" onClick={toggleMuted} aria-label={isMuted ? "Unmute volume" : "Mute volume"} aria-pressed={isMuted}>
+              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            </button>
             <input
               className="volume-slider"
               type="range"
@@ -5083,7 +5096,8 @@ export function App() {
               step="0.01"
               value={isRadioPlaying ? radioVolume : volume}
               onChange={(event) => (isRadioPlaying ? setRadioPlaybackVolume(Number(event.target.value)) : setPlayerVolume(Number(event.target.value)))}
-              aria-label="Volume"
+              disabled={isMuted}
+              aria-label={isMuted ? "Volume muted" : "Volume"}
             />
           </div>
         </div>
