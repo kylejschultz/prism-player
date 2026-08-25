@@ -4,7 +4,6 @@ export type WhatsNewRelease = {
   previewForVersion?: string;
   title: string;
   highlights: string[];
-  action?: { label: string; settingsTab: "playback" };
 };
 
 // Add polished, user-facing release highlights here as each version is prepared.
@@ -21,8 +20,8 @@ const prismOneHighlights = [
 export const WHATS_NEW_RELEASES: WhatsNewRelease[] = [
   // The manual dev build still identifies as 0.5.0. Keeping this preview entry
   // lets the final cross-platform smoke test exercise the exact 1.0 copy.
-  { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights, action: { label: "Open Playback Settings", settingsTab: "playback" } },
-  { version: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights, action: { label: "Open Playback Settings", settingsTab: "playback" } },
+  { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
+  { version: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
 ];
 
 function versionParts(version: string) {
