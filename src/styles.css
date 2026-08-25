@@ -4801,7 +4801,13 @@ button.similar-chip:hover,
   width: 24px;
   height: 24px;
   padding: 0;
+  border-radius: 999px;
+  background: transparent;
   cursor: pointer;
+}
+
+.volume-mute-button:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .volume-control.muted {
