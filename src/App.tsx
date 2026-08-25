@@ -759,10 +759,16 @@ function getRuntimePlatform() {
   return userAgentData?.platform || navigator.platform || "unknown";
 }
 
-function getRuntimeArch() {
-  const userAgent = navigator.userAgent.toLowerCase();
-  if (userAgent.includes("arm64") || userAgent.includes("aarch64")) return "arm64";
-  if (userAgent.includes("x86_64") || userAgent.includes("win64") || userAgent.includes("wow64")) return "x64";
+async function getRuntimeArch() {
+  if (!isTauriDesktopApp()) return "unknown";
+
+  try {
+    const architecture = await invoke<string>("get_native_architecture");
+    if (architecture === "arm64" || architecture === "x64") return architecture;
+  } catch {
+    // Analytics stays best-effort when native runtime details are unavailable.
+  }
+
   return "unknown";
 }
 
@@ -790,7 +796,7 @@ async function sendAnalyticsPing(libraryData?: LibraryData) {
       project: "prism-player",
       install_id: getInstallId(),
       version: APP_VERSION,
-      arch: getRuntimeArch(),
+      arch: await getRuntimeArch(),
       timestamp: new Date().toISOString(),
       channel: isDev ? "dev" : "release",
       os: getRuntimePlatform(),
