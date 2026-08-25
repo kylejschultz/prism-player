@@ -64,7 +64,7 @@ import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
-type SettingsTab = "connection" | "library" | "appearance" | "radio" | "privacy" | "about" | "advanced";
+type SettingsTab = "connection" | "library" | "playback" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ColorTheme = "prism" | "ocean" | "orchid" | "evergreen";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
@@ -200,6 +200,7 @@ type AppSettings = {
   radioStationUrl: string;
   radioStationUrls: string[];
   radioStationNames: Record<string, string>;
+  trackTransitionSeconds: number;
 };
 
 const colorThemes: Array<{ id: ColorTheme; label: string; description: string; swatches: [string, string, string] }> = [
@@ -539,6 +540,7 @@ const defaultSettings: AppSettings = {
   radioStationUrl: "",
   radioStationUrls: [],
   radioStationNames: {},
+  trackTransitionSeconds: 0,
 };
 
 const ALPHABET = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -603,6 +605,7 @@ function getSettingsTabLabel(tab: SettingsTab) {
   const labels: Record<SettingsTab, string> = {
     connection: "Connection",
     library: "Library",
+    playback: "Playback",
     appearance: "Appearance",
     radio: "Radio",
     privacy: "Privacy",
@@ -736,6 +739,7 @@ function loadStoredSettings(): AppSettings {
       radioStationUrl: activeStation || radioStationUrls[0] || defaultSettings.radioStationUrl,
       radioStationUrls,
       radioStationNames: normalizeRadioStationNames(parsed.radioStationNames, radioStationUrls),
+      trackTransitionSeconds: clampNumber(Number(parsed.trackTransitionSeconds ?? defaultSettings.trackTransitionSeconds), 0, 12),
     };
   } catch {
     return defaultSettings;
@@ -2049,7 +2053,14 @@ export function App() {
   const [playlistAddStatus, setPlaylistAddStatus] = useState<"idle" | "saving" | "error">("idle");
   const [playlistAddMessage, setPlaylistAddMessage] = useState("");
   const [favoriteBusyKey, setFavoriteBusyKey] = useState("");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const primaryAudioRef = useRef<HTMLAudioElement | null>(null);
+  const secondaryAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [activeAudioSlot, setActiveAudioSlot] = useState<0 | 1>(0);
+  const transitionInProgressRef = useRef(false);
+  const transitionTimerRef = useRef<number | null>(null);
+  const [transitionCompleteNonce, setTransitionCompleteNonce] = useState(0);
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
   const radioAudioRef = useRef<HTMLAudioElement | null>(null);
   const radioPromoteTimerRef = useRef<number | null>(null);
   const radioWatchdogTimerRef = useRef<number | null>(null);
@@ -2206,6 +2217,41 @@ export function App() {
     };
   }, [isRadioPlaying, radioNowPlayingSongId, radioStationUrl]);
   const currentStreamUrl = config && currentTrack ? buildStreamUrl(config, currentTrack.id) : null;
+  const nextTrack = currentIndex < queue.length - 1 ? queue[currentIndex + 1] : null;
+  const nextStreamUrl = config && nextTrack ? buildStreamUrl(config, nextTrack.id) : null;
+
+  function getActiveAudio() {
+    return activeAudioSlot === 0 ? primaryAudioRef.current : secondaryAudioRef.current;
+  }
+
+  function getStandbyAudio() {
+    return activeAudioSlot === 0 ? secondaryAudioRef.current : primaryAudioRef.current;
+  }
+
+  function clearTrackTransitionTimer() {
+    if (transitionTimerRef.current != null) {
+      window.clearInterval(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+  }
+
+  function stopTrackTransition(pauseAll = false) {
+    clearTrackTransitionTimer();
+    transitionInProgressRef.current = false;
+    const activeAudio = getActiveAudio();
+    if (activeAudio) activeAudio.volume = volumeRef.current;
+    [primaryAudioRef.current, secondaryAudioRef.current].forEach((audio) => {
+      if (audio && (pauseAll || audio !== activeAudio)) {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = volume;
+      }
+    });
+  }
+
+  useEffect(() => () => {
+    if (transitionTimerRef.current != null) window.clearInterval(transitionTimerRef.current);
+  }, []);
 
   function recordListeningHistory(completed = false, seconds = position) {
     if (!currentTrack || !Number.isFinite(seconds) || seconds < 5) return;
@@ -2285,6 +2331,7 @@ export function App() {
     return {
       ...nextSettings,
       lastVolume: clampNumber(nextSettings.lastVolume, 0, 1),
+      trackTransitionSeconds: clampNumber(nextSettings.trackTransitionSeconds, 0, 12),
       radioStationUrl: activeStation,
       radioStationUrls: radioStationUrls.includes(activeStation) ? radioStationUrls : normalizeRadioStationList([activeStation, ...radioStationUrls]),
       radioStationNames: normalizeRadioStationNames(nextSettings.radioStationNames, radioStationUrls),
@@ -2458,6 +2505,8 @@ export function App() {
       return;
     }
 
+    stopTrackTransition(true);
+
     // Invalidate in-flight metadata before starting another connection. A
     // station can answer an earlier request after audio has already resumed.
     radioGenerationRef.current += 1;
@@ -2477,7 +2526,7 @@ export function App() {
     const nextState = await refreshRadio(origin);
     if (!nextState) return;
 
-    audioRef.current?.pause();
+    getActiveAudio()?.pause();
     setIsPlaying(false);
     radioGenerationRef.current += 1;
     radioRetryCountRef.current = 0;
@@ -2610,7 +2659,7 @@ export function App() {
     updateAppSettings(defaultSettings);
     setAlbumViewMode(defaultSettings.defaultAlbumView);
     setArtistViewMode(defaultSettings.defaultArtistView);
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (audio) audio.volume = defaultSettings.lastVolume;
     setVolume(defaultSettings.lastVolume);
   }
@@ -3259,6 +3308,8 @@ export function App() {
 
   function replaceQueue(songs: Song[], startIndex = 0, playlistSource: Playlist | null = null) {
     if (!songs.length) return;
+    const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
+    stopTrackTransition(songs[safeStartIndex]?.id !== currentTrack?.id);
     recordListeningHistory();
     tuneOutRadio();
     setActivePlaybackSource("local");
@@ -3266,7 +3317,6 @@ export function App() {
     setSuppressLocalFooter(false);
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
-    const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
     const nextQueue = shuffleEnabled
       ? [songs[safeStartIndex], ...shuffled(songs.filter((_, index) => index !== safeStartIndex))]
       : songs;
@@ -3299,8 +3349,9 @@ export function App() {
   }
 
   function playSong(song: Song) {
-    recordListeningHistory();
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
+    stopTrackTransition(existingIndex !== currentIndex);
+    recordListeningHistory();
     tuneOutRadio();
     setActivePlaybackSource("local");
     setPlaylistPlaybackSource(null);
@@ -3328,6 +3379,7 @@ export function App() {
 
   function playNext(fromTrackEnd = false) {
     if (!queue.length) return;
+    if (!fromTrackEnd) stopTrackTransition();
     recordListeningHistory(fromTrackEnd, fromTrackEnd ? playerDuration || currentTrack?.duration || position : position);
 
     if (fromTrackEnd && repeatMode === "one") {
@@ -3336,7 +3388,7 @@ export function App() {
       seekTo(0);
       pendingResumePositionRef.current = 0;
       setIsPlaying(true);
-      void audioRef.current?.play().catch(() => {
+      void getActiveAudio()?.play().catch(() => {
         setPlayerError("Playback was blocked by the browser.");
       });
       return;
@@ -3344,7 +3396,7 @@ export function App() {
 
     if (currentIndex >= queue.length - 1) {
       if (repeatMode === "all") {
-        audioRef.current?.pause();
+        getActiveAudio()?.pause();
         if (sourceQueue.length > 1) {
           const nextQueue = shuffleEnabled ? shuffled(sourceQueue) : sourceQueue;
           setQueue(nextQueue);
@@ -3355,7 +3407,7 @@ export function App() {
           scrobbledPlayRef.current = "";
           locallyRecordedPlayRef.current = "";
           seekTo(0);
-          void audioRef.current?.play().catch(() => {
+          void getActiveAudio()?.play().catch(() => {
             setPlayerError("Playback was blocked by the browser.");
           });
         }
@@ -3370,7 +3422,7 @@ export function App() {
       return;
     }
 
-    audioRef.current?.pause();
+    getActiveAudio()?.pause();
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
     setCurrentIndex((index) => Math.min(index + 1, queue.length - 1));
@@ -3379,10 +3431,97 @@ export function App() {
     setIsPlaying(true);
   }
 
+  async function advanceWithPreloadedTrack() {
+    const activeAudio = getActiveAudio();
+    const standbyAudio = getStandbyAudio();
+    const nextIndex = currentIndex + 1;
+
+    if (!activeAudio || !standbyAudio || !nextTrack || !nextStreamUrl || standbyAudio.src !== nextStreamUrl) return false;
+    if (standbyAudio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return false;
+
+    transitionInProgressRef.current = true;
+    recordListeningHistory(true, activeAudio.currentTime);
+    scrobbledPlayRef.current = "";
+    locallyRecordedPlayRef.current = "";
+
+    const fadeSeconds = appSettings.trackTransitionSeconds;
+    const fadeDurationMs = fadeSeconds * 1000;
+    standbyAudio.muted = isMuted;
+    standbyAudio.volume = fadeDurationMs > 0 ? 0 : volumeRef.current;
+
+    try {
+      await standbyAudio.play();
+    } catch {
+      transitionInProgressRef.current = false;
+      return false;
+    }
+
+    setActiveAudioSlot((slot) => slot === 0 ? 1 : 0);
+    setCurrentIndex(nextIndex);
+    setPosition(0);
+    setPlayerDuration(nextTrack.duration ?? 0);
+    setPlayerError("");
+
+    if (!fadeDurationMs) {
+      activeAudio.pause();
+      activeAudio.currentTime = 0;
+      activeAudio.volume = volumeRef.current;
+      transitionInProgressRef.current = false;
+      return true;
+    }
+
+    const startedAt = performance.now();
+    clearTrackTransitionTimer();
+    transitionTimerRef.current = window.setInterval(() => {
+      const progress = Math.min((performance.now() - startedAt) / fadeDurationMs, 1);
+      activeAudio.volume = volumeRef.current * (1 - progress);
+      standbyAudio.volume = volumeRef.current * progress;
+      if (progress < 1) return;
+
+      clearTrackTransitionTimer();
+      activeAudio.pause();
+      activeAudio.currentTime = 0;
+      activeAudio.volume = volumeRef.current;
+      standbyAudio.volume = volumeRef.current;
+      transitionInProgressRef.current = false;
+      setTransitionCompleteNonce((nonce) => nonce + 1);
+    }, 50);
+
+    return true;
+  }
+
+  function handleLocalTimeUpdate(audio: HTMLAudioElement) {
+    if (audio !== getActiveAudio()) return;
+    setPosition(audio.currentTime);
+
+    const duration = audio.duration || currentTrack?.duration || 0;
+    if (
+      !transitionInProgressRef.current
+      && appSettings.trackTransitionSeconds > 0
+      && nextTrack
+      && duration > 0
+      && duration - audio.currentTime <= appSettings.trackTransitionSeconds
+    ) {
+      void advanceWithPreloadedTrack();
+    }
+  }
+
+  function handleLocalTrackEnded(audio: HTMLAudioElement) {
+    if (audio !== getActiveAudio()) return;
+    if (nextTrack && !transitionInProgressRef.current) {
+      void advanceWithPreloadedTrack().then((advanced) => {
+        if (!advanced) playNext(true);
+      });
+      return;
+    }
+    playNext(true);
+  }
+
   function playPrevious() {
     if (!queue.length) return;
+    stopTrackTransition();
     recordListeningHistory();
-    audioRef.current?.pause();
+    getActiveAudio()?.pause();
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
     setCurrentIndex((index) => Math.max(index - 1, 0));
@@ -3392,17 +3531,18 @@ export function App() {
   }
 
   function seekTo(nextPosition: number) {
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio || !Number.isFinite(nextPosition)) return;
     audio.currentTime = nextPosition;
     setPosition(nextPosition);
     setDiscordPresenceSyncNonce((nonce) => nonce + 1);
   }
 
-  function handleLoadedMetadata(duration: number) {
+  function handleLoadedMetadata(audio: HTMLAudioElement) {
+    if (audio !== getActiveAudio()) return;
+    const duration = audio.duration;
     setPlayerDuration(duration || currentTrack?.duration || 0);
 
-    const audio = audioRef.current;
     const resumePosition = pendingResumePositionRef.current;
     pendingResumePositionRef.current = 0;
 
@@ -3437,7 +3577,8 @@ export function App() {
   function selectQueueTrack(index: number) {
     tuneOutRadio();
     setSuppressLocalFooter(false);
-    audioRef.current?.pause();
+    stopTrackTransition();
+    getActiveAudio()?.pause();
     scrobbledPlayRef.current = "";
     setCurrentIndex(index);
     resetPlaybackPosition();
@@ -3451,6 +3592,7 @@ export function App() {
 
   function toggleShuffle() {
     if (queue.length < 2 || !currentTrack) return;
+    stopTrackTransition();
 
     if (shuffleEnabled) {
       const sourceIndex = sourceQueue.indexOf(currentTrack);
@@ -3471,6 +3613,7 @@ export function App() {
       if (!queue[fromIndex]) return;
       const toIndex = insertAtIndex > fromIndex ? insertAtIndex - 1 : insertAtIndex;
       if (fromIndex === toIndex) return;
+      stopTrackTransition();
 
     setQueue((currentQueue) => {
       const nextQueue = [...currentQueue];
@@ -3506,13 +3649,14 @@ export function App() {
 
   function removeQueueItem(index: number) {
     if (!queue[index]) return;
+    stopTrackTransition();
 
     const removingCurrentTrack = index === currentIndex;
     setQueue((currentQueue) => currentQueue.filter((_, queueIndex) => queueIndex !== index));
     setSourceQueue((currentSourceQueue) => currentSourceQueue.filter((song) => song !== queue[index]));
 
     if (queue.length <= 1) {
-      audioRef.current?.pause();
+      getActiveAudio()?.pause();
       setCurrentIndex(0);
       resetPlaybackPosition();
       setIsPlaying(false);
@@ -3522,7 +3666,7 @@ export function App() {
     if (index < currentIndex) {
       setCurrentIndex((current) => Math.max(0, current - 1));
     } else if (removingCurrentTrack) {
-      audioRef.current?.pause();
+      getActiveAudio()?.pause();
       scrobbledPlayRef.current = "";
       setCurrentIndex(Math.min(currentIndex, queue.length - 2));
       resetPlaybackPosition();
@@ -3532,7 +3676,8 @@ export function App() {
   }
 
   function clearQueue() {
-    audioRef.current?.pause();
+    stopTrackTransition();
+    getActiveAudio()?.pause();
     setQueue([]);
     setSourceQueue([]);
     setCurrentIndex(0);
@@ -3579,10 +3724,10 @@ export function App() {
     }
 
     if (!queue.length) return;
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
 
     if (isPlaying) {
-      audio?.pause();
+      stopTrackTransition(true);
       setIsPlaying(false);
       return;
     }
@@ -3615,7 +3760,7 @@ export function App() {
 
   function setPlayerVolume(nextVolume: number) {
     const clampedVolume = Math.min(1, Math.max(0, nextVolume));
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (audio) audio.volume = clampedVolume;
     setVolume(clampedVolume);
     updateAppSettings({ ...appSettings, lastVolume: clampedVolume });
@@ -3931,13 +4076,14 @@ export function App() {
   }, [config, currentTrack, isPlaying, radioStatus, rightPanelOpen, rightPanelTab]);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = volume;
+    [primaryAudioRef.current, secondaryAudioRef.current].forEach((audio) => {
+      if (audio) audio.volume = volume;
+    });
   }, [volume]);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.muted = isMuted;
+    if (primaryAudioRef.current) primaryAudioRef.current.muted = isMuted;
+    if (secondaryAudioRef.current) secondaryAudioRef.current.muted = isMuted;
     if (radioAudioRef.current) radioAudioRef.current.muted = isMuted;
   }, [isMuted]);
 
@@ -4143,7 +4289,7 @@ export function App() {
   }, [currentTrack]);
 
   useEffect(() => {
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio) return;
 
     if (!currentStreamUrl) {
@@ -4153,6 +4299,7 @@ export function App() {
       return;
     }
 
+    if (audio.src === currentStreamUrl) return;
     audio.src = currentStreamUrl;
     audio.load();
     setPosition(pendingResumePositionRef.current || 0);
@@ -4165,7 +4312,27 @@ export function App() {
         setPlayerError("Playback was blocked by the browser.");
       });
     }
-  }, [currentStreamUrl]);
+  }, [activeAudioSlot, currentStreamUrl]);
+
+  useEffect(() => {
+    const standbyAudio = getStandbyAudio();
+    if (!standbyAudio || transitionInProgressRef.current) return;
+
+    standbyAudio.pause();
+    standbyAudio.currentTime = 0;
+    standbyAudio.volume = volume;
+
+    if (!nextStreamUrl) {
+      standbyAudio.removeAttribute("src");
+      standbyAudio.load();
+      return;
+    }
+
+    if (standbyAudio.src !== nextStreamUrl) {
+      standbyAudio.src = nextStreamUrl;
+      standbyAudio.load();
+    }
+  }, [activeAudioSlot, nextStreamUrl, transitionCompleteNonce, volume]);
 
   useEffect(() => {
     if (!queue.length) {
@@ -4186,7 +4353,7 @@ export function App() {
 
   useEffect(() => {
     function persistBeforeUnload() {
-      persistPlaybackSnapshot(audioRef.current?.currentTime ?? position);
+      persistPlaybackSnapshot(getActiveAudio()?.currentTime ?? position);
     }
 
     window.addEventListener("beforeunload", persistBeforeUnload);
@@ -4257,7 +4424,7 @@ export function App() {
   }, [config, currentStreamUrl, currentTrack, isPlaying, playerDuration, position]);
 
   useEffect(() => {
-    const audio = audioRef.current;
+    const audio = getActiveAudio();
     if (!audio || !currentStreamUrl) return;
 
     if (isPlaying) {
@@ -4268,7 +4435,7 @@ export function App() {
     } else {
       audio.pause();
     }
-  }, [isPlaying, currentStreamUrl]);
+  }, [activeAudioSlot, isPlaying, currentStreamUrl]);
 
   useEffect(() => {
     function isTextInputTarget(target: EventTarget | null) {
@@ -4397,7 +4564,7 @@ export function App() {
         setRadioMessage("Radio paused.");
         return;
       }
-      audioRef.current?.pause();
+      stopTrackTransition(true);
       setIsPlaying(false);
     });
     navigator.mediaSession.setActionHandler("previoustrack", controlsRadio ? null : playPrevious);
@@ -4874,14 +5041,28 @@ export function App() {
 
       <footer className="player-bar" aria-label="Playback controls">
         <audio
-          ref={audioRef}
+          ref={primaryAudioRef}
           preload="auto"
           onPlay={() => setActivePlaybackSource("local")}
-          onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
-          onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget.duration)}
-          onEnded={() => playNext(true)}
+          onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
+          onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
+          onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
           onError={() => {
-            if (currentTrack) {
+            if (currentTrack && primaryAudioRef.current === getActiveAudio()) {
+              setIsPlaying(false);
+              setPlayerError("Track stream failed.");
+            }
+          }}
+        />
+        <audio
+          ref={secondaryAudioRef}
+          preload="auto"
+          onPlay={() => setActivePlaybackSource("local")}
+          onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
+          onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
+          onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
+          onError={() => {
+            if (currentTrack && secondaryAudioRef.current === getActiveAudio()) {
               setIsPlaying(false);
               setPlayerError("Track stream failed.");
             }
@@ -6081,6 +6262,7 @@ function SettingsView({
         {[
           { id: "connection", label: "Connection", icon: <CheckCircle2 size={15} /> },
           { id: "library", label: "Library", icon: <Library size={15} /> },
+          { id: "playback", label: "Playback", icon: <Play size={15} /> },
           { id: "appearance", label: "Appearance", icon: <Waves size={15} /> },
           { id: "radio", label: "Radio", icon: <RadioTower size={15} /> },
           { id: "privacy", label: "Privacy", icon: <CheckCircle2 size={15} /> },
@@ -6198,6 +6380,31 @@ function SettingsView({
           />
           <span>Show shared playlists in the Playlists menu</span>
         </label>
+      </section> : null}
+
+      {activeTab === "playback" ? <section className="settings-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Playback</p>
+            <h3>Track transitions</h3>
+          </div>
+          <Play size={18} />
+        </div>
+        <label>
+          Crossfade duration
+          <select
+            value={appSettings.trackTransitionSeconds}
+            onChange={(event) => updateAppSettings({ ...appSettings, trackTransitionSeconds: Number(event.target.value) })}
+          >
+            <option value={0}>Gapless</option>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((seconds) => (
+              <option value={seconds} key={seconds}>{seconds} second{seconds === 1 ? "" : "s"}</option>
+            ))}
+          </select>
+        </label>
+        <p className="settings-note">
+          Prism preloads the next queued track for album playback. Gapless starts it without a fade; crossfade overlaps the two tracks. Radio is unchanged.
+        </p>
       </section> : null}
 
       {activeTab === "appearance" ? <section className="settings-panel">
