@@ -36,6 +36,15 @@ fn clear_navidrome_password() -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn get_native_architecture() -> &'static str {
+    match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        _ => "unknown",
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DiscordPresence {
@@ -165,7 +174,8 @@ pub fn run() {
             clear_discord_presence,
             get_navidrome_password,
             set_navidrome_password,
-            clear_navidrome_password
+            clear_navidrome_password,
+            get_native_architecture
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prism Player");
