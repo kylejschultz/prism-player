@@ -11,7 +11,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
-import { getCurrentReleaseNotes, getUnreadReleaseNotes, type WhatsNewRelease } from "./whatsNew";
+import { compareVersions, getCurrentReleaseNotes, getUnreadReleaseNotes, WHATS_NEW_RELEASES, type WhatsNewRelease } from "./whatsNew";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
@@ -1959,6 +1959,10 @@ export function App() {
   const [form, setForm] = useState<NavidromeConfig>(() => loadStoredConfig() ?? emptyConfig);
   const [appSettings, setAppSettings] = useState<AppSettings>(() => loadStoredSettings());
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.dataset.prismTheme = appSettings.colorTheme;
+  }, [appSettings.colorTheme]);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "checking" | "up-to-date" | "available" | "error">("idle");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
@@ -4955,7 +4959,6 @@ export function App() {
               updateCheckStatus={updateCheckStatus}
               onCheckForUpdates={() => void checkForUpdates()}
               canOpenWhatsNew={Boolean(currentReleaseNotes)}
-              onOpenWhatsNew={() => setWhatsNewOpen(true)}
               onSave={saveConnection}
               onReset={resetConnection}
             />
@@ -5369,7 +5372,14 @@ export function App() {
         />
       ) : null}
       {whatsNewOpen && whatsNewReleases.length ? (
-        <WhatsNewDialog releases={whatsNewReleases} onClose={dismissWhatsNew} />
+        <WhatsNewDialog
+          releases={whatsNewReleases}
+          onClose={dismissWhatsNew}
+          onOpenSettings={(tab) => {
+            dismissWhatsNew();
+            openSettings(tab);
+          }}
+        />
       ) : null}
       {playlistCreatorOpen ? (
         <PrismDialog open={playlistCreatorOpen} onOpenChange={(open) => !open && closePlaylistCreator()}>
@@ -6153,7 +6163,15 @@ function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismis
   );
 }
 
-function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; onClose: () => void }) {
+function WhatsNewDialog({
+  releases,
+  onClose,
+  onOpenSettings,
+}: {
+  releases: WhatsNewRelease[];
+  onClose: () => void;
+  onOpenSettings: (tab: "playback") => void;
+}) {
   const latestRelease = releases[0];
 
   return (
@@ -6181,6 +6199,7 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
           ))}
         </div>
         <div className="whats-new-actions">
+          {latestRelease.action ? <button className="secondary-button" type="button" onClick={() => onOpenSettings(latestRelease.action!.settingsTab)}>{latestRelease.action.label}</button> : null}
           <button className="connect-button" type="button" onClick={onClose}>Got it</button>
         </div>
       </section>
@@ -6208,7 +6227,6 @@ function SettingsView({
   updateCheckStatus,
   onCheckForUpdates,
   canOpenWhatsNew,
-  onOpenWhatsNew,
   onSave,
   onReset,
 }: {
@@ -6231,7 +6249,6 @@ function SettingsView({
   updateCheckStatus: "idle" | "checking" | "up-to-date" | "available" | "error";
   onCheckForUpdates: () => void;
   canOpenWhatsNew: boolean;
-  onOpenWhatsNew: () => void;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
@@ -6390,20 +6407,27 @@ function SettingsView({
           </div>
           <Play size={18} />
         </div>
-        <label>
-          Crossfade duration
-          <select
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={appSettings.trackTransitionSeconds > 0}
+            onChange={(event) => updateAppSettings({ ...appSettings, trackTransitionSeconds: event.target.checked ? 5 : 0 })}
+          />
+          <span>Enable crossfade</span>
+        </label>
+        {appSettings.trackTransitionSeconds > 0 ? <label>
+          Crossfade duration: {appSettings.trackTransitionSeconds} second{appSettings.trackTransitionSeconds === 1 ? "" : "s"}
+          <input
+            type="range"
+            min="1"
+            max="12"
+            step="1"
             value={appSettings.trackTransitionSeconds}
             onChange={(event) => updateAppSettings({ ...appSettings, trackTransitionSeconds: Number(event.target.value) })}
-          >
-            <option value={0}>Gapless</option>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((seconds) => (
-              <option value={seconds} key={seconds}>{seconds} second{seconds === 1 ? "" : "s"}</option>
-            ))}
-          </select>
-        </label>
+          />
+        </label> : null}
         <p className="settings-note">
-          Prism preloads the next queued track for album playback. Gapless starts it without a fade; crossfade overlaps the two tracks. Radio is unchanged.
+          Gapless playback is on by default. Prism preloads the next queued local track; crossfade is optional. Radio is unchanged.
         </p>
       </section> : null}
 
@@ -6598,12 +6622,18 @@ function SettingsView({
           <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
           <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
         </div>
-        {canOpenWhatsNew ? <div className="form-actions about-whats-new-action">
-          <button className="secondary-button" type="button" onClick={onOpenWhatsNew}>
-            <Star size={16} />
-            What’s New
-          </button>
-        </div> : null}
+        {canOpenWhatsNew ? <section className="about-changelog" aria-label="Changelog">
+          <p className="eyebrow">Changelog</p>
+          {[...WHATS_NEW_RELEASES]
+            .filter((release) => !release.previewForVersion)
+            .sort((left, right) => compareVersions(right.version, left.version))
+            .map((release) => (
+              <article key={release.version}>
+                <h4>Prism {release.displayVersion ?? release.version}</h4>
+                <ul>{release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}</ul>
+              </article>
+            ))}
+        </section> : null}
       </section> : null}
 
       {activeTab === "advanced" ? <section className="settings-panel">
