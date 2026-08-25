@@ -159,6 +159,20 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .setup(|_app| {
+            #[cfg(target_os = "macos")]
+            {
+                let main_webview = _app
+                    .get_webview_window("main")
+                    .expect("main Prism webview should exist during setup");
+                main_webview.with_webview(|webview| unsafe {
+                    let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
+                    view.setAllowsBackForwardNavigationGestures(true);
+                })?;
+            }
+
+            Ok(())
+        })
         .manage(DiscordPresenceClient::default())
         .invoke_handler(tauri::generate_handler![
             update_discord_presence,

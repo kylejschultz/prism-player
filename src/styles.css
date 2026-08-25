@@ -1466,6 +1466,19 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   color: rgba(244, 241, 236, 0.7);
 }
 
+.home-now-playing-meta-link {
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+}
+
+.home-now-playing-meta-link:hover,
+.home-now-playing-meta-link:focus-visible {
+  color: var(--prism-accent-strong);
+  text-decoration: underline;
+}
+
 .home-playback-controls {
   display: flex;
   align-items: center;

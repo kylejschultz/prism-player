@@ -7126,6 +7126,8 @@ function LibraryView({
               onPrevious={onPrevious}
               onNext={onNext}
               onSeek={onSeek}
+              onOpenAlbum={onOpenAlbum}
+              onOpenArtist={onOpenArtist}
             />
           ) : null}
           {activeView === "albums" ? (
@@ -7163,6 +7165,7 @@ function LibraryView({
                 favoriteIds={favoriteIds}
                 favoriteBusyKey={favoriteBusyKey}
                 onToggleFavorite={onToggleFavorite}
+                onOpenAlbum={onOpenAlbum}
                 onOpenArtist={onOpenArtist}
                 onPlaySong={onPlaySong}
                 onQueueSong={onQueueSong}
@@ -7188,7 +7191,7 @@ function LibraryView({
             />
           ) : null}
           {activeView === "recentlyPlayed" ? (
-            <ListeningHistoryView history={listeningHistory} onPlaySong={onPlaySong} onClear={onClearListeningHistory} />
+            <ListeningHistoryView history={listeningHistory} onPlaySong={onPlaySong} onClear={onClearListeningHistory} onOpenAlbum={onOpenAlbum} onOpenArtist={onOpenArtist} />
           ) : null}
           {activeView === "favorites" ? (
             <FavoritesView
@@ -7464,6 +7467,8 @@ function NowPlayingView({
   onPrevious,
   onNext,
   onSeek,
+  onOpenAlbum,
+  onOpenArtist,
 }: {
   config: NavidromeConfig | null;
   currentTrack: Song | null;
@@ -7477,12 +7482,12 @@ function NowPlayingView({
   onPrevious: () => void;
   onNext: () => void;
   onSeek: (position: number) => void;
+  onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
 }) {
   const hasTrack = Boolean(currentTrack);
   const title = currentTrack?.title ?? "Your next listen starts here";
-  const byline = currentTrack
-    ? `${currentTrack.artist ?? "Unknown artist"}${currentTrack.album ? ` · ${currentTrack.album}` : ""}`
-    : config
+  const byline = config
       ? "Pick an album, artist, or song from your library."
       : "Connect your Navidrome server to bring your music home.";
   const progress = Math.min(position, Math.max(duration, 1));
@@ -7501,7 +7506,10 @@ function NowPlayingView({
         <div className="home-now-playing-copy">
           <p className="eyebrow">{isPlaying ? "Now playing" : hasTrack ? "Paused" : "Ready when you are"}</p>
           <h3>{title}</h3>
-          <p>{byline}</p>
+          {currentTrack ? <p className="home-now-playing-meta">
+            {currentTrack.artistId ? <button className="home-now-playing-meta-link" type="button" onClick={() => onOpenArtist({ id: currentTrack.artistId!, name: currentTrack.artist ?? "Unknown artist" })}>{currentTrack.artist ?? "Unknown artist"}</button> : <span>{currentTrack.artist ?? "Unknown artist"}</span>}
+            {currentTrack.album ? <><span aria-hidden="true"> · </span>{currentTrack.albumId ? <button className="home-now-playing-meta-link" type="button" onClick={() => onOpenAlbum({ id: currentTrack.albumId!, name: currentTrack.album!, artist: currentTrack.artist ?? "", artistId: currentTrack.artistId, coverArt: currentTrack.coverArt })}>{currentTrack.album}</button> : <span>{currentTrack.album}</span>}</> : null}
+          </p> : <p>{byline}</p>}
           <div className="home-playback-controls">
             <button type="button" aria-label="Previous" onClick={onPrevious} disabled={!hasPrevious}><SkipBack size={18} /></button>
             <button className="home-primary-play" type="button" aria-label={isPlaying ? "Pause" : "Play"} onClick={onTogglePlayback} disabled={!hasTrack}>
@@ -7626,6 +7634,7 @@ function FavoritesView({
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
+            onOpenAlbum={onOpenAlbum}
             onOpenArtist={onOpenArtist}
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
@@ -7761,6 +7770,7 @@ function SearchResultsView({
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
+            onOpenAlbum={onOpenAlbum}
             onOpenArtist={onOpenArtist}
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
@@ -7812,6 +7822,7 @@ function SearchSongList({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenAlbum,
   onOpenArtist,
   onPlaySong,
   onQueueSong,
@@ -7822,6 +7833,7 @@ function SearchSongList({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
@@ -7883,7 +7895,7 @@ function SearchSongList({
               </button>
               <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
               <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
-              <span className="track-album">{song.album || "Unknown album"}</span>
+              <AlbumNameLink song={song} onOpenAlbum={onOpenAlbum} />
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
@@ -7924,6 +7936,27 @@ function ArtistNameLink({ song, onOpenArtist }: { song: Song; onOpenArtist: (art
       onClick={(event) => {
         event.stopPropagation();
         onOpenArtist({ id: song.artistId!, name: label });
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      aria-label={`Open ${label}`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AlbumNameLink({ song, onOpenAlbum }: { song: Song; onOpenAlbum: (album: Album) => void }) {
+  const label = song.album || "Unknown album";
+
+  if (!song.albumId) return <span className="track-album">{label}</span>;
+
+  return (
+    <button
+      className="track-album artist-name-link"
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenAlbum({ id: song.albumId!, name: label, artist: song.artist ?? "", artistId: song.artistId, coverArt: song.coverArt });
       }}
       onDoubleClick={(event) => event.stopPropagation()}
       aria-label={`Open ${label}`}
@@ -8000,10 +8033,14 @@ function ListeningHistoryView({
   history,
   onPlaySong,
   onClear,
+  onOpenAlbum,
+  onOpenArtist,
 }: {
   history: ListeningHistoryEntry[];
   onPlaySong: (song: Song) => void;
   onClear: () => void;
+  onOpenAlbum: (album: Album) => void;
+  onOpenArtist: (artist: Artist) => void;
 }) {
   const { isSelected, selectTrack, handleKeyDown, listRef } = useTrackSelection(history.map((entry) => entry.song));
 
@@ -8041,8 +8078,8 @@ function ListeningHistoryView({
             <button className="track-name history-track-name" type="button" aria-label={`Select ${entry.song.title}`}>
               <strong>{entry.song.title}</strong>
             </button>
-            <span className="history-track-artist">{entry.song.artist || "Unknown artist"}</span>
-            <span className="history-track-album">{entry.song.album || "Unknown album"}</span>
+            {entry.song.artistId ? <button className="history-track-artist artist-name-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenArtist({ id: entry.song.artistId!, name: entry.song.artist ?? "Unknown artist" }); }}>{entry.song.artist || "Unknown artist"}</button> : <span className="history-track-artist">{entry.song.artist || "Unknown artist"}</span>}
+            {entry.song.albumId ? <button className="history-track-album artist-name-link" type="button" onClick={(event) => { event.stopPropagation(); onOpenAlbum({ id: entry.song.albumId!, name: entry.song.album ?? "Unknown album", artist: entry.song.artist ?? "", artistId: entry.song.artistId, coverArt: entry.song.coverArt }); }}>{entry.song.album || "Unknown album"}</button> : <span className="history-track-album">{entry.song.album || "Unknown album"}</span>}
           </div>
         ))}
       </div>
@@ -8792,6 +8829,7 @@ function PlaylistDetailPanel({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenAlbum,
   onOpenArtist,
   onPlayPlaylist,
   onSavePlaylistDetails,
@@ -8809,6 +8847,7 @@ function PlaylistDetailPanel({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
@@ -9079,6 +9118,7 @@ function PlaylistDetailPanel({
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
+        onOpenAlbum={onOpenAlbum}
         onOpenArtist={onOpenArtist}
         onPlaySong={(song) => onReplaceQueue(draftSongs, Math.max(0, draftSongs.findIndex((playlistSong) => playlistSong.id === song.id)))}
         onQueueSong={onQueueSong}
@@ -9254,6 +9294,7 @@ function DetailPanel({
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
+        onOpenAlbum={onOpenAlbum}
         onOpenArtist={onOpenArtist}
         onPlayPlaylist={onPlayPlaylist}
         onSavePlaylistDetails={onSavePlaylistDetails}
@@ -9437,6 +9478,7 @@ function EditablePlaylistTrackList({
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
+  onOpenAlbum,
   onOpenArtist,
   onPlaySong,
   onQueueSong,
@@ -9455,6 +9497,7 @@ function EditablePlaylistTrackList({
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
@@ -9526,7 +9569,7 @@ function EditablePlaylistTrackList({
               {song.title}
             </button>
             <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
-            <span className="track-album">{song.album || "Unknown album"}</span>
+            <AlbumNameLink song={song} onOpenAlbum={onOpenAlbum} />
             <span className="track-duration">{formatDuration(song.duration)}</span>
             <FavoriteButton
               active={favoriteIds.songs.has(song.id)}
