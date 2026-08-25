@@ -6166,7 +6166,7 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
           <Star size={30} />
         </div>
         <p className="eyebrow">What’s new</p>
-        <Dialog.Title asChild><h2 id="whats-new-title">Prism {latestRelease.version}</h2></Dialog.Title>
+        <Dialog.Title asChild><h2 id="whats-new-title">Prism {latestRelease.displayVersion ?? latestRelease.version}</h2></Dialog.Title>
         <Dialog.Description asChild><p className="whats-new-copy">
           {releases.length === 1 ? latestRelease.title : `Here’s what changed since Prism ${releases[releases.length - 1]?.version}.`}
         </p></Dialog.Description>
