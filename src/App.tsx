@@ -16,7 +16,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
   CalendarDays,
+  Check,
   Code2,
+  Copy,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -6237,6 +6239,36 @@ function SettingsView({
   onReset: () => void;
 }) {
   const [newRadioStationUrl, setNewRadioStationUrl] = useState("");
+  const [installIdCopied, setInstallIdCopied] = useState(false);
+  const [installId, setInstallId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(INSTALL_ID_KEY);
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (activeTab !== "about") return;
+
+    try {
+      setInstallId(localStorage.getItem(INSTALL_ID_KEY));
+    } catch {
+      setInstallId(null);
+    }
+  }, [activeTab]);
+
+  async function copyInstallId() {
+    if (!installId) return;
+
+    try {
+      await navigator.clipboard.writeText(installId);
+      setInstallIdCopied(true);
+      window.setTimeout(() => setInstallIdCopied(false), 2_000);
+    } catch {
+      setInstallIdCopied(false);
+    }
+  }
 
   function setDefaultAlbumView(mode: AlbumViewMode) {
     updateAppSettings({ ...appSettings, defaultAlbumView: mode });
@@ -6583,6 +6615,16 @@ function SettingsView({
             <span className="settings-label">Installed version</span>
             <strong>v{APP_VERSION}</strong>
             <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
+            <div className="about-install-id">
+              <span className="settings-label">Beacon install ID</span>
+              {installId ? <div className="about-install-id-value">
+                <code title={installId}>{installId}</code>
+                <button className="secondary-button compact-button" type="button" onClick={copyInstallId}>
+                  {installIdCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {installIdCopied ? "Copied" : "Copy ID"}
+                </button>
+              </div> : <span className="settings-note">Created when analytics is enabled.</span>}
+            </div>
           </div>
           <div className="about-update-action">
             {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
