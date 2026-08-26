@@ -37,8 +37,10 @@
       .hero-art img { display:block; width:100%; border-radius:16px; border:1px solid rgba(255,255,255,.2); }
       .hero-art::before { content:""; position:absolute; width:150px; height:150px; top:-45px; left:-45px; border-radius:50%; background:var(--coral); filter:blur(80px); opacity:.28; z-index:-1; }
       .marquee { border-top:1px solid var(--line); border-bottom:1px solid var(--line); overflow:hidden; background:#121110; white-space:nowrap; }
-      .marquee-inner { display:flex; width:max-content; min-width:100%; justify-content:center; gap:40px; padding:16px 28px; color:#88817a; font:11px "DM Mono",monospace; letter-spacing:.12em; }
+      .marquee-inner { display:flex; width:max-content; gap:40px; padding:16px 20px; color:#88817a; font:11px "DM Mono",monospace; letter-spacing:.12em; animation:marquee-scroll 24s linear infinite; }
       .marquee b { color:var(--gold); font-weight:500; }
+      @keyframes marquee-scroll { to { transform:translateX(-50%); } }
+      @media (prefers-reduced-motion:reduce) { .marquee-inner { animation:none; } }
       section { max-width:1240px; margin:auto; padding:110px 28px; }
       .two-col { display:grid; grid-template-columns:5fr 7fr; gap:80px; align-items:start; }
       .section-number { color:var(--coral); font:12px "DM Mono",monospace; letter-spacing:.1em; }
@@ -86,7 +88,7 @@
           </div>
           <div class="hero-art"><img src="images/home.png" alt="Prism Player showing a music library on its home screen" /></div>
         </header>
-        <div class="marquee"><div class="marquee-inner"><span>YOUR SERVER</span><b>✦</b><span>YOUR MUSIC</span><b>✦</b><span>YOUR PLAYER</span><b>✦</b><span>NAVIDROME + SUBSONIC</span><b>✦</b><span>YOUR SERVER</span><b>✦</b><span>YOUR MUSIC</span><b>✦</b><span>YOUR PLAYER</span><b>✦</b></div></div>
+        <div class="marquee"><div class="marquee-inner" aria-label="Your server, your music, your player, Navidrome and Subsonic"><span>YOUR SERVER</span><b>✦</b><span>YOUR MUSIC</span><b>✦</b><span>YOUR PLAYER</span><b>✦</b><span>NAVIDROME + SUBSONIC</span><b>✦</b><span>YOUR SERVER</span><b>✦</b><span>YOUR MUSIC</span><b>✦</b><span>YOUR PLAYER</span><b>✦</b><span>NAVIDROME + SUBSONIC</span><b>✦</b></div></div>
         <section id="features" class="two-col">
           <div><div class="section-number">01 / THE ESSENTIALS</div><h2>Listen without the browser tabs.</h2></div>
           <div class="feature-list">
