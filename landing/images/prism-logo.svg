@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="prism" x1="128" y1="128" x2="896" y2="896" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0d27b"/>
+      <stop offset="0.46" stop-color="#c8463c"/>
+      <stop offset="1" stop-color="#2f8a80"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="232" y1="168" x2="792" y2="822" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff8dc" stop-opacity="0.72"/>
+      <stop offset="0.48" stop-color="#fff8dc" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#fff8dc" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="184" fill="#111111"/>
+  <rect x="112" y="112" width="800" height="800" rx="144" fill="url(#prism)"/>
+  <rect x="114" y="114" width="796" height="796" rx="142" fill="url(#shine)"/>
+  <path d="M342 760V278h222c112 0 188 70 188 170 0 104-76 176-188 176h-76v136H342zm146-256h58c38 0 62-22 62-56 0-33-24-55-62-55h-58v111z" fill="#111111" opacity="0.82"/>
+  <path d="M488 504h58c38 0 62-22 62-56 0-33-24-55-62-55h-58v111z" fill="#f4f1ec" opacity="0.24"/>
+  <path d="M622 724c54-24 102-60 144-108" fill="none" stroke="#111111" stroke-width="44" stroke-linecap="round" opacity="0.46"/>
+</svg>
