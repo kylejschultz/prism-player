@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://prismplayer.app/sitemap.xml

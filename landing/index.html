@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Prism is a desktop music player for Navidrome, Subsonic servers, and Subwave radio." />
+    <title>Prism: A desktop player for your music</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet" />
+    <style>
+      :root { --ink:#f3eee7; --muted:#a7a09a; --line:rgba(243,238,231,.14); --paper:#161412; --deep:#0d0c0c; --gold:#e4c96e; --coral:#de765e; --mint:#80b6a7; }
+      * { box-sizing:border-box; }
+      html { scroll-behavior:smooth; }
+      body { margin:0; background:var(--deep); color:var(--ink); font-family:"DM Sans",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+      a { color:inherit; text-decoration:none; }
+      .site-shell { overflow:hidden; }
+      nav { height:72px; display:flex; align-items:center; justify-content:space-between; max-width:1240px; margin:auto; padding:0 28px; border-bottom:1px solid var(--line); }
+      .brand { display:flex; align-items:center; gap:10px; font-size:17px; font-weight:600; letter-spacing:-.04em; }
+      .mark { width:29px; height:29px; display:grid; place-items:center; border-radius:8px; background:linear-gradient(135deg,var(--coral),#ecb36c 48%,#507d76); color:#170f0d; font-family:"Playfair Display",serif; font-size:19px; font-weight:700; }
+      .nav-links { display:flex; gap:24px; align-items:center; color:var(--muted); font-size:14px; }
+      .nav-links a:hover { color:var(--ink); }
+      .nav-download { padding:9px 13px; color:var(--ink); border:1px solid var(--line); border-radius:999px; }
+      .hero { position:relative; max-width:1240px; padding:86px 28px 48px; margin:auto; min-height:650px; }
+      .hero-copy { position:relative; z-index:2; max-width:620px; }
+      .eyebrow { display:flex; align-items:center; gap:9px; margin-bottom:21px; color:var(--gold); font-family:"DM Mono",monospace; text-transform:uppercase; letter-spacing:.1em; font-size:11px; }
+      .pulse { width:7px; height:7px; border-radius:50%; background:var(--coral); box-shadow:0 0 0 4px rgba(222,118,94,.12); }
+      h1 { max-width:650px; margin:0; font-size:clamp(48px,6.3vw,86px); line-height:.94; letter-spacing:-.065em; font-weight:600; }
+      h1 em { color:var(--gold); font-family:"Playfair Display",serif; font-weight:600; }
+      .intro { max-width:480px; margin:28px 0 30px; color:var(--muted); font-size:18px; line-height:1.55; }
+      .actions { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
+      .button { display:inline-flex; gap:9px; align-items:center; padding:13px 18px; border-radius:4px; background:var(--gold); color:#211c13; font-size:14px; font-weight:700; }
+      .text-link { color:var(--muted); border-bottom:1px solid var(--muted); padding-bottom:2px; font-size:14px; }
+      .text-link:hover { color:var(--ink); }
+      .availability { margin-top:25px; color:#746f6a; font-size:12px; }
+      .hero-art { position:absolute; width:min(720px,62vw); right:-85px; top:82px; transform:rotate(-3deg); filter:drop-shadow(0 35px 45px rgba(0,0,0,.48)); }
+      .hero-art img { display:block; width:100%; border-radius:16px; border:1px solid rgba(255,255,255,.2); }
+      .hero-art::before { content:""; position:absolute; width:150px; height:150px; top:-45px; left:-45px; border-radius:50%; background:var(--coral); filter:blur(80px); opacity:.28; z-index:-1; }
+      .hero-art::after { content:"PRISM / LISTEN YOUR WAY"; position:absolute; right:16px; top:-28px; color:var(--gold); font:11px "DM Mono",monospace; letter-spacing:.13em; }
+      .marquee { border-top:1px solid var(--line); border-bottom:1px solid var(--line); overflow:hidden; background:#121110; white-space:nowrap; }
+      .marquee-inner { display:flex; width:max-content; min-width:100%; justify-content:center; gap:40px; padding:16px 28px; color:#88817a; font:11px "DM Mono",monospace; letter-spacing:.12em; }
+      .marquee b { color:var(--gold); font-weight:500; }
+      section { max-width:1240px; margin:auto; padding:110px 28px; }
+      .two-col { display:grid; grid-template-columns:5fr 7fr; gap:80px; align-items:start; }
+      .section-number { color:var(--coral); font:12px "DM Mono",monospace; letter-spacing:.1em; }
+      h2 { margin:16px 0 0; max-width:420px; font-size:clamp(34px,4vw,54px); line-height:1; letter-spacing:-.055em; font-weight:600; }
+      .feature-list { border-top:1px solid var(--line); }
+      .feature { display:grid; grid-template-columns:52px 1fr; padding:24px 0; border-bottom:1px solid var(--line); }
+      .feature-index { font:12px "DM Mono",monospace; color:var(--gold); }
+      .feature h3 { margin:0 0 7px; font-size:18px; letter-spacing:-.03em; }
+      .feature p { margin:0; max-width:485px; color:var(--muted); line-height:1.55; font-size:15px; }
+      .showcase { padding-top:0; }
+      .frame { position:relative; background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:12px; }
+      .frame::before { content:"◉  ◉  ◉"; display:block; padding:0 0 9px 3px; color:#6f645c; font-size:9px; letter-spacing:3px; }
+      .frame img { width:100%; display:block; border-radius:7px; }
+      .caption { display:flex; align-items:baseline; justify-content:space-between; gap:18px; padding:15px 4px 1px; font-size:13px; }
+      .caption span { color:var(--muted); font:11px "DM Mono",monospace; }
+      .radio { background:linear-gradient(135deg,#1b1612,#111715); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+      .radio-grid { display:grid; grid-template-columns:1fr 1.35fr; gap:75px; align-items:center; }
+      .radio-copy p { color:var(--muted); max-width:420px; line-height:1.55; font-size:17px; }
+      .radio-copy .text-link { display:inline-block; margin-top:20px; }
+      .radio-copy .project-credit .text-link { display:inline; margin-top:0; }
+      .gallery { display:block; }
+      .final { text-align:center; padding:150px 28px 120px; }
+      .final h2 { margin:0 auto 24px; max-width:720px; }
+      .final p { color:var(--muted); margin:0 auto 28px; max-width:490px; line-height:1.5; }
+      footer { max-width:1240px; margin:auto; display:flex; justify-content:space-between; align-items:center; padding:25px 28px; border-top:1px solid var(--line); color:#807871; font-size:12px; }
+      footer div { display:flex; align-items:center; gap:8px; }
+      footer a { color:var(--muted); }
+      @media (max-width:800px) { nav { padding:0 20px; } .nav-links a:not(.nav-download) { display:none; } .hero { padding:65px 20px 40px; min-height:720px; } .hero-art { width:90vw; right:-23vw; top:375px; } section { padding:72px 20px; } .two-col,.radio-grid { grid-template-columns:1fr; gap:40px; } .gallery { margin-bottom:25px; } footer { padding:22px 20px; } }
+    </style>
+  </head>
+  <body>
+    <div class="site-shell">
+      <nav>
+        <a class="brand" href="#top"><span class="mark">P</span> Prism</a>
+        <div class="nav-links"><a href="#features">What it does</a><a href="#radio">Radio</a><a href="https://github.com/kylejschultz/prism-player" target="_blank" rel="noreferrer">GitHub ↗</a><a class="nav-download" href="https://github.com/kylejschultz/prism-player/releases/latest" target="_blank" rel="noreferrer">Get Prism</a></div>
+      </nav>
+      <main id="top">
+        <header class="hero">
+          <div class="hero-copy">
+            <div class="eyebrow"><span class="pulse"></span> Desktop music player</div>
+            <h1>Your library deserves a <em>proper</em> player.</h1>
+            <p class="intro">Prism connects to your Navidrome or Subsonic server for your library, queue, playlists, and radio in one desktop app.</p>
+            <div class="actions"><a class="button" href="https://github.com/kylejschultz/prism-player/releases/latest" target="_blank" rel="noreferrer">Get the latest build <span>→</span></a><a class="text-link" href="#features">See what’s inside</a></div>
+            <div class="availability">Available for macOS and Windows. Pre-1.0.</div>
+          </div>
+          <div class="hero-art"><img src="../docs/images/home.png" alt="Prism Player showing a music library on its home screen" /></div>
+        </header>
+        <div class="marquee"><div class="marquee-inner"><span>YOUR SERVER</span><b>✦</b><span>YOUR MUSIC</span><b>✦</b><span>YOUR PLAYER</span><b>✦</b><span>NAVIDROME + SUBSONIC</span><b>✦</b><span>YOUR SERVER</span><b>✦</b><span>YOUR MUSIC</span><b>✦</b><span>YOUR PLAYER</span><b>✦</b></div></div>
+        <section id="features" class="two-col">
+          <div><div class="section-number">01 / THE ESSENTIALS</div><h2>Listen without the browser tabs.</h2></div>
+          <div class="feature-list">
+            <article class="feature"><div class="feature-index">01</div><div><h3>Your server, on your desktop</h3><p>Connect directly to Navidrome or another Subsonic-compatible server. Your library stays where it is.</p></div></article>
+            <article class="feature"><div class="feature-index">02</div><div><h3>Your queue, playlists, and lyrics</h3><p>Browse artists and albums, manage the queue, edit playlists, search your library, and keep lyrics close by.</p></div></article>
+            <article class="feature"><div class="feature-index">03</div><div><h3>Made for the desktop</h3><p>Use media keys, get native notifications, and pick up where you left off when you switch apps.</p></div></article>
+          </div>
+        </section>
+        <div class="radio" id="radio"><section class="radio-grid"><div class="radio-copy"><div class="section-number">02 / TUNE IN</div><h2>Keep the station in the same room.</h2><p>Subwave is an AI radio station powered by your own music collection. It runs shows, takes requests, and keeps the music moving.</p><p>Prism supports Subwave natively. With a station online, you can tune in alongside your library, open the booth, check the schedule, make requests, and like tracks.</p><p class="project-credit">Subwave is an independent project by Perminder Klair. <a class="text-link" href="https://www.getsubwave.com/" target="_blank" rel="noreferrer">Meet Subwave ↗</a></p></div><div class="gallery"><div class="frame"><img src="../docs/images/subwave-radio.png" alt="Prism Player tuned into Subwave radio" /></div></div></section></div>
+        <section class="final"><div class="section-number">PRISM PLAYER</div><h2>A free, open-source desktop player for your library.</h2><p>Download a build or follow development on GitHub.</p><div class="actions" style="justify-content:center"><a class="button" href="https://github.com/kylejschultz/prism-player/releases/latest" target="_blank" rel="noreferrer">Download Prism <span>→</span></a><a class="text-link" href="https://github.com/kylejschultz/prism-player" target="_blank" rel="noreferrer">View on GitHub</a></div></section>
+      </main>
+      <footer><div><span class="mark" style="width:21px;height:21px;font-size:14px">P</span> Prism Player</div><div><a href="https://github.com/kylejschultz/prism-player/blob/dev/LICENSE" target="_blank" rel="noreferrer">GPL-3.0</a> · Built for music you own</div></footer>
+    </div>
+  </body>
+</html>
