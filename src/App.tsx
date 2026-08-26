@@ -2063,6 +2063,7 @@ export function App() {
   const secondaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const [activeAudioSlot, setActiveAudioSlot] = useState<0 | 1>(0);
   const transitionInProgressRef = useRef(false);
+  const transitionGenerationRef = useRef(0);
   const transitionTimerRef = useRef<number | null>(null);
   const [transitionCompleteNonce, setTransitionCompleteNonce] = useState(0);
   const volumeRef = useRef(volume);
@@ -2242,6 +2243,7 @@ export function App() {
   }
 
   function stopTrackTransition(pauseAll = false) {
+    transitionGenerationRef.current += 1;
     clearTrackTransitionTimer();
     transitionInProgressRef.current = false;
     const activeAudio = getActiveAudio();
@@ -3445,6 +3447,7 @@ export function App() {
     if (!activeAudio || !standbyAudio || !nextTrack || !nextStreamUrl || standbyAudio.src !== nextStreamUrl) return false;
     if (standbyAudio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return false;
 
+    const transitionGeneration = transitionGenerationRef.current;
     transitionInProgressRef.current = true;
     recordListeningHistory(true, activeAudio.currentTime);
     scrobbledPlayRef.current = "";
@@ -3462,10 +3465,17 @@ export function App() {
       return false;
     }
 
+    if (transitionGenerationRef.current !== transitionGeneration) {
+      standbyAudio.pause();
+      standbyAudio.currentTime = 0;
+      standbyAudio.volume = volumeRef.current;
+      return false;
+    }
+
     setActiveAudioSlot((slot) => slot === 0 ? 1 : 0);
     setCurrentIndex(nextIndex);
     setPosition(0);
-    setPlayerDuration(nextTrack.duration ?? 0);
+    setPlayerDuration(Number.isFinite(standbyAudio.duration) && standbyAudio.duration > 0 ? standbyAudio.duration : nextTrack.duration || 0);
     setPlayerError("");
 
     if (!fadeDurationMs) {
@@ -3560,6 +3570,11 @@ export function App() {
     if (safePosition <= 0) return;
     audio.currentTime = safePosition;
     setPosition(safePosition);
+  }
+
+  function handleLocalDurationChange(audio: HTMLAudioElement) {
+    if (audio !== getActiveAudio() || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    setPlayerDuration(audio.duration);
   }
 
   function persistPlaybackSnapshot(positionOverride = position) {
@@ -5051,6 +5066,7 @@ export function App() {
           onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
+          onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
           onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
           onError={() => {
             if (currentTrack && primaryAudioRef.current === getActiveAudio()) {
@@ -5065,6 +5081,7 @@ export function App() {
           onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
+          onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
           onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
           onError={() => {
             if (currentTrack && secondaryAudioRef.current === getActiveAudio()) {
