@@ -30,7 +30,7 @@ Use Conventional Commits for commit messages and pull request titles:
 - `fix:` triggers a patch release.
 - `perf:` triggers a patch release.
 - `docs:`, `chore:`, `ci:`, `style:`, `refactor:`, `test:`, and `build:` are tracked but do not necessarily produce a user-facing release unless included with releasable changes.
-- `feat!:` or a `BREAKING CHANGE:` footer triggers a major release once the project is beyond the initial pre-1.0 phase.
+- `feat!:` or a `BREAKING CHANGE:` footer triggers a major release.
 
 ## Release Flow
 
@@ -52,9 +52,7 @@ Use Conventional Commits for commit messages and pull request titles:
 
 ## Versioning
 
-The project starts at `0.1.0`.
-
-Before `1.0.0`, minor versions can still include larger product changes while patch versions should stay focused on fixes. Once Prism reaches a stable public contract, follow SemVer more strictly:
+Prism Player follows SemVer from `1.0.0` onward:
 
 - major: incompatible changes
 - minor: backward-compatible features

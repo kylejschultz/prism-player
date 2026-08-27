@@ -21,7 +21,7 @@ Prism Player 1.0 is available for macOS and Windows.
 
 ## Get Prism
 
-Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Prism's macOS installer is signed and notarized, and its Windows installer is code-signed.
+Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Prism's macOS installer is signed and notarized, and its Windows installer is code-signed. Windows SmartScreen may still show a warning while Prism's new signing certificate establishes its reputation; download only from the official releases page and verify the publisher before opening it.
 
 ## First connection
 
