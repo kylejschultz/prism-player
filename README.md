@@ -13,7 +13,7 @@
 
 Prism connects to Navidrome and other Subsonic-compatible servers, so you can play your library, manage the queue, and keep your playlists in one proper desktop app. If you use Subwave too, radio lives right there with the rest of your music.
 
-It is still early, but there are builds for macOS and Windows.
+Prism Player 1.0 is available for macOS and Windows.
 
 ![Prism Player home screen](docs/images/home.png)
 
@@ -23,16 +23,13 @@ It is still early, but there are builds for macOS and Windows.
 
 Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest).
 
-Prism is pre-1.0 software. The main library and playback experience are in place, but app signing and auto-updates are not yet.
+Prism's macOS installer is signed and notarized, and its Windows installer is code-signed. Automatic updates are not available yet.
 
-### Important: unsigned builds
+### Signed installers
 
-The current macOS and Windows builds are *not yet code-signed*, so your operating system may warn you before opening them. That is expected for now.
+Download Prism only from the releases page above. The official installer should open without macOS Gatekeeper or Windows SmartScreen bypass steps.
 
-- On macOS, if Prism is blocked, open it once, then go to *System Settings → Privacy & Security* and choose *Open Anyway* for Prism.
-- On Windows, if Microsoft Defender SmartScreen shows “Windows protected your PC,” select *More info*, then *Run anyway*.
-
-Only bypass these warnings if you downloaded Prism from the releases page above.
+If you see a security warning for an official release, make sure you downloaded the current installer and report it on [GitHub](https://github.com/kylejschultz/prism-player/issues).
 
 ## First connection
 
@@ -67,7 +64,7 @@ Prism can show a native notification when playback or radio needs attention, and
 
 ## Status
 
-Prism is pre-1.0 software. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
+Prism Player 1.0 is actively evolving. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
 
 ## Contributing
 
