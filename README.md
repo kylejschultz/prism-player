@@ -21,15 +21,7 @@ Prism Player 1.0 is available for macOS and Windows.
 
 ## Get Prism
 
-Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest).
-
-Prism's macOS installer is signed and notarized, and its Windows installer is code-signed. Automatic updates are not available yet.
-
-### Signed installers
-
-Download Prism only from the releases page above. The official installer should open without macOS Gatekeeper or Windows SmartScreen bypass steps.
-
-If you see a security warning for an official release, make sure you downloaded the current installer and report it on [GitHub](https://github.com/kylejschultz/prism-player/issues).
+Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Prism's macOS installer is signed and notarized, and its Windows installer is code-signed.
 
 ## First connection
 
@@ -55,16 +47,6 @@ Prism can tune into a Subwave station right alongside your library.
 Prism checks that the address is a Subwave station before connecting. You can save more than one station and switch between them later.
 
 Once you're tuned in, Prism shows what is playing and keeps the station controls close by. Use the request button when you want to send something to the station.
-
-## Desktop controls
-
-The installed desktop app restores its last usable window size, position, and maximized state when it opens again. It also listens for your system media play/pause, next, and previous keys while Prism is in the background. Next and previous apply only to library playback; live Subwave radio correctly ignores them.
-
-Prism can show a native notification when playback or radio needs attention, and for track changes while the app is not in the foreground. Notification permission is requested by the operating system the first time it is needed and can be changed later in system settings. Browser previews keep working without native window restoration, global media keys, or native notifications.
-
-## Status
-
-Prism Player 1.0 is actively evolving. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
 
 ## Contributing
 
