@@ -13,7 +13,7 @@
 
 Prism connects to Navidrome and other Subsonic-compatible servers, so you can play your library, manage the queue, and keep your playlists in one proper desktop app. If you use Subwave too, radio lives right there with the rest of your music.
 
-It is still early, but there are builds for macOS and Windows.
+Prism Player 1.0 is available for macOS and Windows.
 
 ![Prism Player home screen](docs/images/home.png)
 
@@ -21,18 +21,7 @@ It is still early, but there are builds for macOS and Windows.
 
 ## Get Prism
 
-Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest).
-
-Prism is pre-1.0 software. The main library and playback experience are in place, but app signing and auto-updates are not yet.
-
-### Important: unsigned builds
-
-The current macOS and Windows builds are *not yet code-signed*, so your operating system may warn you before opening them. That is expected for now.
-
-- On macOS, if Prism is blocked, open it once, then go to *System Settings → Privacy & Security* and choose *Open Anyway* for Prism.
-- On Windows, if Microsoft Defender SmartScreen shows “Windows protected your PC,” select *More info*, then *Run anyway*.
-
-Only bypass these warnings if you downloaded Prism from the releases page above.
+Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Prism's macOS installer is signed and notarized, and its Windows installer is code-signed. Windows SmartScreen may still show a warning while Prism's new signing certificate establishes its reputation; download only from the official releases page and verify the publisher before opening it.
 
 ## First connection
 
@@ -58,16 +47,6 @@ Prism can tune into a Subwave station right alongside your library.
 Prism checks that the address is a Subwave station before connecting. You can save more than one station and switch between them later.
 
 Once you're tuned in, Prism shows what is playing and keeps the station controls close by. Use the request button when you want to send something to the station.
-
-## Desktop controls
-
-The installed desktop app restores its last usable window size, position, and maximized state when it opens again. It also listens for your system media play/pause, next, and previous keys while Prism is in the background. Next and previous apply only to library playback; live Subwave radio correctly ignores them.
-
-Prism can show a native notification when playback or radio needs attention, and for track changes while the app is not in the foreground. Notification permission is requested by the operating system the first time it is needed and can be changed later in system settings. Browser previews keep working without native window restoration, global media keys, or native notifications.
-
-## Status
-
-Prism is pre-1.0 software. If something is broken or you have an idea, open a [GitHub issue](https://github.com/kylejschultz/prism-player/issues).
 
 ## Contributing
 
