@@ -45,6 +45,7 @@ Use Conventional Commits for commit messages and pull request titles:
    - `package.json` version bump
    - `package-lock.json` version bump
    - `src-tauri/tauri.conf.json` version bump
+   - A curated entry for the new version in `src/whatsNew.ts`, with the user-facing highlights shown after update
 8. Merge the release PR when the changelog and version look right.
 9. release-please creates the Git tag and GitHub release.
 10. The `Build` workflow runs on the published release, builds the macOS DMG and Windows NSIS installer, stores them as workflow artifacts, and uploads them to the GitHub release. The DMG is named `Prism-player-vX.Y.Z.dmg`.
@@ -65,6 +66,7 @@ Before merging a release PR, check:
 
 - Changelog entries are understandable to users.
 - Version bump matches the impact of the changes.
+- `src/whatsNew.ts` has concise, reviewed copy for the new app version.
 - The app builds locally or CI is green.
 - Any new privacy, signing, platform, or server-API behavior is documented.
 
