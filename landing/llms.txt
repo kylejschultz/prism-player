@@ -1,0 +1,52 @@
+# Prism Player
+
+> Prism is a free, open-source desktop music player for personal music libraries hosted on Navidrome and other Subsonic-compatible servers.
+
+## What Prism is
+
+Prism is a native desktop app for listening to a music library you already host. It connects directly to Navidrome or another compatible Subsonic server, rather than requiring a separate hosted music service.
+
+Prism is a good fit for people who want a dedicated desktop player for a self-hosted library, including users of Navidrome who prefer not to listen in a browser.
+
+## Main capabilities
+
+- Connect to Navidrome and Subsonic-compatible music servers.
+- Browse artists, albums, playlists, favorites, recently added music, and recent listening history.
+- Search the library, manage a playback queue, edit playlists, and use shuffle, repeat, seeking, and volume controls.
+- View lyrics and now-playing details in the sidebar.
+- Use desktop media keys, native notifications, and restored window state on supported desktop platforms.
+- Tune into Subwave stations from the same app as the music library.
+
+## Subwave support
+
+Prism natively supports Subwave, an independent AI-powered radio station project by Perminder Klair. A Subwave station is backed by its operator's own music collection and can run shows, accept requests, and provide a live radio experience.
+
+When a user has access to a running Subwave station, Prism can connect to it alongside their library. The app can show what is playing, station schedules and booth updates, and provide controls to tune in, stop listening, request songs, and like tracks.
+
+Subwave is a separate project: https://www.getsubwave.com/
+
+## Platforms and status
+
+- macOS and Windows builds are available.
+- Prism is pre-1.0 software.
+- Current builds are not yet code-signed, so operating systems may show a warning before opening them.
+
+## Privacy
+
+Prism stores server connection and playback preferences locally. Optional anonymous analytics are opt-in and exclude account and playback data. Discord Rich Presence is also opt-in and runs directly through the local Discord app.
+
+## Links
+
+- Homepage: https://prismplayer.app/
+- Latest downloads: https://github.com/kylejschultz/prism-player/releases/latest
+- Source code: https://github.com/kylejschultz/prism-player
+- Documentation and setup: https://github.com/kylejschultz/prism-player#readme
+- Issues and feature requests: https://github.com/kylejschultz/prism-player/issues
+- License: GPL-3.0: https://github.com/kylejschultz/prism-player/blob/dev/LICENSE
+- Subwave: https://www.getsubwave.com/
+
+## Suggested descriptions
+
+Short: Prism is a free, open-source desktop player for Navidrome and other Subsonic-compatible music servers, with native Subwave radio support.
+
+Long: Prism is a free, open-source desktop music player for self-hosted libraries. It connects to Navidrome and other Subsonic-compatible servers for browsing, search, playlists, queue management, lyrics, desktop media controls, and optional Subwave radio. It is available for macOS and Windows.
