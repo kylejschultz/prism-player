@@ -497,8 +497,6 @@ const RADIO_RECONNECT_MAX_MS = 30_000;
 const RADIO_REQUEST_POLL_INTERVAL_MS = 1500;
 const RADIO_REQUEST_POLL_DEADLINE_MS = 60_000;
 const API_VERSION = "1.16.1";
-const RADIO_WAVEFORM_BAR_COUNT = 96;
-const idleRadioWaveformBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (_, index) => 18 + ((index * 17) % 56));
 
 const emptyConfig: NavidromeConfig = {
   serverUrl: "",
@@ -2033,7 +2031,6 @@ export function App() {
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
   const [isMuted, setIsMuted] = useState(false);
   const [radioClockNow, setRadioClockNow] = useState(() => Date.now());
-  const [radioWaveformBars, setRadioWaveformBars] = useState<number[]>(idleRadioWaveformBars);
   const [radioPopover, setRadioPopover] = useState<"schedule" | "request" | "booth" | null>(null);
   const [radioLikeStatus, setRadioLikeStatus] = useState<RadioLikeStatus | null>(null);
   const [radioLikeBusy, setRadioLikeBusy] = useState(false);
@@ -2074,9 +2071,6 @@ export function App() {
   const radioRetryCountRef = useRef(0);
   const radioGenerationRef = useRef(0);
   const radioWatchdogArmedAtRef = useRef(0);
-  const radioAudioContextRef = useRef<AudioContext | null>(null);
-  const radioAnalyserRef = useRef<AnalyserNode | null>(null);
-  const radioAnalyserSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const scrobbledPlayRef = useRef("");
   const locallyRecordedPlayRef = useRef("");
   const pendingResumePositionRef = useRef(initialPlaybackSnapshot?.position ?? 0);
@@ -4240,70 +4234,6 @@ export function App() {
   }, [isRadioPlaying]);
 
   useEffect(() => {
-    if (!isRadioPlaying || appSettings.lowPerformanceMode) {
-      setRadioWaveformBars(idleRadioWaveformBars);
-      return;
-    }
-
-    const audio = radioAudioRef.current;
-    const AudioContextConstructor = window.AudioContext;
-    if (!audio || !AudioContextConstructor) {
-      setRadioWaveformBars(idleRadioWaveformBars);
-      return;
-    }
-
-    let frameId = 0;
-    let cancelled = false;
-
-    try {
-      const audioContext = radioAudioContextRef.current ?? new AudioContextConstructor();
-      radioAudioContextRef.current = audioContext;
-
-      if (!radioAnalyserSourceRef.current) {
-        radioAnalyserSourceRef.current = audioContext.createMediaElementSource(audio);
-      }
-
-      if (!radioAnalyserRef.current) {
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.82;
-        radioAnalyserSourceRef.current.connect(analyser);
-        analyser.connect(audioContext.destination);
-        radioAnalyserRef.current = analyser;
-      }
-
-      void audioContext.resume();
-
-      const analyser = radioAnalyserRef.current;
-      const frequencyData = new Uint8Array(analyser.frequencyBinCount);
-
-      function drawWaveform() {
-        if (cancelled) return;
-        analyser.getByteFrequencyData(frequencyData);
-        const bucketSize = Math.max(1, Math.floor(frequencyData.length / RADIO_WAVEFORM_BAR_COUNT));
-        const nextBars = Array.from({ length: RADIO_WAVEFORM_BAR_COUNT }, (_, barIndex) => {
-          const start = barIndex * bucketSize;
-          const bucket = frequencyData.slice(start, start + bucketSize);
-          const peak = bucket.reduce((max, value) => Math.max(max, value), 0);
-          return Math.round(clampNumber((peak / 255) * 100, 8, 100));
-        });
-
-        setRadioWaveformBars(nextBars);
-        frameId = window.requestAnimationFrame(drawWaveform);
-      }
-
-      drawWaveform();
-    } catch {
-      setRadioWaveformBars(idleRadioWaveformBars);
-    }
-
-    return () => {
-      cancelled = true;
-      if (frameId) window.cancelAnimationFrame(frameId);
-    };
-  }, [appSettings.lowPerformanceMode, isRadioPlaying]);
-
-  useEffect(() => {
     if (!currentTrack) return;
     setLastPlayedTrack(currentTrack);
     localStorage.setItem(LAST_PLAYED_TRACK_KEY, JSON.stringify(currentTrack));
@@ -4994,7 +4924,6 @@ export function App() {
               radioSchedule={radioSchedule}
               radioStatus={radioStatus}
               radioMessage={radioMessage}
-              radioWaveformBars={radioWaveformBars}
               tuneInRadio={tuneInRadio}
               onStartRadio={() => {
                 selectView("radio");
@@ -5092,7 +5021,6 @@ export function App() {
         />
         <audio
           ref={radioAudioRef}
-          crossOrigin="anonymous"
           preload="none"
           onPlay={() => {
             setIsRadioTuning(false);
@@ -6924,7 +6852,6 @@ function RadioView({
   schedule,
   status,
   message,
-  waveformBars,
   tuneIn,
   onAddFirstStation,
 }: {
@@ -6936,7 +6863,6 @@ function RadioView({
   schedule: RadioSchedulePayload | null;
   status: RadioStatus;
   message: string;
-  waveformBars: number[];
   tuneIn: () => Promise<void>;
   onAddFirstStation: (stationUrl: string) => Promise<void>;
 }) {
@@ -7080,14 +7006,6 @@ function RadioView({
           </div>
         </div>
 
-        {visualEffectsEnabled ? (
-          <div className={`radio-waveform ${isPlaying ? "playing" : ""}`} aria-hidden="true">
-            {waveformBars.map((bar, index) => (
-              <span key={index} style={{ "--bar": `${bar}%` } as CSSProperties} />
-            ))}
-          </div>
-        ) : null}
-
         <div className="radio-broadcast-details" aria-label="Station details">
           <div>
             <span>In the Booth</span>
@@ -7124,7 +7042,6 @@ function LibraryView({
   radioSchedule,
   radioStatus,
   radioMessage,
-  radioWaveformBars,
   tuneInRadio,
   onStartRadio,
   onAddFirstRadioStation,
@@ -7195,7 +7112,6 @@ function LibraryView({
   radioSchedule: RadioSchedulePayload | null;
   radioStatus: RadioStatus;
   radioMessage: string;
-  radioWaveformBars: number[];
   tuneInRadio: () => Promise<void>;
   onStartRadio: () => void;
   onAddFirstRadioStation: (stationUrl: string) => Promise<void>;
@@ -7277,7 +7193,6 @@ function LibraryView({
         schedule={radioSchedule}
         status={radioStatus}
         message={radioMessage}
-        waveformBars={radioWaveformBars}
         tuneIn={tuneInRadio}
         onAddFirstStation={onAddFirstRadioStation}
       />
