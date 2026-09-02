@@ -2,7 +2,7 @@ use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, PhysicalPosition};
 
 const DISCORD_CLIENT_ID: &str = "1537904664740364418";
 const KEYRING_SERVICE: &str = "com.kylejschultz.prism-player";
@@ -161,6 +161,64 @@ fn clear_discord_presence_in_background(app: &tauri::AppHandle) {
     }
 }
 
+/// Window-state considers any corner on any display as visible. That leaves a
+/// restored window effectively stranded at a display edge after a monitor
+/// layout changes. Keep a saved placement only when at least half of the
+/// window is actually visible; otherwise center it on the most-visible display.
+fn ensure_main_window_is_visible(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let (Ok(position), Ok(size), Ok(monitors)) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.available_monitors(),
+    ) else {
+        return;
+    };
+
+    let window_area = i64::from(size.width) * i64::from(size.height);
+    if window_area == 0 {
+        return;
+    }
+
+    let mut best_monitor = None;
+    let mut best_visible_area = 0_i64;
+    for monitor in monitors {
+        let monitor_position = monitor.position();
+        let monitor_size = monitor.size();
+        let overlap_width = (position.x + size.width as i32)
+            .min(monitor_position.x + monitor_size.width as i32)
+            .saturating_sub(position.x.max(monitor_position.x));
+        let overlap_height = (position.y + size.height as i32)
+            .min(monitor_position.y + monitor_size.height as i32)
+            .saturating_sub(position.y.max(monitor_position.y));
+        let visible_area = i64::from(overlap_width) * i64::from(overlap_height);
+
+        if visible_area > best_visible_area {
+            best_visible_area = visible_area;
+            best_monitor = Some(monitor);
+        }
+    }
+
+    if best_visible_area * 2 >= window_area {
+        return;
+    }
+
+    let monitor = best_monitor
+        .or_else(|| window.primary_monitor().ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return;
+    };
+
+    let monitor_position = monitor.position();
+    let monitor_size = monitor.size();
+    let x = monitor_position.x + (monitor_size.width.saturating_sub(size.width) / 2) as i32;
+    let y = monitor_position.y + (monitor_size.height.saturating_sub(size.height) / 2) as i32;
+    let _ = window.set_position(PhysicalPosition::new(x, y));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -176,7 +234,10 @@ pub fn run() {
                     .expect("main Prism webview should exist during setup");
                 main_webview.with_webview(|webview| unsafe {
                     let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
-                    view.setAllowsBackForwardNavigationGestures(true);
+                    // WebKit's native history gesture slides the entire app
+                    // surface, which feels like moving the window rather than
+                    // navigating Prism. Keep navigation in Prism's controls.
+                    view.setAllowsBackForwardNavigationGestures(false);
                 })?;
             }
 
@@ -191,6 +252,11 @@ pub fn run() {
             clear_navidrome_password,
             get_native_architecture
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Prism Player");
+        .build(tauri::generate_context!())
+        .expect("error while building Prism Player")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Ready) {
+                ensure_main_window_is_visible(app);
+            }
+        });
 }
