@@ -7921,6 +7921,9 @@ function SearchResultsView({
   return (
     <div className="search-results">
       <section className="search-summary">
+        <div>
+          <h4>{trimmedQuery}</h4>
+        </div>
         <div className="search-counts" aria-label="Filter results by type">
           {filters.map(([filter, label, count]) => (
             <button
