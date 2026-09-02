@@ -7245,7 +7245,7 @@ function LibraryView({
         />
       ) : (
         <>
-          {activeView !== "overview" && activeView !== "nowPlaying" ? (
+          {activeView !== "overview" && activeView !== "nowPlaying" && activeView !== "search" ? (
             <div className="panel-heading browser-heading">
               <h3>{panelTitle}</h3>
               <div className="heading-actions">
@@ -7921,9 +7921,6 @@ function SearchResultsView({
   return (
     <div className="search-results">
       <section className="search-summary">
-        <div>
-          <h4>{trimmedQuery}</h4>
-        </div>
         <div className="search-counts" aria-label="Filter results by type">
           {filters.map(([filter, label, count]) => (
             <button

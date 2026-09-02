@@ -3765,26 +3765,19 @@ button.similar-chip:hover,
 }
 
 .search-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  min-height: 58px;
-  padding: 12px 14px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.055);
-}
-
-.search-summary h4 {
-  color: #f4f1ec;
-  font-size: 18px;
-  font-weight: 500;
+  position: sticky;
+  top: -14px;
+  z-index: 2;
+  margin: -14px -14px 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(13, 15, 14, 0.94);
+  backdrop-filter: blur(18px);
 }
 
 .search-counts {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 6px;
 }
 
