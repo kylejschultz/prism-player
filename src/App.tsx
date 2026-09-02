@@ -2088,6 +2088,7 @@ export function App() {
   const catalogSongsCompleteRef = useRef(false);
   const catalogSongSyncInFlightRef = useRef(false);
   const catalogHydratedKeyRef = useRef("");
+  const trackpadNavigationRef = useRef({ accumulatedDeltaX: 0, lastEventAt: 0, consumed: false });
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
   const navigationStateRef = useRef({
@@ -3302,6 +3303,40 @@ export function App() {
     if (!forwardStack.length) return;
     window.history.forward();
   }
+
+  useEffect(() => {
+    const handleTrackpadNavigation = (event: WheelEvent) => {
+      // With WebKit's own history gesture disabled, horizontal trackpad
+      // movement reaches the page as wheel events. Consume a deliberate swipe
+      // here so Prism can use its own history without WebKit sliding the whole
+      // window surface.
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+
+      const gesture = trackpadNavigationRef.current;
+      const now = performance.now();
+      if (now - gesture.lastEventAt > 180) {
+        gesture.accumulatedDeltaX = 0;
+        gesture.consumed = false;
+      }
+      gesture.lastEventAt = now;
+      gesture.accumulatedDeltaX += event.deltaX;
+
+      if (gesture.consumed || Math.abs(gesture.accumulatedDeltaX) < 80) return;
+
+      if (gesture.accumulatedDeltaX > 0 && backStack.length) {
+        gesture.consumed = true;
+        event.preventDefault();
+        window.history.back();
+      } else if (gesture.accumulatedDeltaX < 0 && forwardStack.length) {
+        gesture.consumed = true;
+        event.preventDefault();
+        window.history.forward();
+      }
+    };
+
+    window.addEventListener("wheel", handleTrackpadNavigation, { passive: false });
+    return () => window.removeEventListener("wheel", handleTrackpadNavigation);
+  }, [backStack.length, forwardStack.length]);
 
   function resetPlaybackPosition() {
     pendingResumePositionRef.current = 0;
