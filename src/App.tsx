@@ -7886,7 +7886,6 @@ function SearchResultsView({
   const trimmedQuery = query.trim();
   const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
   const [resultFilter, setResultFilter] = useState<"all" | "songs" | "albums" | "artists" | "playlists">("all");
-  const [expandedSections, setExpandedSections] = useState<Set<"songs" | "albums" | "artists" | "playlists">>(() => new Set());
   const filters = [
     ["all", "All", totalResults],
     ["songs", "Songs", results.songs.length],
@@ -7895,10 +7894,12 @@ function SearchResultsView({
     ["playlists", "Playlists", results.playlists.length],
   ] as const;
   const shows = (type: Exclude<typeof resultFilter, "all">) => resultFilter === "all" || resultFilter === type;
-  const visible = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => expandedSections.has(type) ? items : items.slice(0, previewLimit);
-  const canShowMore = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => !expandedSections.has(type) && items.length > previewLimit;
+  const visible = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => resultFilter === type ? items : items.slice(0, previewLimit);
+  const canShowMore = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => resultFilter !== type && items.length > previewLimit;
   const showMore = (type: "songs" | "albums" | "artists" | "playlists") => {
-    setExpandedSections((sections) => new Set(sections).add(type));
+    // A full section is its own focused result view. Keeping its source array
+    // intact preserves Navidrome's relevance order from preview to full list.
+    setResultFilter(type);
   };
 
   if (trimmedQuery.length < 2) {
@@ -8001,6 +8002,7 @@ function SearchResultsView({
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
             onSongContextMenu={onSongContextMenu}
+            preserveResultOrder
           />
           {canShowMore("songs", results.songs) ? <button className="search-see-more" type="button" onClick={() => showMore("songs")}>See more songs ({results.songs.length - previewLimit})</button> : null}
         </section>
@@ -8054,6 +8056,7 @@ function SearchSongList({
   onPlaySong,
   onQueueSong,
   onSongContextMenu,
+  preserveResultOrder = false,
 }: {
   songs: Song[];
   currentTrack: Song | null;
@@ -8065,12 +8068,13 @@ function SearchSongList({
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
+  preserveResultOrder?: boolean;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
-  const [sortKey, setSortKey] = useState<SongSortKey>("title");
+  const [sortKey, setSortKey] = useState<SongSortKey | null>(preserveResultOrder ? null : "title");
   const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
-  const sortedSongs = useMemo(() => sortSongs(songs, sortKey, sortDirection), [songs, sortKey, sortDirection]);
+  const sortedSongs = useMemo(() => sortKey ? sortSongs(songs, sortKey, sortDirection) : songs, [songs, sortKey, sortDirection]);
   const songIndexes = useMemo(() => new Map(songs.map((song, index) => [song.id, index])), [songs]);
   const virtualizer = useVirtualizer({
     count: sortedSongs.length,
@@ -8087,7 +8091,7 @@ function SearchSongList({
 
   return (
     <div className="track-list song-browser-list" ref={setSongListRef} tabIndex={0} onKeyDown={handleKeyDown} role="list" aria-label="Songs">
-      <SongListHeader showTrackNumber={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+      <SongListHeader showTrackNumber={false} sortKey={sortKey ?? undefined} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />

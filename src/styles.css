@@ -106,6 +106,8 @@ textarea {
   grid-template-rows: minmax(0, 1fr) 94px;
   width: 100vw;
   height: 100vh;
+  /* Keep native trackpad back/forward swipes inside Prism's own navigation. */
+  overscroll-behavior: none;
   background:
     radial-gradient(circle at 15% 20%, rgba(var(--prism-glow-left-rgb), 0.28), transparent 34%),
     radial-gradient(circle at 74% 22%, rgba(var(--prism-glow-right-rgb), 0.22), transparent 38%),
