@@ -3742,7 +3742,9 @@ export function App() {
     const audio = getActiveAudio();
 
     if (isPlaying) {
-      stopTrackTransition(true);
+      // Cancelling a crossfade should clear the standby player, but pausing
+      // must leave the active element at its current position for resume.
+      stopTrackTransition();
       setIsPlaying(false);
       return;
     }
@@ -4515,7 +4517,7 @@ export function App() {
         setRadioMessage("Radio paused.");
         return;
       }
-      stopTrackTransition(true);
+      stopTrackTransition();
       setIsPlaying(false);
     });
     navigator.mediaSession.setActionHandler("previoustrack", controlsRadio ? null : playPrevious);
@@ -7245,7 +7247,7 @@ function LibraryView({
         />
       ) : (
         <>
-          {activeView !== "overview" && activeView !== "nowPlaying" ? (
+          {activeView !== "overview" && activeView !== "nowPlaying" && activeView !== "search" ? (
             <div className="panel-heading browser-heading">
               <h3>{panelTitle}</h3>
               <div className="heading-actions">
@@ -7882,8 +7884,25 @@ function SearchResultsView({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const previewLimit = 8;
   const trimmedQuery = query.trim();
   const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
+  const [resultFilter, setResultFilter] = useState<"all" | "songs" | "albums" | "artists" | "playlists">("all");
+  const filters = [
+    ["all", "All", totalResults],
+    ["songs", "Songs", results.songs.length],
+    ["albums", "Albums", results.albums.length],
+    ["artists", "Artists", results.artists.length],
+    ["playlists", "Playlists", results.playlists.length],
+  ] as const;
+  const shows = (type: Exclude<typeof resultFilter, "all">) => resultFilter === "all" || resultFilter === type;
+  const visible = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => resultFilter === type ? items : items.slice(0, previewLimit);
+  const canShowMore = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => resultFilter !== type && items.length > previewLimit;
+  const showMore = (type: "songs" | "albums" | "artists" | "playlists") => {
+    // A full section is its own focused result view. Keeping its source array
+    // intact preserves Navidrome's relevance order from preview to full list.
+    setResultFilter(type);
+  };
 
   if (trimmedQuery.length < 2) {
     return <EmptyPanel icon={<Search size={20} />} text="Start typing in the top search." />;
@@ -7905,24 +7924,30 @@ function SearchResultsView({
     <div className="search-results">
       <section className="search-summary">
         <div>
-          <p className="eyebrow">Search results</p>
           <h4>{trimmedQuery}</h4>
         </div>
-        <div className="search-counts" aria-label="Result counts">
-          <span>{results.songs.length} songs</span>
-          <span>{results.albums.length} albums</span>
-          <span>{results.artists.length} artists</span>
-          <span>{results.playlists.length} playlists</span>
+        <div className="search-counts" aria-label="Filter results by type">
+          {filters.map(([filter, label, count]) => (
+            <button
+              className={resultFilter === filter ? "active" : ""}
+              type="button"
+              key={filter}
+              onClick={() => setResultFilter(filter)}
+              aria-pressed={resultFilter === filter}
+            >
+              {label} {count}
+            </button>
+          ))}
         </div>
       </section>
-      {results.artists.length ? (
+      {shows("artists") && results.artists.length ? (
         <section className="search-section">
           <div className="section-label">
             <h4>Artists</h4>
             <small>{results.artists.length}</small>
           </div>
           <ArtistList
-            artists={results.artists}
+            artists={visible("artists", results.artists)}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
@@ -7930,9 +7955,10 @@ function SearchResultsView({
             onPlayArtist={onPlayArtist}
             withAlphabetRail={false}
           />
+          {canShowMore("artists", results.artists) ? <button className="search-see-more" type="button" onClick={() => showMore("artists")}>See more artists ({results.artists.length - previewLimit})</button> : null}
         </section>
       ) : null}
-      {results.albums.length ? (
+      {shows("albums") && results.albums.length ? (
         <section className="search-section">
           <div className="section-label">
             <h4>Albums</h4>
@@ -7940,7 +7966,7 @@ function SearchResultsView({
           </div>
           <AlbumList
             config={config}
-            albums={results.albums}
+            albums={visible("albums", results.albums)}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
@@ -7948,25 +7974,27 @@ function SearchResultsView({
             onPlayAlbum={onPlayAlbum}
             withAlphabetRail={false}
           />
+          {canShowMore("albums", results.albums) ? <button className="search-see-more" type="button" onClick={() => showMore("albums")}>See more albums ({results.albums.length - previewLimit})</button> : null}
         </section>
       ) : null}
-      {results.playlists.length ? (
+      {shows("playlists") && results.playlists.length ? (
         <section className="search-section">
           <div className="section-label">
             <h4>Playlists</h4>
             <small>{results.playlists.length}</small>
           </div>
-          <SearchPlaylistList playlists={results.playlists} onOpenPlaylist={onOpenPlaylist} />
+          <SearchPlaylistList playlists={visible("playlists", results.playlists)} onOpenPlaylist={onOpenPlaylist} />
+          {canShowMore("playlists", results.playlists) ? <button className="search-see-more" type="button" onClick={() => showMore("playlists")}>See more playlists ({results.playlists.length - previewLimit})</button> : null}
         </section>
       ) : null}
-      {results.songs.length ? (
+      {shows("songs") && results.songs.length ? (
         <section className="search-section">
           <div className="section-label">
             <h4>Songs</h4>
             <small>{results.songs.length}</small>
           </div>
           <SearchSongList
-            songs={results.songs}
+            songs={visible("songs", results.songs)}
             currentTrack={currentTrack}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
@@ -7976,7 +8004,9 @@ function SearchResultsView({
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
             onSongContextMenu={onSongContextMenu}
+            preserveResultOrder
           />
+          {canShowMore("songs", results.songs) ? <button className="search-see-more" type="button" onClick={() => showMore("songs")}>See more songs ({results.songs.length - previewLimit})</button> : null}
         </section>
       ) : null}
     </div>
@@ -8028,6 +8058,7 @@ function SearchSongList({
   onPlaySong,
   onQueueSong,
   onSongContextMenu,
+  preserveResultOrder = false,
 }: {
   songs: Song[];
   currentTrack: Song | null;
@@ -8039,12 +8070,13 @@ function SearchSongList({
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
+  preserveResultOrder?: boolean;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
-  const [sortKey, setSortKey] = useState<SongSortKey>("title");
+  const [sortKey, setSortKey] = useState<SongSortKey | null>(preserveResultOrder ? null : "title");
   const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
-  const sortedSongs = useMemo(() => sortSongs(songs, sortKey, sortDirection), [songs, sortKey, sortDirection]);
+  const sortedSongs = useMemo(() => sortKey ? sortSongs(songs, sortKey, sortDirection) : songs, [songs, sortKey, sortDirection]);
   const songIndexes = useMemo(() => new Map(songs.map((song, index) => [song.id, index])), [songs]);
   const virtualizer = useVirtualizer({
     count: sortedSongs.length,
@@ -8061,7 +8093,7 @@ function SearchSongList({
 
   return (
     <div className="track-list song-browser-list" ref={setSongListRef} tabIndex={0} onKeyDown={handleKeyDown} role="list" aria-label="Songs">
-      <SongListHeader showTrackNumber={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+      <SongListHeader showTrackNumber={false} sortKey={sortKey ?? undefined} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />
