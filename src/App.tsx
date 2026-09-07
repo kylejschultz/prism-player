@@ -487,6 +487,7 @@ const PRISM_RELEASES_URL = "https://github.com/kylejschultz/prism-player/release
 const PRISM_LATEST_RELEASE_API = "https://api.github.com/repos/kylejschultz/prism-player/releases/latest";
 const PRISM_REPOSITORY_URL = "https://github.com/kylejschultz/prism-player";
 const PRISM_DISCORD_URL = "https://discord.gg/hzeAqu7EwF";
+const PRISM_CREATOR_URL = "https://kschultz.dev";
 const APP_VERSION = packageJson.version;
 const APP_COMMIT_SHA = __APP_COMMIT_SHA__;
 const BEACON_ENDPOINT = "https://beacon.kjschultz.com/ping";
@@ -6592,6 +6593,7 @@ function SettingsView({
           <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
           <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
           <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
+          <a href={PRISM_CREATOR_URL} target="_blank" rel="noreferrer">Made by Kyle Schultz <ExternalLink size={13} /></a>
         </div>
         {canOpenWhatsNew ? <section className="about-changelog" aria-label="Changelog">
           <p className="eyebrow">Changelog</p>
