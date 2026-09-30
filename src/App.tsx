@@ -38,8 +38,6 @@ import {
   Pause,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
   Play,
   Plus,
   RadioTower,
@@ -56,6 +54,7 @@ import {
   Trash2,
   Menu,
   MessageCircle,
+  MoreHorizontal,
   UserRound,
   Volume2,
   VolumeX,
@@ -66,13 +65,13 @@ import packageJson from "../package.json";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
-type SettingsTab = "connection" | "library" | "playback" | "appearance" | "radio" | "privacy" | "about" | "advanced";
 type ColorTheme = "prism" | "ocean" | "orchid" | "evergreen";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
 type LibraryStatus = "idle" | "loading" | "ready" | "error";
 type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "error";
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
+type HomeShelfViewMode = "art" | "list";
 type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
@@ -190,6 +189,7 @@ type AppSettings = {
   lastVolume: number;
   defaultAlbumView: AlbumViewMode;
   defaultArtistView: ArtistViewMode;
+  homeShelfView: HomeShelfViewMode;
   analyticsEnabled: boolean;
   analyticsPromptDismissed: boolean;
   discordPresenceEnabled: boolean;
@@ -220,12 +220,15 @@ export type Album = {
   coverArt?: string;
   songCount?: number;
   year?: number;
+  created?: string;
+  changed?: string;
 };
 
 export type Artist = {
   id: string;
   name: string;
   albumCount?: number;
+  musicBrainzId?: string;
 };
 
 export type ArtistInfo = {
@@ -242,6 +245,7 @@ export type LibraryData = {
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
+  frequentAlbums: Album[];
   artists: Artist[];
   playlists: Playlist[];
   favorites: {
@@ -269,6 +273,8 @@ export type Song = {
   duration?: number;
   track?: number;
   discNumber?: number;
+  playCount?: number;
+  played?: string;
 };
 
 type ListeningSource =
@@ -294,6 +300,7 @@ export type Playlist = {
   public?: boolean;
   created?: string;
   changed?: string;
+  coverArt?: string;
 };
 
 export type AlbumDetail = Album & {
@@ -307,6 +314,7 @@ export type PlaylistDetail = Playlist & {
 export type ArtistDetail = Artist & {
   album?: Album[];
   info?: ArtistInfo | null;
+  topSong?: Song[];
 };
 
 type DetailSelection =
@@ -318,7 +326,6 @@ type DetailSelection =
 type BrowserSnapshot = {
   activeView: View;
   detailSelection: DetailSelection;
-  settingsTab?: SettingsTab;
 };
 
 type PrismHistoryState = {
@@ -515,6 +522,7 @@ const emptyLibraryData: LibraryData = {
   albums: [],
   recentAlbums: [],
   recentlyPlayedAlbums: [],
+  frequentAlbums: [],
   artists: [],
   playlists: [],
   favorites: {
@@ -528,6 +536,7 @@ const defaultSettings: AppSettings = {
   lastVolume: 0.82,
   defaultAlbumView: "art",
   defaultArtistView: "list",
+  homeShelfView: "list",
   analyticsEnabled: false,
   analyticsPromptDismissed: false,
   discordPresenceEnabled: false,
@@ -601,28 +610,13 @@ function getViewLabel(view: View) {
   return labels[view];
 }
 
-function getSettingsTabLabel(tab: SettingsTab) {
-  const labels: Record<SettingsTab, string> = {
-    connection: "Connection",
-    library: "Library",
-    playback: "Playback",
-    appearance: "Appearance",
-    radio: "Radio",
-    privacy: "Privacy",
-    about: "About",
-    advanced: "Advanced",
-  };
-
-  return labels[tab];
-}
-
-function sortAlbumsChronologically(albums: Album[]) {
+function sortAlbumsNewestFirst(albums: Album[]) {
   return [...albums].sort((a, b) => {
-    const yearA = a.year ?? Number.MAX_SAFE_INTEGER;
-    const yearB = b.year ?? Number.MAX_SAFE_INTEGER;
+    const yearDifference = (b.year ?? Number.MIN_SAFE_INTEGER) - (a.year ?? Number.MIN_SAFE_INTEGER);
+    if (yearDifference) return yearDifference;
 
-    if (yearA !== yearB) return yearA - yearB;
-    return a.name.localeCompare(b.name);
+    const changedDifference = (b.changed ?? b.created ?? "").localeCompare(a.changed ?? a.created ?? "");
+    return changedDifference || a.name.localeCompare(b.name);
   });
 }
 
@@ -634,6 +628,63 @@ function cleanBiography(value?: string) {
   if (!value) return "";
   const document = new DOMParser().parseFromString(value, "text/html");
   return document.body.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function getSafeExternalUrl(value?: string) {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getMusicBrainzArtistUrl(musicBrainzId?: string) {
+  const normalizedId = musicBrainzId?.trim();
+  return normalizedId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizedId)
+    ? `https://musicbrainz.org/artist/${normalizedId}`
+    : null;
+}
+
+function getArtistTopSongs(artist: ArtistDetail, librarySongs: Song[], listeningHistory: ListeningHistoryEntry[]) {
+  const albumIds = new Set((artist.album ?? []).map((album) => album.id));
+  const navidromeTopSongs = [...new Map((artist.topSong ?? []).map((song) => [song.id, song])).values()];
+  const navidromeTopSongIds = new Set(navidromeTopSongs.map((song) => song.id));
+  const libraryCandidates = librarySongs.filter((song) =>
+    song.artistId === artist.id ||
+    albumIds.has(song.albumId ?? "") ||
+    (!song.artistId && song.artist?.localeCompare(artist.name, undefined, { sensitivity: "accent" }) === 0),
+  );
+  const fallbackSongs = [...new Map(libraryCandidates
+    .filter((song) => !navidromeTopSongIds.has(song.id))
+    .map((song) => [song.id, song])).values()];
+  const localListens = new Map<string, number>();
+
+  listeningHistory.forEach((entry) => {
+    localListens.set(entry.song.id, (localListens.get(entry.song.id) ?? 0) + 1);
+  });
+
+  const hasPlayCounts = fallbackSongs.some((song) => Number.isFinite(song.playCount));
+  const hasLocalListens = fallbackSongs.some((song) => (localListens.get(song.id) ?? 0) > 0);
+
+  fallbackSongs.sort((left, right) => {
+    if (hasPlayCounts) {
+      const countDifference = (right.playCount ?? -1) - (left.playCount ?? -1);
+      if (countDifference) return countDifference;
+    } else if (hasLocalListens) {
+      const listenDifference = (localListens.get(right.id) ?? 0) - (localListens.get(left.id) ?? 0);
+      if (listenDifference) return listenDifference;
+    }
+
+    const playedDifference = (right.played ?? "").localeCompare(left.played ?? "");
+    return playedDifference || left.title.localeCompare(right.title) || (left.album ?? "").localeCompare(right.album ?? "") || left.id.localeCompare(right.id);
+  });
+
+  // Navidrome's getTopSongs response is already ranked. Keep that ordering
+  // authoritative, then fill any short response from real library play data.
+  return [...navidromeTopSongs, ...fallbackSongs].slice(0, 5);
 }
 
 function readStoredConfig(): StoredNavidromeConfig | null {
@@ -727,6 +778,7 @@ function loadStoredSettings(): AppSettings {
       lastVolume: clampNumber(Number(parsed.lastVolume ?? parsed.defaultVolume ?? defaultSettings.lastVolume), 0, 1),
       defaultAlbumView: parsed.defaultAlbumView === "list" ? "list" : "art",
       defaultArtistView: parsed.defaultArtistView === "art" ? "art" : "list",
+      homeShelfView: parsed.homeShelfView === "art" ? "art" : "list",
       analyticsEnabled: Boolean(parsed.analyticsEnabled),
       analyticsPromptDismissed: Boolean(parsed.analyticsPromptDismissed),
       discordPresenceEnabled: Boolean(parsed.discordPresenceEnabled),
@@ -1667,7 +1719,7 @@ function scanHasAdvanced(previous: string, next: string) {
 }
 
 async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
-  const [albums, recentAlbumResponse, recentlyPlayedResponse, artistResponse, playlistResponse, starredResponse] = await Promise.all([
+  const [albums, recentAlbumResponse, recentlyPlayedResponse, frequentAlbumResponse, artistResponse, playlistResponse, starredResponse] = await Promise.all([
     fetchAlbumLibrary(config),
     navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
       type: "newest",
@@ -1675,6 +1727,10 @@ async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
     }),
     navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
       type: "recent",
+      size: "60",
+    }),
+    navidromeRequest<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", {
+      type: "frequent",
       size: "60",
     }),
     navidromeRequest<{ artists?: { index?: Array<{ artist?: Artist[] }> } }>(config, "getArtists"),
@@ -1692,6 +1748,7 @@ async function fetchLibrary(config: NavidromeConfig): Promise<LibraryData> {
     albums,
     recentAlbums: recentAlbumResponse.albumList2?.album ?? [],
     recentlyPlayedAlbums: recentlyPlayedResponse.albumList2?.album ?? [],
+    frequentAlbums: frequentAlbumResponse.albumList2?.album ?? [],
     artists: artistResponse.artists?.index?.flatMap((index) => index.artist ?? []) ?? [],
     playlists: playlistResponse?.playlists?.playlist ?? [],
     favorites: {
@@ -1751,9 +1808,15 @@ async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Pro
     navidromeRequest<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id: artistId }).catch(() => null),
   ]);
 
+  const topSongsResponse = await navidromeRequest<{ topSongs?: { song?: Song[] } }>(config, "getTopSongs", {
+    artist: artistResponse.artist.name,
+    count: "20",
+  }).catch(() => null);
+
   return {
     ...artistResponse.artist,
     info: infoResponse?.artistInfo2 ?? null,
+    topSong: topSongsResponse?.topSongs?.song ?? [],
   };
 }
 
@@ -1867,6 +1930,11 @@ async function fetchSearchResults(config: NavidromeConfig, query: string): Promi
 function formatDuration(seconds?: number) {
   if (!seconds || !Number.isFinite(seconds)) return "-:--";
   const wholeSeconds = Math.max(0, Math.floor(seconds));
+  if (wholeSeconds >= 60 * 60) {
+    const hours = Math.floor(wholeSeconds / (60 * 60));
+    const minutes = Math.floor((wholeSeconds % (60 * 60)) / 60);
+    return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
   const minutes = Math.floor(wholeSeconds / 60);
   const remainingSeconds = wholeSeconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
@@ -1931,21 +1999,11 @@ function groupSongsByDisc(songs: Song[]): DiscGroup[] {
   }));
 }
 
-function getSnapshotLabel(snapshot: BrowserSnapshot | null) {
-  if (!snapshot) return "";
-  if (snapshot.detailSelection?.type === "artist") return snapshot.detailSelection.data.name;
-  if (snapshot.detailSelection?.type === "album") return snapshot.detailSelection.data.name;
-  if (snapshot.detailSelection?.type === "playlist") return snapshot.detailSelection.data.name;
-  if (snapshot.activeView === "settings") return `${getViewLabel(snapshot.activeView)} / ${getSettingsTabLabel(snapshot.settingsTab ?? "connection")}`;
-  return getViewLabel(snapshot.activeView);
-}
-
 function snapshotEquals(left: BrowserSnapshot | null, right: BrowserSnapshot | null) {
   if (!left || !right) return left === right;
 
   return (
     left.activeView === right.activeView &&
-    (left.settingsTab ?? "connection") === (right.settingsTab ?? "connection") &&
     left.detailSelection?.type === right.detailSelection?.type &&
     left.detailSelection?.data.id === right.detailSelection?.data.id
   );
@@ -1969,6 +2027,10 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
+  const [artistImageCache, setArtistImageCache] = useState<Record<string, string>>({});
+  const onArtistImageResolved = useCallback((artistId: string, imageUrl: string) => {
+    setArtistImageCache((current) => current[artistId] === imageUrl ? current : { ...current, [artistId]: imageUrl });
+  }, []);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>(() => (loadStoredConfig() ? "hydrating" : "idle"));
   const [catalogProgress, setCatalogProgress] = useState<{ completed: number; total: number } | null>(null);
   const [listenerName, setListenerName] = useState("");
@@ -2000,7 +2062,6 @@ export function App() {
   ));
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
   const [queue, setQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
   const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
@@ -2046,7 +2107,6 @@ export function App() {
   const [playlistSeedSongs, setPlaylistSeedSongs] = useState<Song[] | null>(null);
   const [playlistCreateStatus, setPlaylistCreateStatus] = useState<"idle" | "saving" | "error">("idle");
   const [playlistCreateMessage, setPlaylistCreateMessage] = useState("");
-  const [sidebarPlaylistMenuOpen, setSidebarPlaylistMenuOpen] = useState(false);
   const [songContextMenu, setSongContextMenu] = useState<SongContextMenuState>(null);
   const [libraryContextMenu, setLibraryContextMenu] = useState<LibraryContextMenuState>(null);
   const [playlistDeleteTarget, setPlaylistDeleteTarget] = useState<Playlist | null>(null);
@@ -2091,13 +2151,13 @@ export function App() {
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
   const navigationStateRef = useRef({
-    snapshot: { activeView, detailSelection, settingsTab } satisfies BrowserSnapshot,
+    snapshot: { activeView, detailSelection } satisfies BrowserSnapshot,
     backStack,
     forwardStack,
   });
 
   navigationStateRef.current = {
-    snapshot: { activeView, detailSelection, settingsTab },
+    snapshot: { activeView, detailSelection },
     backStack,
     forwardStack,
   };
@@ -2136,7 +2196,6 @@ export function App() {
 
       setActiveView(target.activeView);
       setDetailSelection(target.detailSelection);
-      if (target.settingsTab) setSettingsTab(target.settingsTab);
       setDetailStatus("idle");
       setDetailMessage("");
     };
@@ -2146,8 +2205,11 @@ export function App() {
   }, []);
 
   const hasConfig = Boolean(config);
+  const canNavigateBack = backStack.length > 0;
+  const onNavigateBack = navigateBack;
   const currentTrack = queue[currentIndex] ?? null;
   const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "160") : null;
+  const currentTrackArtworkUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "900") : null;
   const radioStationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const radioNowPlaying = firstRadioTrack(radioStationState);
   const radioNowPlayingSongId = radioNowPlaying?.subsonic_id ? String(radioNowPlaying.subsonic_id) : "";
@@ -2160,19 +2222,6 @@ export function App() {
   const footerTrack = isRadioPresentation || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
   const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
-  const personalPlaylists = useMemo(
-    () => libraryData.playlists
-      .filter((playlist) => !playlist.owner || playlist.owner.localeCompare(config?.username ?? "", undefined, { sensitivity: "accent" }) === 0)
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    [config?.username, libraryData.playlists],
-  );
-  const sharedPlaylists = useMemo(
-    () => libraryData.playlists
-      .filter((playlist) => playlist.owner && playlist.owner.localeCompare(config?.username ?? "", undefined, { sensitivity: "accent" }) !== 0)
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    [config?.username, libraryData.playlists],
-  );
-
   async function notifyDesktop(key: string, title: string, body: string, cooldownMs = 15_000) {
     if (!isTauriDesktopApp() || isAppForegrounded()) return;
 
@@ -2197,8 +2246,23 @@ export function App() {
     ? isRadioPlaying
       ? radioCoverUrl
       : isPlaying && config && currentTrack
-        ? buildCoverArtUrl(config, currentTrack.coverArt, "900")
-        : null
+          ? buildCoverArtUrl(config, currentTrack.coverArt, "900")
+          : null
+    : null;
+  const detailArtworkWashUrl = config && detailSelection
+    ? detailSelection.type === "album"
+      ? buildCoverArtUrl(
+          config,
+          detailSelection.data.coverArt ?? detailSelection.data.song?.find((song) => song.coverArt)?.coverArt,
+          "900",
+        )
+      : detailSelection.type === "playlist"
+        ? buildCoverArtUrl(config, detailSelection.data.coverArt ?? detailSelection.data.entry?.find((song) => song.coverArt)?.coverArt, "900")
+        : getArtistImageUrl(detailSelection.data.info) ??
+          buildCoverArtUrl(config, detailSelection.data.album?.find((album) => album.coverArt)?.coverArt, "900")
+    : null;
+  const workspaceWashUrl = appSettings.coverWashEnabled && visualEffectsEnabled
+    ? detailArtworkWashUrl ?? (activeView === "nowPlaying" ? currentTrackArtworkUrl : null) ?? coverWashUrl
     : null;
 
   useEffect(() => {
@@ -2562,6 +2626,10 @@ export function App() {
   }
 
   function selectRightPanelTab(tab: RightPanelTab) {
+    if (rightPanelOpen && rightPanelTab === tab) {
+      setRightPanelState(false);
+      return;
+    }
     setRightPanelTab(tab);
     localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
     setRightPanelState(true);
@@ -2826,7 +2894,7 @@ export function App() {
       setForwardStack([]);
       setDetailSelection(null);
       setActiveView("overview");
-      replaceBrowserHistory({ activeView: "overview", detailSelection: null, settingsTab });
+      replaceBrowserHistory({ activeView: "overview", detailSelection: null });
     }
   }
 
@@ -2840,7 +2908,7 @@ export function App() {
 
     try {
       const albumDetail = await loadAlbumDetail(config, albumId);
-      const nextSnapshot: BrowserSnapshot = { activeView: "albums", detailSelection: { type: "album", data: albumDetail }, settingsTab };
+      const nextSnapshot: BrowserSnapshot = { activeView: "albums", detailSelection: { type: "album", data: albumDetail } };
       pushBrowserHistory(nextSnapshot, origin);
       setDetailSelection({ type: "album", data: albumDetail });
       setDetailStatus("idle");
@@ -2865,7 +2933,7 @@ export function App() {
 
     try {
       const artistDetail = await loadArtistDetail(config, artistId);
-      const nextSnapshot: BrowserSnapshot = { activeView: "artists", detailSelection: { type: "artist", data: artistDetail }, settingsTab };
+      const nextSnapshot: BrowserSnapshot = { activeView: "artists", detailSelection: { type: "artist", data: artistDetail } };
       pushBrowserHistory(nextSnapshot, origin);
       setDetailSelection({ type: "artist", data: artistDetail });
       setDetailStatus("idle");
@@ -2890,7 +2958,7 @@ export function App() {
 
     try {
       const playlistDetail = await loadPlaylistDetail(config, playlistId);
-      const nextSnapshot: BrowserSnapshot = { activeView: "playlists", detailSelection: { type: "playlist", data: playlistDetail }, settingsTab };
+      const nextSnapshot: BrowserSnapshot = { activeView: "playlists", detailSelection: { type: "playlist", data: playlistDetail } };
       pushBrowserHistory(nextSnapshot, origin);
       setDetailSelection({ type: "playlist", data: playlistDetail });
       if (editAfterOpen) {
@@ -2924,14 +2992,15 @@ export function App() {
     }
   }
 
-  async function playArtist(artist: Artist | ArtistDetail) {
+  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false) {
     if (!config) return;
 
     try {
       const artistDetail = "album" in artist ? artist : await loadArtistDetail(config, artist.id);
       const albums = artistDetail.album ?? [];
       const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => loadAlbumDetail(config, album.id)));
-      replaceQueue(albumDetails.flatMap((album) => album.song ?? []));
+      const songs = albumDetails.flatMap((album) => album.song ?? []);
+      replaceQueue(shuffleTracks ? shuffled(songs) : songs);
     } catch (error) {
       setDetailStatus("error");
       setDetailMessage(getErrorMessage(error));
@@ -3218,21 +3287,6 @@ export function App() {
     }
   }
 
-  function handleSidebarPlaylistMenuOpenChange(open: boolean) {
-    // A playlist's right-click menu is rendered in its own Radix portal. Keep
-    // the sidebar flyout open while that related menu owns focus, rather than
-    // treating the portal boundary as an outside interaction.
-    if (!open && libraryContextMenu?.type === "playlist") return;
-    setSidebarPlaylistMenuOpen(open);
-  }
-
-  function keepSidebarPlaylistMenuOpenForPlaylistContext(event: Event) {
-    const target = event.target;
-    if (target instanceof HTMLElement && target.closest(".library-context-menu")) {
-      event.preventDefault();
-    }
-  }
-
   function clearDetail() {
     setDetailSelection(null);
     setDetailStatus("idle");
@@ -3240,7 +3294,7 @@ export function App() {
   }
 
   function currentSnapshot(): BrowserSnapshot {
-    return { activeView, detailSelection, settingsTab };
+    return { activeView, detailSelection };
   }
 
   function pushBrowserHistory(nextSnapshot: BrowserSnapshot, origin = currentSnapshot()) {
@@ -3257,7 +3311,7 @@ export function App() {
   }
 
   function selectView(view: View) {
-    const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null, settingsTab };
+    const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null };
     if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
 
     pushBrowserHistory(nextSnapshot);
@@ -3271,21 +3325,19 @@ export function App() {
     await syncFullSongCatalog(config, libraryData.albums);
   }
 
-  function openSettings(tab: SettingsTab = "connection") {
-    const nextSnapshot: BrowserSnapshot = { activeView: "settings", detailSelection: null, settingsTab: tab };
-    if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
+  function openSettings(section?: "radio") {
+    const nextSnapshot: BrowserSnapshot = { activeView: "settings", detailSelection: null };
+    if (!snapshotEquals(currentSnapshot(), nextSnapshot)) {
+      pushBrowserHistory(nextSnapshot);
+      clearDetail();
+      setActiveView("settings");
+    }
 
-    pushBrowserHistory(nextSnapshot);
-    setSettingsTab(tab);
-    clearDetail();
-    setActiveView("settings");
-  }
-
-  function selectSettingsTab(tab: SettingsTab) {
-    if (settingsTab === tab) return;
-
-    pushBrowserHistory({ ...currentSnapshot(), settingsTab: tab });
-    setSettingsTab(tab);
+    if (section) {
+      window.requestAnimationFrame(() => {
+        document.getElementById(`settings-panel-${section}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
   }
 
   function openSearchView() {
@@ -3296,11 +3348,6 @@ export function App() {
   function navigateBack() {
     if (!backStack.length) return;
     window.history.back();
-  }
-
-  function navigateForward() {
-    if (!forwardStack.length) return;
-    window.history.forward();
   }
 
   function resetPlaybackPosition() {
@@ -3801,6 +3848,7 @@ export function App() {
     if (catalogKey) void deleteLibraryCatalog(catalogKey).catch(() => undefined);
     catalogHydratedKeyRef.current = "";
     catalogSongsCompleteRef.current = false;
+    setArtistImageCache({});
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(LAST_PLAYED_TRACK_KEY);
     localStorage.removeItem(PLAYBACK_STATE_KEY);
@@ -3808,6 +3856,7 @@ export function App() {
     setForm(emptyConfig);
     setListenerName("");
     setLibraryData(emptyLibraryData);
+    setArtistImageCache({});
     libraryDataRef.current = emptyLibraryData;
     setSongLibrary([]);
     setSongLibraryStatus("idle");
@@ -3829,7 +3878,7 @@ export function App() {
     setStatusMessage("Add a Navidrome server to start syncing.");
     setSetupOpen(true);
     setActiveView("settings");
-    replaceBrowserHistory({ activeView: "settings", detailSelection: null, settingsTab: "connection" });
+    replaceBrowserHistory({ activeView: "settings", detailSelection: null });
   }
 
   useEffect(() => {
@@ -3927,6 +3976,7 @@ export function App() {
           setLibraryData(snapshot.library);
           libraryDataRef.current = snapshot.library;
           setSongLibrary(snapshot.songs);
+          setArtistImageCache(snapshot.artistImages ?? {});
           setSongLibraryStatus(snapshot.songs.length ? "ready" : "idle");
           catalogSongsCompleteRef.current = snapshot.songsComplete;
           setLibraryStatus("ready");
@@ -3958,11 +4008,12 @@ export function App() {
         savedAt: new Date().toISOString(),
         library: libraryData,
         songs: songLibrary,
+        artistImages: artistImageCache,
         songsComplete: catalogSongsCompleteRef.current,
       }).catch(() => setCatalogStatus("error"));
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [config?.serverUrl, config?.username, libraryData, songLibrary]);
+  }, [config?.serverUrl, config?.username, libraryData, songLibrary, artistImageCache]);
 
   useEffect(() => {
     if (config) {
@@ -4052,10 +4103,10 @@ export function App() {
     if (!rightPanelOpen || rightPanelTab !== "lyrics") return;
     const isRadioLyricsSession = radioStatus === "playing" || radioStatus === "checking";
 
-    if (isRadioLyricsSession || !isPlaying) {
+    if (isRadioLyricsSession) {
       setLyricsStatus("idle");
       setLyricsLines([]);
-      setLyricsMessage(isRadioLyricsSession ? "No lyrics available for radio yet." : "No active playback.");
+      setLyricsMessage("No lyrics available for radio yet.");
       return;
     }
 
@@ -4088,7 +4139,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [config, currentTrack, isPlaying, radioStatus, rightPanelOpen, rightPanelTab]);
+  }, [config, currentTrack, radioStatus, rightPanelOpen, rightPanelTab]);
 
   useEffect(() => {
     [primaryAudioRef.current, secondaryAudioRef.current].forEach((audio) => {
@@ -4622,21 +4673,27 @@ export function App() {
     >
       <ContextMenu.Trigger asChild>
     <main
-      className={`app-shell theme-${appSettings.colorTheme} ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
+      className={`app-shell theme-${appSettings.colorTheme} right-panel-collapsed ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
-      } ${coverWashUrl ? "with-cover-wash" : ""}`}
+      } ${workspaceWashUrl ? "with-cover-wash" : ""}`}
       style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
-      {coverWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${coverWashUrl})` }} aria-hidden="true" /> : null}
-
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <PrismMark className="brand-mark" />
-          <div>
-            <p className="eyebrow">Prism</p>
-            <h1>Player</h1>
+          <div className="brand-wordmark">
+            <h1>PRISM</h1>
+            <p>Music player</p>
           </div>
+          <button
+            className="icon-button sidebar-brand-toggle"
+            type="button"
+            aria-label="Hide left sidebar"
+            onClick={() => setSidebarCollapsedState(true)}
+          >
+            <PanelLeftClose size={16} />
+          </button>
         </div>
         <nav className="nav-list">
           <button
@@ -4648,151 +4705,31 @@ export function App() {
             Home
           </button>
           <button
-            className={`nav-item nav-home ${activeView === "radio" ? "active" : ""}`}
+            className={`nav-item ${activeView === "recentlyAdded" ? "active" : ""}`}
+            type="button"
+            onClick={() => selectView("recentlyAdded")}
+          >
+            <Disc3 size={18} />
+            Discover
+          </button>
+          <button
+            className={`nav-item ${activeView === "radio" ? "active" : ""}`}
             type="button"
             onClick={() => selectView("radio")}
           >
             <RadioTower size={18} />
             Radio
           </button>
-          <div className="nav-section-label">
-            <Library size={16} />
-            Your Library
+          <div className="nav-section-label nav-collection-label">
+            <Library size={15} />
+            Collection
           </div>
-          <button
-            className={`nav-item nav-child ${activeView === "artists" ? "active" : ""}`}
-            type="button"
-            onClick={() => selectView("artists")}
-          >
-            <UserRound size={18} />
-            Artists
-          </button>
-          <button
-            className={`nav-item nav-child ${activeView === "albums" ? "active" : ""}`}
-            type="button"
-            onClick={() => selectView("albums")}
-          >
-            <Disc3 size={18} />
-            Albums
-          </button>
-          <button
-            className={`nav-item nav-child ${activeView === "songs" ? "active" : ""}`}
-            type="button"
-            onClick={() => selectView("songs")}
-          >
-            <Music2 size={18} />
-            Songs
-          </button>
-          <DropdownMenu.Root
-            modal={false}
-            open={sidebarPlaylistMenuOpen || libraryContextMenu?.type === "playlist"}
-            onOpenChange={handleSidebarPlaylistMenuOpenChange}
-          >
-            <DropdownMenu.Trigger asChild>
-              <button
-                className={`nav-item nav-child nav-parent nav-playlist-trigger ${activeView === "playlists" ? "active" : ""}`}
-                type="button"
-                aria-label="Open playlists"
-              >
-                <ListMusic size={18} />
-                <span>Playlists</span>
-                <ChevronRight size={16} aria-hidden="true" />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                className="sidebar-playlist-menu"
-                side="right"
-                align="start"
-                sideOffset={10}
-                collisionPadding={12}
-                aria-label="Playlists"
-                onFocusOutside={keepSidebarPlaylistMenuOpenForPlaylistContext}
-                onInteractOutside={keepSidebarPlaylistMenuOpenForPlaylistContext}
-              >
-                <DropdownMenu.Item asChild>
-                  <button className="sidebar-playlist-menu-all" type="button" onClick={() => selectView("playlists")}>
-                    <ListMusic size={15} />
-                    <span>All playlists</span>
-                  </button>
-                </DropdownMenu.Item>
-                {libraryData.playlists.length ? (
-                  <div className="sidebar-playlist-menu-list">
-                    {personalPlaylists.length ? <p className="sidebar-playlist-menu-heading">Your playlists</p> : null}
-                    {personalPlaylists.map((playlist) => (
-                        <DropdownMenu.Item asChild key={playlist.id}>
-                          <button
-                            className={detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""}
-                            type="button"
-                            data-context-kind="playlist"
-                            data-context-id={playlist.id}
-                            onClick={() => void openPlaylist(playlist)}
-                          >
-                            <ListMusic size={15} />
-                            <span className="sidebar-playlist-menu-copy">
-                              <strong>{playlist.name}</strong>
-                              <small>{getSidebarPlaylistMeta(playlist)}</small>
-                            </span>
-                          </button>
-                        </DropdownMenu.Item>
-                      ))}
-                    {appSettings.showSharedPlaylists && sharedPlaylists.length ? <>
-                      <p className="sidebar-playlist-menu-heading">Shared playlists</p>
-                      {sharedPlaylists.map((playlist) => (
-                        <DropdownMenu.Item asChild key={playlist.id}>
-                          <button
-                            className={detailSelection?.type === "playlist" && detailSelection.data.id === playlist.id ? "active" : ""}
-                            type="button"
-                            data-context-kind="playlist"
-                            data-context-id={playlist.id}
-                            onClick={() => void openPlaylist(playlist)}
-                          >
-                            <ListMusic size={15} />
-                            <span className="sidebar-playlist-menu-copy">
-                              <strong>{playlist.name}</strong>
-                              <small>{getSidebarPlaylistMeta(playlist, true)}</small>
-                            </span>
-                          </button>
-                        </DropdownMenu.Item>
-                      ))}
-                    </> : null}
-                  </div>
-                ) : (
-                  <p className="sidebar-playlist-menu-empty">No playlists yet.</p>
-                )}
-                <DropdownMenu.Item asChild>
-                  <button className="sidebar-playlist-menu-create" type="button" onClick={() => setPlaylistCreatorOpen(true)}>
-                    <Plus size={15} />
-                    New playlist
-                  </button>
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-          <button
-            className={`nav-item nav-child ${activeView === "recentlyAdded" ? "active" : ""}`}
-            type="button"
-            onClick={() => selectView("recentlyAdded")}
-          >
-            <Plus size={18} />
-            Recently Added
-          </button>
-          <button
-            className={`nav-item nav-child ${activeView === "recentlyPlayed" ? "active" : ""}`}
-            type="button"
-            onClick={() => selectView("recentlyPlayed")}
-          >
-            <History size={18} />
-            Recently Played
-          </button>
-          <button
-            className={`nav-item nav-child ${activeView === "favorites" ? "active" : ""}`}
-            type="button"
-            onClick={() => selectView("favorites")}
-          >
-            <Star size={18} />
-            Favorites
-          </button>
+          <div className="sidebar-collection-nav" aria-label="Collection">
+            <button className={activeView === "artists" ? "active" : ""} type="button" aria-current={activeView === "artists" ? "page" : undefined} onClick={() => selectView("artists")}><UserRound size={16} />Artists</button>
+            <button className={activeView === "albums" ? "active" : ""} type="button" aria-current={activeView === "albums" ? "page" : undefined} onClick={() => selectView("albums")}><Disc3 size={16} />Albums</button>
+            <button className={activeView === "songs" ? "active" : ""} type="button" aria-current={activeView === "songs" ? "page" : undefined} onClick={() => selectView("songs")}><Music2 size={16} />Songs</button>
+            <button className={activeView === "playlists" ? "active" : ""} type="button" aria-current={activeView === "playlists" ? "page" : undefined} onClick={() => selectView("playlists")}><ListMusic size={16} />Playlists</button>
+          </div>
         </nav>
 
         <div className="sidebar-actions">
@@ -4834,20 +4771,28 @@ export function App() {
             }
           }}
         />
-      </aside> : null}
+      </aside> : (
+        <div className="sidebar-rail sidebar-rail-left">
+          <button
+            className="sidebar-edge-button sidebar-edge-button-left"
+            type="button"
+            aria-label="Show left sidebar"
+            onClick={() => setSidebarCollapsedState(false)}
+          >
+            <PanelLeftOpen size={16} />
+          </button>
+        </div>
+      )}
 
       <section className="workspace" aria-label="Music workspace">
+        {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
         <header className="topbar">
-          <BrowserNavigation
-            canNavigateBack={backStack.length > 0}
-            canNavigateForward={forwardStack.length > 0}
-            backTarget={backStack[backStack.length - 1] ?? null}
-            forwardTarget={forwardStack[0] ?? null}
-            onNavigateBack={navigateBack}
-            onNavigateForward={navigateForward}
-            sidebarCollapsed={sidebarCollapsed}
-            onToggleSidebar={() => setSidebarCollapsedState(!sidebarCollapsed)}
-          />
+          {detailSelection && canNavigateBack ? (
+            <button className="content-back-button topbar-back-button" type="button" onClick={onNavigateBack}>
+              <ChevronLeft size={16} aria-hidden="true" />
+              Back
+            </button>
+          ) : null}
           <SearchBox
             query={searchQuery}
             setQuery={setSearchQuery}
@@ -4862,19 +4807,9 @@ export function App() {
             onOpenPlaylist={openPlaylist}
             onPlaySong={playSong}
           />
-          <button
-            className="icon-button topbar-right-sidebar-toggle"
-            type="button"
-            aria-label={rightPanelOpen ? "Hide right sidebar" : "Show right sidebar"}
-            aria-pressed={rightPanelOpen}
-            title={rightPanelOpen ? "Hide sidebar" : "Show sidebar"}
-            onClick={() => setRightPanelState(!rightPanelOpen)}
-          >
-            {rightPanelOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-          </button>
         </header>
 
-        <div className="workspace-viewport">
+        <div className={`workspace-viewport ${activeView === "settings" ? "settings-workspace" : ""}`}>
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
           ) : null}
@@ -4893,8 +4828,6 @@ export function App() {
               statusMessage={statusMessage}
               appSettings={appSettings}
               discordPresenceStatus={discordPresenceStatus}
-              activeTab={settingsTab}
-              setActiveTab={selectSettingsTab}
               updateAppSettings={updateAppSettings}
               onSelectRadioStation={selectRadioStation}
               onRemoveRadioStation={removeRadioStation}
@@ -4905,7 +4838,6 @@ export function App() {
               availableUpdate={availableUpdate}
               updateCheckStatus={updateCheckStatus}
               onCheckForUpdates={() => void checkForUpdates()}
-              canOpenWhatsNew={Boolean(currentReleaseNotes)}
               onSave={saveConnection}
               onReset={resetConnection}
             />
@@ -4933,6 +4865,7 @@ export function App() {
               albums={libraryData.albums}
               recentAlbums={libraryData.recentAlbums}
               recentlyPlayedAlbums={libraryData.recentlyPlayedAlbums}
+              frequentAlbums={libraryData.frequentAlbums ?? []}
               listeningHistory={listeningHistory}
               onSelectView={selectView}
               onClearListeningHistory={clearListeningHistory}
@@ -4946,6 +4879,8 @@ export function App() {
               artistViewMode={artistViewMode}
               setArtistViewMode={setArtistViewMode}
               artists={libraryData.artists}
+              artistImageCache={artistImageCache}
+              onArtistImageResolved={onArtistImageResolved}
               searchQuery={searchQuery}
               searchResults={searchResults}
               searchStatus={searchStatus}
@@ -4956,16 +4891,9 @@ export function App() {
               detailStatus={detailStatus}
               detailMessage={detailMessage}
               currentTrack={currentTrack}
-              currentTrackCoverUrl={currentTrackCoverUrl}
+              currentTrackCoverUrl={currentTrackArtworkUrl}
               isPlaying={isPlaying}
-              position={position}
               duration={playerDuration || currentTrack?.duration || 0}
-              hasPrevious={currentIndex > 0}
-              hasNext={repeatMode === "all" || currentIndex < queue.length - 1}
-              onTogglePlayback={togglePlayback}
-              onPrevious={playPrevious}
-              onNext={() => playNext(false)}
-              onSeek={seekTo}
               favoriteIds={favoriteIds}
               favoriteBusyKey={favoriteBusyKey}
               onToggleFavorite={toggleFavorite}
@@ -4973,7 +4901,7 @@ export function App() {
               onOpenArtist={(artist) => void openArtist(artist)}
               onOpenPlaylist={openPlaylist}
               onPlayAlbum={(album) => void playAlbum(album)}
-              onPlayArtist={(artist) => void playArtist(artist)}
+              onPlayArtist={(artist, shuffleTracks) => void playArtist(artist, shuffleTracks)}
               onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
               onSavePlaylistDetails={savePlaylistDetails}
               onDeletePlaylist={deletePlaylistAndReturn}
@@ -5255,6 +5183,28 @@ export function App() {
         </div>
 
         <div className="player-actions">
+          <div className="player-panel-buttons" role="group" aria-label="Player panels">
+            <button
+              className={`player-panel-toggle ${rightPanelOpen && rightPanelTab === "queue" ? "active" : ""}`}
+              type="button"
+              aria-label={`${rightPanelOpen && rightPanelTab === "queue" ? "Close" : "Open"} ${isRadioPlaying || radioStatus === "checking" ? "timeline" : "queue"}`}
+              aria-expanded={rightPanelOpen && rightPanelTab === "queue"}
+              aria-controls="player-queue-flyout"
+              onClick={() => selectRightPanelTab("queue")}
+            >
+              <ListMusic size={16} />
+            </button>
+            <button
+              className={`player-panel-toggle ${rightPanelOpen && rightPanelTab === "lyrics" ? "active" : ""}`}
+              type="button"
+              aria-label={`${rightPanelOpen && rightPanelTab === "lyrics" ? "Close" : "Open"} lyrics`}
+              aria-expanded={rightPanelOpen && rightPanelTab === "lyrics"}
+              aria-controls="player-queue-flyout"
+              onClick={() => selectRightPanelTab("lyrics")}
+            >
+              <Music2 size={16} />
+            </button>
+          </div>
           <div className={`volume-control ${isMuted ? "muted" : ""}`}>
             <button className="volume-mute-button" type="button" onClick={toggleMuted} aria-label={isMuted ? "Unmute volume" : "Mute volume"} aria-pressed={isMuted}>
               {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -5277,7 +5227,6 @@ export function App() {
       {rightPanelOpen ? (
         <RightSidebar
           tab={rightPanelTab}
-          setTab={selectRightPanelTab}
           queue={queue}
           displayedQueue={displayedQueue}
           currentIndex={currentIndex}
@@ -5288,7 +5237,6 @@ export function App() {
           radioStatus={radioStatus}
           isRadioPlaying={isRadioPlaying}
           position={position}
-          isPlaying={isPlaying}
           lyricsStatus={lyricsStatus}
           lyricsLines={lyricsLines}
           lyricsMessage={lyricsMessage}
@@ -5303,6 +5251,7 @@ export function App() {
           onSelectQueueTrack={selectQueueTrack}
           onRemoveQueueItem={removeQueueItem}
           onClearQueue={clearQueue}
+          onClose={() => setRightPanelState(false)}
         />
       ) : null}
 
@@ -5487,7 +5436,6 @@ export function App() {
 
 function RightSidebar({
   tab,
-  setTab,
   queue,
   displayedQueue,
   currentIndex,
@@ -5498,7 +5446,6 @@ function RightSidebar({
   radioStatus,
   isRadioPlaying,
   position,
-  isPlaying,
   lyricsStatus,
   lyricsLines,
   lyricsMessage,
@@ -5513,9 +5460,9 @@ function RightSidebar({
   onSelectQueueTrack,
   onRemoveQueueItem,
   onClearQueue,
+  onClose,
 }: {
   tab: RightPanelTab;
-  setTab: (tab: RightPanelTab) => void;
   queue: Song[];
   displayedQueue: Array<{ song: Song; index: number }>;
   currentIndex: number;
@@ -5526,7 +5473,6 @@ function RightSidebar({
   radioStatus: RadioStatus;
   isRadioPlaying: boolean;
   position: number;
-  isPlaying: boolean;
   lyricsStatus: LyricsStatus;
   lyricsLines: LyricLine[];
   lyricsMessage: string;
@@ -5541,6 +5487,7 @@ function RightSidebar({
   onSelectQueueTrack: (index: number) => void;
   onRemoveQueueItem: (index: number) => void;
   onClearQueue: () => void;
+  onClose: () => void;
 }) {
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
@@ -5584,7 +5531,6 @@ function RightSidebar({
   }, [dragOverQueueIndex]);
 
   const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : "Lyrics";
-  const queueTabLabel = isRadioSession ? "Timeline" : "Queue";
     const queueIndexFromPointer = (event: PointerEvent) => {
       const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
         .map((row) => ({ row, index: Number(row.dataset.queueIndex) }))
@@ -5651,22 +5597,21 @@ function RightSidebar({
   }
 
   return (
-    <aside className="right-sidebar" aria-label="Now playing and queue">
+    <aside
+      id="player-queue-flyout"
+      className="right-sidebar player-queue-flyout"
+      aria-label={headingLabel}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+    >
       <div className="right-sidebar-heading">
         <div>
           <p className="eyebrow">Player</p>
           <h3>{headingLabel}</h3>
         </div>
-      </div>
-
-      <div className="right-tabs" role="tablist" aria-label="Right panel">
-        <button className={tab === "queue" ? "active" : ""} type="button" onClick={() => setTab("queue")}>
-          <ListMusic size={15} />
-          {queueTabLabel}
-        </button>
-        <button className={tab === "lyrics" ? "active" : ""} type="button" onClick={() => setTab("lyrics")}>
-          <Music2 size={15} />
-          Lyrics
+        <button className="icon-button right-sidebar-close" type="button" aria-label={`Close ${headingLabel.toLowerCase()}`} onClick={onClose}>
+          <X size={16} />
         </button>
       </div>
 
@@ -5767,7 +5712,7 @@ function RightSidebar({
         <div className="right-panel-section lyrics-panel">
           {isRadioSession ? (
             <EmptyPanel icon={<RadioTower size={20} />} text="No lyrics available for radio yet." />
-          ) : isPlaying && currentTrack ? (
+          ) : currentTrack ? (
             <>
               <div className="lyrics-track">
                 <p className="eyebrow">{currentTrack.artist ?? "Unknown artist"}</p>
@@ -5862,64 +5807,6 @@ function RadioQueueRow({ track, tone = "next" }: { track: RadioTrack; tone?: "pr
           {metaStatus ? <small>{metaStatus}</small> : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-function BrowserNavigation({
-  canNavigateBack,
-  canNavigateForward,
-  backTarget,
-  forwardTarget,
-  onNavigateBack,
-  onNavigateForward,
-  sidebarCollapsed,
-  onToggleSidebar,
-}: {
-  canNavigateBack: boolean;
-  canNavigateForward: boolean;
-  backTarget: BrowserSnapshot | null;
-  forwardTarget: BrowserSnapshot | null;
-  onNavigateBack: () => void;
-  onNavigateForward: () => void;
-  sidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
-}) {
-  const backLabel = getSnapshotLabel(backTarget);
-  const forwardLabel = getSnapshotLabel(forwardTarget);
-
-  return (
-    <div className="browser-nav" aria-label="Browser history">
-      <button
-        className="icon-button sidebar-topbar-toggle"
-        type="button"
-        aria-label={sidebarCollapsed ? "Show left sidebar" : "Hide left sidebar"}
-        aria-pressed={!sidebarCollapsed}
-        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-        onClick={onToggleSidebar}
-      >
-        {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-      </button>
-      <button
-        className="icon-button"
-        type="button"
-        onClick={onNavigateBack}
-        disabled={!canNavigateBack}
-        aria-label={canNavigateBack ? `Back to ${backLabel}` : "No back history"}
-        title={canNavigateBack ? `Back to ${backLabel}` : "No back history"}
-      >
-        <ChevronLeft size={17} />
-      </button>
-      <button
-        className="icon-button"
-        type="button"
-        onClick={onNavigateForward}
-        disabled={!canNavigateForward}
-        aria-label={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
-        title={canNavigateForward ? `Forward to ${forwardLabel}` : "No forward history"}
-      >
-        <ChevronRight size={17} />
-      </button>
     </div>
   );
 }
@@ -6145,8 +6032,6 @@ function SettingsView({
   statusMessage,
   appSettings,
   discordPresenceStatus,
-  activeTab,
-  setActiveTab,
   updateAppSettings,
   onSelectRadioStation,
   onRemoveRadioStation,
@@ -6157,7 +6042,6 @@ function SettingsView({
   availableUpdate,
   updateCheckStatus,
   onCheckForUpdates,
-  canOpenWhatsNew,
   onSave,
   onReset,
 }: {
@@ -6167,8 +6051,6 @@ function SettingsView({
   statusMessage: string;
   appSettings: AppSettings;
   discordPresenceStatus: DiscordPresenceStatus;
-  activeTab: SettingsTab;
-  setActiveTab: (tab: SettingsTab) => void;
   updateAppSettings: (settings: AppSettings) => void;
   onSelectRadioStation: (stationUrl: string) => void;
   onRemoveRadioStation: (stationUrl: string) => void;
@@ -6179,12 +6061,12 @@ function SettingsView({
   availableUpdate: AvailableUpdate | null;
   updateCheckStatus: "idle" | "checking" | "up-to-date" | "available" | "error";
   onCheckForUpdates: () => void;
-  canOpenWhatsNew: boolean;
   onSave: (event?: FormEvent<HTMLFormElement>) => Promise<void>;
   onReset: () => void;
 }) {
   const [newRadioStationUrl, setNewRadioStationUrl] = useState("");
   const [installIdCopied, setInstallIdCopied] = useState(false);
+  const [confirmingSettingsReset, setConfirmingSettingsReset] = useState(false);
   const [installId, setInstallId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(INSTALL_ID_KEY);
@@ -6194,14 +6076,12 @@ function SettingsView({
   });
 
   useEffect(() => {
-    if (activeTab !== "about") return;
-
     try {
       setInstallId(localStorage.getItem(INSTALL_ID_KEY));
     } catch {
       setInstallId(null);
     }
-  }, [activeTab]);
+  }, [appSettings.analyticsEnabled]);
 
   async function copyInstallId() {
     if (!installId) return;
@@ -6236,36 +6116,74 @@ function SettingsView({
 
   return (
     <section className="settings-layout">
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
-        {[
-          { id: "connection", label: "Connection", icon: <CheckCircle2 size={15} /> },
-          { id: "library", label: "Library", icon: <Library size={15} /> },
-          { id: "playback", label: "Playback", icon: <Play size={15} /> },
-          { id: "appearance", label: "Appearance", icon: <Waves size={15} /> },
-          { id: "radio", label: "Radio", icon: <RadioTower size={15} /> },
-          { id: "privacy", label: "Privacy", icon: <CheckCircle2 size={15} /> },
-          { id: "about", label: "About", icon: <Info size={15} /> },
-          { id: "advanced", label: "Advanced", icon: <Settings size={15} /> },
-        ].map((tab) => (
-          <button
-            className={activeTab === tab.id ? "active" : ""}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            onClick={() => setActiveTab(tab.id as SettingsTab)}
-            key={tab.id}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <section className="settings-about about-panel" aria-labelledby="settings-about-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Prism Player</p>
+            <h3 id="settings-about-title">About</h3>
+          </div>
+          <Info size={18} />
+        </div>
+        <div className="about-version-row">
+          <div className="about-version-details">
+            <span className="settings-label">Installed version</span>
+            <strong>v{APP_VERSION}</strong>
+            <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
+            <div className="about-install-id">
+              <span className="settings-label">Beacon install ID</span>
+              {installId ? <div className="about-install-id-value">
+                <code title={installId}>{installId}</code>
+                <button className="secondary-button compact-button" type="button" onClick={copyInstallId}>
+                  {installIdCopied ? <Check size={14} /> : <Copy size={14} />}
+                  {installIdCopied ? "Copied" : "Copy ID"}
+                </button>
+              </div> : <span className="settings-note">Created when analytics is enabled.</span>}
+            </div>
+          </div>
+          <div className="about-update-action">
+            {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
+              <Download size={15} />
+              Update available
+            </a> : <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
+              {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+              Check for updates
+            </button>}
+            <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
+              {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
+              {updateCheckStatus === "up-to-date" ? "You’re up to date." : null}
+              {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
+              {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
+              {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
+            </p>
+          </div>
+          <details className="about-changelog">
+            <summary><History size={15} /> Changelog</summary>
+            <div className="about-changelog-list">
+            {[...WHATS_NEW_RELEASES]
+              .filter((release) => !release.previewForVersion)
+              .sort((left, right) => compareVersions(right.version, left.version))
+              .map((release) => (
+                <article key={release.version}>
+                  <h4>Prism {release.displayVersion ?? release.version}</h4>
+                  <ul>{release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}</ul>
+                </article>
+              ))}
+            </div>
+          </details>
+        </div>
+        <div className="about-links" aria-label="Prism links">
+          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
+          <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
+          <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
+        </div>
+      </section>
 
-      {activeTab === "connection" ? <form className="settings-form" onSubmit={onSave}>
+
+      <form className="settings-form settings-section" id="settings-panel-connection" aria-labelledby="settings-server-title" onSubmit={onSave}>
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Navidrome</p>
-            <h3>Server connection</h3>
+            <h3 id="settings-server-title">Server connection</h3>
           </div>
           <ConnectionStatusBadge status={status} />
         </div>
@@ -6326,13 +6244,13 @@ function SettingsView({
             Reset Connection
           </button>
         </div>
-      </form> : null}
+      </form>
 
-      {activeTab === "library" ? <section className="settings-panel">
+      <section className="settings-panel settings-section" id="settings-panel-library" aria-labelledby="settings-library-title">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Library</p>
-            <h3>Browsing defaults</h3>
+            <h3 id="settings-library-title">Browsing defaults</h3>
           </div>
           <Library size={18} />
         </div>
@@ -6350,6 +6268,17 @@ function SettingsView({
             <option value="art">Art</option>
           </select>
         </label>
+        <label>
+          Home shelves
+          <select
+            value={appSettings.homeShelfView}
+            onChange={(event) => updateAppSettings({ ...appSettings, homeShelfView: event.target.value as HomeShelfViewMode })}
+          >
+            <option value="list">List</option>
+            <option value="art">Art</option>
+          </select>
+        </label>
+        <p className="settings-note">Choose how album art and details appear in the three Home shelves.</p>
         <label className="settings-checkbox">
           <input
             type="checkbox"
@@ -6358,13 +6287,13 @@ function SettingsView({
           />
           <span>Show shared playlists in the Playlists menu</span>
         </label>
-      </section> : null}
+      </section>
 
-      {activeTab === "playback" ? <section className="settings-panel">
+      <section className="settings-panel settings-section" id="settings-panel-playback" aria-labelledby="settings-playback-title">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Playback</p>
-            <h3>Track transitions</h3>
+            <h3 id="settings-playback-title">Track transitions</h3>
           </div>
           <Play size={18} />
         </div>
@@ -6390,13 +6319,13 @@ function SettingsView({
         <p className="settings-note">
           Gapless playback is on by default. Prism preloads the next queued local track; crossfade is optional. Radio is unchanged.
         </p>
-      </section> : null}
+      </section>
 
-      {activeTab === "appearance" ? <section className="settings-panel">
+      <section className="settings-panel settings-section" id="settings-panel-appearance" aria-labelledby="settings-appearance-title">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Appearance</p>
-            <h3>Color and cover wash</h3>
+            <h3 id="settings-appearance-title">Color and cover wash</h3>
           </div>
           <Waves size={18} />
         </div>
@@ -6439,13 +6368,13 @@ function SettingsView({
           />
           <span>Low performance mode hides the art wash and live radio waveform</span>
         </label>
-      </section> : null}
+      </section>
 
-      {activeTab === "radio" ? <section className="settings-panel">
+      <section className="settings-panel settings-section" id="settings-panel-radio" aria-labelledby="settings-radio-title">
         <div className="panel-heading">
           <div>
             <p className="eyebrow">Radio</p>
-            <h3>Subwave channels</h3>
+            <h3 id="settings-radio-title">Subwave channels</h3>
           </div>
           <RadioTower size={18} />
         </div>
@@ -6500,16 +6429,17 @@ function SettingsView({
           </button>
         </form>
         <p className="settings-note">Prism remembers the station name reported by `/api/state`; use Display name to override it. Streams play from `/stream.mp3`.</p>
-      </section> : null}
+      </section>
 
-      {activeTab === "privacy" ? <section className="settings-panel">
+      <section className="settings-panel settings-section" id="settings-panel-privacy" aria-labelledby="settings-privacy-title">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">Discord</p>
-            <h3>Rich Presence</h3>
+            <p className="eyebrow">Privacy</p>
+            <h3 id="settings-privacy-title">Privacy &amp; integrations</h3>
           </div>
           <MessageCircle size={18} />
         </div>
+        <p className="settings-label">Discord Rich Presence</p>
         <label className="settings-checkbox">
           <input
             type="checkbox"
@@ -6545,82 +6475,52 @@ function SettingsView({
         <p className="settings-note">
           Sends a periodic Beacon ping with app version, install id, platform, channel, dev/release flag, and aggregate artist, album, and song counts. No account or playback data is sent.
         </p>
-      </section> : null}
+      </section>
 
-      {activeTab === "about" ? <section className="settings-panel about-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Prism Player</p>
-            <h3>About</h3>
-          </div>
-          <Info size={18} />
+      <section className="settings-reset-area">
+        <div>
+          <p className="eyebrow">Reset</p>
+          <h3>Restore app defaults</h3>
+          <p className="settings-note">Resets appearance, playback, library, radio, privacy, and integration preferences. Your server connection is kept.</p>
         </div>
-        <div className="about-version-row">
-          <div className="about-version-details">
-            <span className="settings-label">Installed version</span>
-            <strong>v{APP_VERSION}</strong>
-            <span className="about-commit-sha" title={`Commit ${APP_COMMIT_SHA}`}>SHA {APP_COMMIT_SHA}</span>
-            <div className="about-install-id">
-              <span className="settings-label">Beacon install ID</span>
-              {installId ? <div className="about-install-id-value">
-                <code title={installId}>{installId}</code>
-                <button className="secondary-button compact-button" type="button" onClick={copyInstallId}>
-                  {installIdCopied ? <Check size={14} /> : <Copy size={14} />}
-                  {installIdCopied ? "Copied" : "Copy ID"}
-                </button>
-              </div> : <span className="settings-note">Created when analytics is enabled.</span>}
+        <button className="secondary-button danger-button" type="button" onClick={() => setConfirmingSettingsReset(true)}>
+          <RefreshCw size={15} />
+          Reset App Settings
+        </button>
+      </section>
+
+      {confirmingSettingsReset ? (
+        <PrismAlertDialog open onOpenChange={setConfirmingSettingsReset} className="confirm-backdrop">
+          <section className="playlist-modal confirm-modal" aria-labelledby="settings-reset-title">
+            <div className="confirm-icon" aria-hidden="true">
+              <RefreshCw size={22} />
             </div>
-          </div>
-          <div className="about-update-action">
-            {availableUpdate ? <a className="connect-button compact-button" href={availableUpdate.releaseUrl} target="_blank" rel="noreferrer">
-              <Download size={15} />
-              Update available
-            </a> : <button className="secondary-button compact-button" type="button" onClick={onCheckForUpdates} disabled={updateCheckStatus === "checking"}>
-              {updateCheckStatus === "checking" ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
-              Check for updates
-            </button>}
-            <p className={`settings-note update-check-status ${updateCheckStatus === "error" ? "bad" : ""}`}>
-              {updateCheckStatus === "checking" ? "Checking GitHub releases…" : null}
-              {updateCheckStatus === "up-to-date" ? "You’re up to date." : null}
-              {updateCheckStatus === "available" && availableUpdate ? `Prism v${availableUpdate.version} is ready to download.` : null}
-              {updateCheckStatus === "error" ? "Couldn’t check for updates right now. Try again shortly." : null}
-              {updateCheckStatus === "idle" ? "Check GitHub Releases for the latest Prism build." : null}
-            </p>
-          </div>
-        </div>
-        <div className="about-links" aria-label="Prism links">
-          <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
-          <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>
-          <a href={PRISM_DISCORD_URL} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Discord <ExternalLink size={13} /></a>
-        </div>
-        {canOpenWhatsNew ? <section className="about-changelog" aria-label="Changelog">
-          <p className="eyebrow">Changelog</p>
-          {[...WHATS_NEW_RELEASES]
-            .filter((release) => !release.previewForVersion)
-            .sort((left, right) => compareVersions(right.version, left.version))
-            .map((release) => (
-              <article key={release.version}>
-                <h4>Prism {release.displayVersion ?? release.version}</h4>
-                <ul>{release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}</ul>
-              </article>
-            ))}
-        </section> : null}
-      </section> : null}
-
-      {activeTab === "advanced" ? <section className="settings-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Advanced</p>
-            <h3>Local preferences</h3>
-          </div>
-          <Settings size={18} />
-        </div>
-        <div className="form-actions">
-          <button className="secondary-button" type="button" onClick={resetAppSettings}>
-            Reset App Settings
-          </button>
-        </div>
-      </section> : null}
+            <div className="confirm-copy">
+              <p className="eyebrow">Reset App Settings</p>
+              <AlertDialog.Title asChild><h3 id="settings-reset-title">Restore all app defaults?</h3></AlertDialog.Title>
+              <AlertDialog.Description asChild><p>Your server connection stays saved, but all other app preferences will return to their defaults.</p></AlertDialog.Description>
+            </div>
+            <div className="confirm-actions">
+              <AlertDialog.Cancel asChild>
+                <button className="secondary-button" type="button">Cancel</button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  className="connect-button confirm-delete-button"
+                  type="button"
+                  onClick={() => {
+                    resetAppSettings();
+                    setConfirmingSettingsReset(false);
+                  }}
+                >
+                  <RefreshCw size={15} />
+                  Reset Settings
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </section>
+        </PrismAlertDialog>
+      ) : null}
     </section>
   );
 }
@@ -7048,6 +6948,7 @@ function LibraryView({
   albums,
   recentAlbums,
   recentlyPlayedAlbums,
+  frequentAlbums,
   listeningHistory,
   onSelectView,
   onClearListeningHistory,
@@ -7061,6 +6962,8 @@ function LibraryView({
   artistViewMode,
   setArtistViewMode,
   artists,
+  artistImageCache,
+  onArtistImageResolved,
   searchQuery,
   searchResults,
   searchStatus,
@@ -7072,14 +6975,7 @@ function LibraryView({
   currentTrack,
   currentTrackCoverUrl,
   isPlaying,
-  position,
   duration,
-  hasPrevious,
-  hasNext,
-  onTogglePlayback,
-  onPrevious,
-  onNext,
-  onSeek,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
@@ -7118,6 +7014,7 @@ function LibraryView({
   albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
+  frequentAlbums: Album[];
   listeningHistory: ListeningHistoryEntry[];
   onSelectView: (view: View) => void;
   onClearListeningHistory: () => void;
@@ -7131,6 +7028,8 @@ function LibraryView({
   artistViewMode: ArtistViewMode;
   setArtistViewMode: (mode: ArtistViewMode) => void;
   artists: Artist[];
+  artistImageCache: Record<string, string>;
+  onArtistImageResolved: (artistId: string, imageUrl: string) => void;
   searchQuery: string;
   searchResults: SearchResults;
   searchStatus: "idle" | "searching" | "error";
@@ -7142,14 +7041,7 @@ function LibraryView({
   currentTrack: Song | null;
   currentTrackCoverUrl: string | null;
   isPlaying: boolean;
-  position: number;
   duration: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onTogglePlayback: () => void;
-  onPrevious: () => void;
-  onNext: () => void;
-  onSeek: (position: number) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -7157,7 +7049,7 @@ function LibraryView({
   onOpenArtist: (artist: Artist) => void;
   onOpenPlaylist: (playlist: Playlist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: Artist | ArtistDetail) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -7171,6 +7063,13 @@ function LibraryView({
 }) {
   const [isHomeScrollbarVisible, setIsHomeScrollbarVisible] = useState(false);
   const homeScrollbarTimeoutRef = useRef<number | null>(null);
+  const libraryViews: Array<{ id: LibraryViewMode; label: string }> = [
+    { id: "artists", label: "Artists" },
+    { id: "albums", label: "Albums" },
+    { id: "songs", label: "Songs" },
+    { id: "playlists", label: "Playlists" },
+  ];
+  const isCollectionView = libraryViews.some(({ id }) => id === activeView);
 
   useEffect(() => () => {
     if (homeScrollbarTimeoutRef.current !== null) window.clearTimeout(homeScrollbarTimeoutRef.current);
@@ -7214,12 +7113,14 @@ function LibraryView({
 
   return (
     <section
-      className={`browser-panel ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
+      className={`browser-panel view-${activeView} ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
       onScroll={activeView === "overview" || activeView === "nowPlaying" ? revealHomeScrollbar : undefined}
     >
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
           config={config}
+          songs={songs}
+          listeningHistory={listeningHistory}
           detailSelection={detailSelection}
           detailStatus={detailStatus}
           detailMessage={detailMessage}
@@ -7246,9 +7147,27 @@ function LibraryView({
       ) : (
         <>
           {activeView !== "overview" && activeView !== "nowPlaying" ? (
-            <div className="panel-heading browser-heading">
-              <h3>{panelTitle}</h3>
+            <div className={`panel-heading browser-heading ${isCollectionView ? "library-browser-heading" : ""}`}>
+              <div className="browser-heading-copy">
+                <p className="eyebrow">{isCollectionView ? "Your collection" : "Browse"}</p>
+                <h3>{isCollectionView ? "Library" : panelTitle}</h3>
+              </div>
               <div className="heading-actions">
+              {isCollectionView ? (
+                <div className="library-view-switcher" aria-label="Library view">
+                  {libraryViews.map((view) => (
+                    <button
+                      className={activeView === view.id ? "active" : ""}
+                      type="button"
+                      key={view.id}
+                      aria-current={activeView === view.id ? "page" : undefined}
+                      onClick={() => onSelectView(view.id)}
+                    >
+                      {view.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {activeView === "albums" ? (
                 <div className="view-toggle" aria-label="Album view">
                   <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
@@ -7297,14 +7216,16 @@ function LibraryView({
             <OverviewHome
               config={config}
               listenerName={listenerName}
-              albums={albums}
               recentAlbums={recentAlbums}
               recentlyPlayedAlbums={recentlyPlayedAlbums}
+              frequentAlbums={frequentAlbums}
               listeningHistory={listeningHistory}
+              favorites={favorites}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
               radioStationName={radioStationName(radioStationState, appSettings.radioStationUrl, appSettings.radioStationNames[normalizeStationUrl(appSettings.radioStationUrl)])}
               radioStatus={radioStatus}
+              shelfView={appSettings.homeShelfView}
               onPlaySong={onPlaySong}
               onPlayAlbum={onPlayAlbum}
               onOpenAlbum={onOpenAlbum}
@@ -7316,17 +7237,10 @@ function LibraryView({
           {activeView === "nowPlaying" ? (
             <NowPlayingView
               config={config}
+              albums={albums}
               currentTrack={currentTrack}
               currentTrackCoverUrl={currentTrackCoverUrl}
-              isPlaying={isPlaying}
-              position={position}
               duration={duration}
-              hasPrevious={hasPrevious}
-              hasNext={hasNext}
-              onTogglePlayback={onTogglePlayback}
-              onPrevious={onPrevious}
-              onNext={onNext}
-              onSeek={onSeek}
               onOpenAlbum={onOpenAlbum}
               onOpenArtist={onOpenArtist}
             />
@@ -7346,7 +7260,10 @@ function LibraryView({
           {activeView === "artists" ? (
             <ArtistBrowser
               viewMode={artistViewMode}
+              config={config}
               artists={artists}
+              artistImageCache={artistImageCache}
+              onArtistImageResolved={onArtistImageResolved}
               favoriteIds={favoriteIds}
               favoriteBusyKey={favoriteBusyKey}
               onToggleFavorite={onToggleFavorite}
@@ -7375,7 +7292,7 @@ function LibraryView({
             )
           ) : null}
           {activeView === "playlists" ? (
-            <PlaylistBrowser playlists={playlists} onOpenPlaylist={onOpenPlaylist} onPlayPlaylist={onPlayPlaylist} />
+            <PlaylistBrowser config={config} playlists={playlists} onOpenPlaylist={onOpenPlaylist} onPlayPlaylist={onPlayPlaylist} />
           ) : null}
           {activeView === "recentlyAdded" ? (
             <AlbumBrowser
@@ -7442,14 +7359,16 @@ function LibraryView({
 function OverviewHome({
   config,
   listenerName,
-  albums,
   recentAlbums,
   recentlyPlayedAlbums,
+  frequentAlbums,
   listeningHistory,
+  favorites,
   currentTrack,
   isPlaying,
   radioStationName,
   radioStatus,
+  shelfView,
   onPlaySong,
   onPlayAlbum,
   onOpenAlbum,
@@ -7459,14 +7378,16 @@ function OverviewHome({
 }: {
   config: NavidromeConfig | null;
   listenerName: string;
-  albums: Album[];
   recentAlbums: Album[];
   recentlyPlayedAlbums: Album[];
+  frequentAlbums: Album[];
   listeningHistory: ListeningHistoryEntry[];
+  favorites: LibraryData["favorites"];
   currentTrack: Song | null;
   isPlaying: boolean;
   radioStationName: string;
   radioStatus: RadioStatus;
+  shelfView: HomeShelfViewMode;
   onPlaySong: (song: Song) => void;
   onPlayAlbum: (album: Album) => void;
   onOpenAlbum: (album: Album) => void;
@@ -7475,71 +7396,106 @@ function OverviewHome({
   onStartRadio: () => void;
 }) {
   const latestListen = listeningHistory[0]?.song;
-  const isContinuing = Boolean(latestListen && currentTrack?.id === latestListen.id && isPlaying);
+  const resumeTrack = currentTrack ?? latestListen;
+  const isContinuing = Boolean(resumeTrack && currentTrack?.id === resumeTrack.id && isPlaying);
   const isRadioStarting = radioStatus === "checking";
-  const [shuffleAlbums, setShuffleAlbums] = useState<Album[]>([]);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const visibleRecentAlbums = recentlyPlayedAlbums.slice(0, 5);
   const visibleNewAlbums = recentAlbums.slice(0, 5);
+  const favoriteAlbumsById = new Map(favorites.albums.map((album) => [album.id, album]));
+  const albumListenCounts = new Map<string, { album: Album; count: number; firstIndex: number }>();
+  listeningHistory.forEach((entry, index) => {
+    const source = entry.source !== "library" && entry.source.type === "album" ? entry.source : null;
+    const albumId = entry.song.albumId ?? source?.id;
+    const albumName = entry.song.album ?? source?.name;
+    if (!albumId || !albumName) return;
 
-  useEffect(() => {
-    setShuffleAlbums(shuffled(albums).slice(0, 5));
-  }, [albums]);
-
-  const refreshShuffleAlbums = () => setShuffleAlbums(shuffled(albums).slice(0, 5));
+    const current = albumListenCounts.get(albumId);
+    albumListenCounts.set(albumId, {
+      album: favoriteAlbumsById.get(albumId) ?? current?.album ?? {
+        id: albumId,
+        name: albumName,
+        artist: entry.song.artist ?? source?.artist ?? "",
+        artistId: entry.song.artistId,
+        coverArt: entry.song.coverArt ?? source?.coverArt,
+      },
+      count: (current?.count ?? 0) + 1,
+      firstIndex: current?.firstIndex ?? index,
+    });
+  });
+  const localMostPlayedAlbums = [...albumListenCounts.values()]
+    .sort((left, right) => {
+      const favoriteDifference = Number(favoriteAlbumsById.has(right.album.id)) - Number(favoriteAlbumsById.has(left.album.id));
+      return favoriteDifference || right.count - left.count || left.firstIndex - right.firstIndex;
+    })
+    .map(({ album }) => album);
+  const serverMostPlayedAlbums = frequentAlbums.length
+    ? [...new Map([...favorites.albums, ...frequentAlbums].map((album) => [album.id, album])).values()]
+    : [];
+  const mostPlayedAlbums = (serverMostPlayedAlbums.length ? serverMostPlayedAlbums : localMostPlayedAlbums).slice(0, 5);
+  const rotationAlbums = mostPlayedAlbums.length
+    ? mostPlayedAlbums
+    : [...new Map([...favorites.albums, ...visibleRecentAlbums].map((album) => [album.id, album])).values()].slice(0, 5);
+  const rotationTitle = mostPlayedAlbums.length ? "On Repeat" : favorites.albums.length ? "Top Picks" : "In Rotation";
+  const rotationView: View = mostPlayedAlbums.length || !favorites.albums.length ? "recentlyPlayed" : "favorites";
+  const resumeAlbum = resumeTrack?.albumId
+    ? { id: resumeTrack.albumId, name: resumeTrack.album ?? "Unknown album", artist: resumeTrack.artist ?? "", artistId: resumeTrack.artistId, coverArt: resumeTrack.coverArt }
+    : null;
 
   return (
     <div className="home-dashboard">
-      <section className="home-dashboard-intro">
-        <div>
-          <p className="eyebrow">Your listening</p>
-          <h3>{greeting}{listenerName ? `, ${listenerName}` : ""}.</h3>
-          <p>{latestListen ? `Pick up where you left off with ${latestListen.title}${latestListen.artist ? ` by ${latestListen.artist}` : ""}.` : config ? "Start a record, and Prism will keep the good stuff close at hand." : "Connect your library to make this space yours."}</p>
-          {latestListen ? (
-            isContinuing ? (
-              <span className="home-continue-status"><Pause size={16} fill="currentColor" /> Listening now</span>
-            ) : (
-              <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(latestListen)}>
-                <Play size={16} fill="currentColor" />
-                Continue listening
-              </button>
-            )
-          ) : null}
-        </div>
-        <div className="home-art-cluster" aria-label="Albums from your library">
-          {visibleRecentAlbums.length ? visibleRecentAlbums.slice(0, 3).map((album, index) => (
-            <CoverArt
-              key={album.id}
-              src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
-              label={album.name}
-              className={`home-cluster-art home-cluster-art-${index + 1}`}
+      <header className="home-dashboard-heading">
+        <p className="eyebrow">Home</p>
+        <h2>{greeting}{listenerName ? `, ${listenerName}` : ""}.</h2>
+      </header>
+      <div className="home-dashboard-lead">
+        {resumeTrack ? (
+          <section className="home-resume-card" aria-labelledby="home-resume-title">
+            <PlayableCover
+              src={config ? buildCoverArtUrl(config, resumeTrack.coverArt, "320") : null}
+              label={resumeTrack.title}
+              className="home-resume-cover"
+              onOpen={resumeAlbum ? () => onOpenAlbum(resumeAlbum) : undefined}
+              onPlay={() => onPlaySong(resumeTrack)}
             />
-          )) : <div className="home-cluster-empty"><Music2 size={34} /></div>}
-        </div>
-      </section>
-      <section className="home-radio-card">
-        <div className="home-radio-mark"><RadioTower size={22} /></div>
-        <div>
-          <p className="eyebrow">Live from Subwave</p>
-          <h4>Listen to {radioStationName}</h4>
-          <p>A separate place for the live station, shows, and requests.</p>
-        </div>
-        <button className="secondary-button home-radio-button" type="button" onClick={onStartRadio} disabled={isRadioStarting}>
-          {isRadioStarting ? <Loader2 className="spin" size={16} /> : <Play size={16} fill="currentColor" />}
-          {isRadioStarting ? "Tuning in" : `Listen to ${radioStationName}`}
-        </button>
-      </section>
-      <HomeListeningShelf history={listeningHistory} fallbackAlbums={visibleRecentAlbums} config={config} onPlaySong={onPlaySong} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onOpenPlaylist={onOpenPlaylist} onSelectView={onSelectView} />
-      <HomeAlbumShelf title="Recently added" description="Fresh additions to your library." albums={visibleNewAlbums} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onSeeAll={() => onSelectView("recentlyAdded")} />
-      <HomeAlbumShelf title="Start listening" description="A few picks from your library." albums={shuffleAlbums} config={config} onPlayAlbum={onPlayAlbum} onRefresh={refreshShuffleAlbums} />
+            <div className="home-resume-copy">
+              <p className="eyebrow">{isContinuing ? "Listening now" : "Continue listening"}</p>
+              <h3 id="home-resume-title">{resumeTrack.title}</h3>
+              <p>{[resumeTrack.artist, resumeTrack.album].filter(Boolean).join(" · ") || "From your library"}</p>
+              {isContinuing ? (
+                <span className="home-continue-status"><Pause size={15} fill="currentColor" /> Playing</span>
+              ) : (
+                <button className="connect-button home-continue-button" type="button" onClick={() => onPlaySong(resumeTrack)}>
+                  <Play size={15} fill="currentColor" /> Resume
+                </button>
+              )}
+            </div>
+          </section>
+        ) : null}
+        <section className="home-radio-card" aria-labelledby="home-radio-title">
+          <div className="home-radio-mark"><RadioTower size={20} /></div>
+          <div>
+            <p className="eyebrow">Radio</p>
+            <h4 id="home-radio-title">{radioStationName}</h4>
+          </div>
+          <button className="secondary-button home-radio-button" type="button" onClick={onStartRadio} disabled={isRadioStarting}>
+            {isRadioStarting ? <Loader2 className="spin" size={15} /> : <Play size={15} fill="currentColor" />}
+            {isRadioStarting ? "Tuning in" : "Listen live"}
+          </button>
+        </section>
+      </div>
+      <HomeAlbumShelf title={rotationTitle} subtitle="Favorites and frequent spins worth another play." albums={rotationAlbums} viewMode={shelfView} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onSeeAll={() => onSelectView(rotationView)} />
+      <HomeListeningShelf history={listeningHistory} fallbackAlbums={visibleRecentAlbums} viewMode={shelfView} config={config} onPlaySong={onPlaySong} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onOpenPlaylist={onOpenPlaylist} onSelectView={onSelectView} />
+      <HomeAlbumShelf title="Fresh Finds" subtitle="Recently added albums ready for a first spin." albums={visibleNewAlbums} viewMode={shelfView} config={config} onPlayAlbum={onPlayAlbum} onOpenAlbum={onOpenAlbum} onSeeAll={() => onSelectView("recentlyAdded")} />
     </div>
   );
 }
 
-function HomeListeningShelf({ history, fallbackAlbums, config, onPlaySong, onPlayAlbum, onOpenAlbum, onOpenPlaylist, onSelectView }: {
+function HomeListeningShelf({ history, fallbackAlbums, viewMode, config, onPlaySong, onPlayAlbum, onOpenAlbum, onOpenPlaylist, onSelectView }: {
   history: ListeningHistoryEntry[];
   fallbackAlbums: Album[];
+  viewMode: HomeShelfViewMode;
   config: NavidromeConfig | null;
   onPlaySong: (song: Song) => void;
   onPlayAlbum: (album: Album) => void;
@@ -7553,10 +7509,12 @@ function HomeListeningShelf({ history, fallbackAlbums, config, onPlaySong, onPla
     return [key, { source, song: entry.song }];
   })).values()).slice(0, 5);
 
+  if (!items.length && !fallbackAlbums.length) return null;
+
   return (
-    <section className="home-album-shelf">
-      <div className="home-shelf-heading"><div><h4>Recently played</h4><p>A few listens to come back to.</p></div><button className="home-shelf-action" type="button" onClick={() => onSelectView("recentlyPlayed")}>See all <ChevronRight size={15} /></button></div>
-      <div className="home-album-carousel"><div className="home-album-row" tabIndex={0} aria-label="Recently played">
+    <section className={`home-album-shelf home-album-shelf-${viewMode}`}>
+      <div className="home-shelf-heading"><div><h4>Keep It Going</h4><p>Pick up where you left off across albums and playlists.</p></div><button className="home-shelf-action" type="button" onClick={() => onSelectView("recentlyPlayed")}>See all <ChevronRight size={15} /></button></div>
+      <div className="home-album-carousel"><div className={`home-album-row home-album-row-${viewMode}`} tabIndex={0} aria-label="Recently played">
         {(items.length ? items.map(({ source, song }) => {
           const playlist = source !== "library" && source.type === "playlist" ? source : null;
           const album = source !== "library" && source.type === "album" ? source : null;
@@ -7576,22 +7534,22 @@ function HomeListeningShelf({ history, fallbackAlbums, config, onPlaySong, onPla
 
 function HomeAlbumShelf({
   title,
-  description,
+  subtitle,
   albums,
+  viewMode,
   config,
   onPlayAlbum,
   onOpenAlbum,
   onSeeAll,
-  onRefresh,
 }: {
   title: string;
-  description: string;
+  subtitle: string;
   albums: Album[];
+  viewMode: HomeShelfViewMode;
   config: NavidromeConfig | null;
   onPlayAlbum: (album: Album) => void;
   onOpenAlbum?: (album: Album) => void;
   onSeeAll?: () => void;
-  onRefresh?: () => void;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [scrollCue, setScrollCue] = useState({ canScrollLeft: false, canScrollRight: false });
@@ -7621,17 +7579,13 @@ function HomeAlbumShelf({
   if (!albums.length) return null;
 
   return (
-    <section className="home-album-shelf">
+    <section className={`home-album-shelf home-album-shelf-${viewMode}`}>
       <div className="home-shelf-heading">
-        <div>
-          <h4>{title}</h4>
-          <p>{description}</p>
-        </div>
-        {onRefresh ? <button className="home-shelf-action" type="button" onClick={onRefresh}><RefreshCw size={15} /> Refresh</button> : null}
+        <div><h4>{title}</h4><p>{subtitle}</p></div>
         {onSeeAll ? <button className="home-shelf-action" type="button" onClick={onSeeAll}>See all <ChevronRight size={15} /></button> : null}
       </div>
       <div className="home-album-carousel">
-        <div className="home-album-row" ref={rowRef} tabIndex={0} aria-label={`${title} albums`}>
+        <div className={`home-album-row home-album-row-${viewMode}`} ref={rowRef} tabIndex={0} aria-label={`${title} albums`}>
           {albums.map((album) => (
             <div className="home-album" key={album.id} role={onOpenAlbum ? "button" : undefined} tabIndex={onOpenAlbum ? 0 : undefined} onClick={onOpenAlbum ? () => onOpenAlbum(album) : undefined} onKeyDown={(event) => { if (onOpenAlbum && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenAlbum(album); } }}>
               <PlayableCover
@@ -7657,32 +7611,18 @@ function HomeAlbumShelf({
 
 function NowPlayingView({
   config,
+  albums,
   currentTrack,
   currentTrackCoverUrl,
-  isPlaying,
-  position,
   duration,
-  hasPrevious,
-  hasNext,
-  onTogglePlayback,
-  onPrevious,
-  onNext,
-  onSeek,
   onOpenAlbum,
   onOpenArtist,
 }: {
   config: NavidromeConfig | null;
+  albums: Album[];
   currentTrack: Song | null;
   currentTrackCoverUrl: string | null;
-  isPlaying: boolean;
-  position: number;
   duration: number;
-  hasPrevious: boolean;
-  hasNext: boolean;
-  onTogglePlayback: () => void;
-  onPrevious: () => void;
-  onNext: () => void;
-  onSeek: (position: number) => void;
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
 }) {
@@ -7691,49 +7631,23 @@ function NowPlayingView({
   const byline = config
       ? "Pick an album, artist, or song from your library."
       : "Connect your Navidrome server to bring your music home.";
-  const progress = Math.min(position, Math.max(duration, 1));
-  const progressRatio = progress / Math.max(duration, 1);
-  const progressFillEnd = `calc(11px + ${progressRatio * 100}% - ${22 * progressRatio}px)`;
+  const albumYear = currentTrack?.albumId ? albums.find((album) => album.id === currentTrack.albumId)?.year : undefined;
 
+  const trackDuration = duration || currentTrack?.duration;
   return (
     <div className="home-view">
       <section className={`home-now-playing-hero ${hasTrack ? "has-track" : ""}`}>
-        {currentTrackCoverUrl ? (
-          <div className="home-cover-wash" style={{ backgroundImage: `url(${currentTrackCoverUrl})` }} aria-hidden="true" />
-        ) : null}
         <div className="home-now-playing-art">
           <CoverArt src={currentTrackCoverUrl} label={title} className="home-now-playing-cover" fallbackIcon={<Music2 size={42} />} />
         </div>
         <div className="home-now-playing-copy">
-          <p className="eyebrow">{isPlaying ? "Now playing" : hasTrack ? "Paused" : "Ready when you are"}</p>
           <h3>{title}</h3>
           {currentTrack ? <p className="home-now-playing-meta">
             {currentTrack.artistId ? <button className="home-now-playing-meta-link" type="button" onClick={() => onOpenArtist({ id: currentTrack.artistId!, name: currentTrack.artist ?? "Unknown artist" })}>{currentTrack.artist ?? "Unknown artist"}</button> : <span>{currentTrack.artist ?? "Unknown artist"}</span>}
             {currentTrack.album ? <><span aria-hidden="true"> · </span>{currentTrack.albumId ? <button className="home-now-playing-meta-link" type="button" onClick={() => onOpenAlbum({ id: currentTrack.albumId!, name: currentTrack.album!, artist: currentTrack.artist ?? "", artistId: currentTrack.artistId, coverArt: currentTrack.coverArt })}>{currentTrack.album}</button> : <span>{currentTrack.album}</span>}</> : null}
+            {albumYear ? <><span aria-hidden="true"> · </span><span>{albumYear}</span></> : null}
+            {trackDuration ? <><span aria-hidden="true"> · </span><span>{formatDuration(trackDuration)}</span></> : null}
           </p> : <p>{byline}</p>}
-          <div className="home-playback-controls">
-            <button type="button" aria-label="Previous" onClick={onPrevious} disabled={!hasPrevious}><SkipBack size={18} /></button>
-            <button className="home-primary-play" type="button" aria-label={isPlaying ? "Pause" : "Play"} onClick={onTogglePlayback} disabled={!hasTrack}>
-              {isPlaying ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
-            </button>
-            <button type="button" aria-label="Next" onClick={onNext} disabled={!hasNext}><SkipForward size={18} /></button>
-          </div>
-          <div className="home-seek-row">
-            <span>{formatDuration(position)}</span>
-            <input
-              className="home-seek-slider"
-              type="range"
-              min="0"
-              max={Math.max(duration, 1)}
-              step="1"
-              value={progress}
-              style={{ "--home-seek-fill-end": progressFillEnd } as CSSProperties}
-              onChange={(event) => onSeek(Number(event.target.value))}
-              disabled={!hasTrack || !duration}
-              aria-label="Seek"
-            />
-            <span>{formatDuration(duration)}</span>
-          </div>
         </div>
       </section>
     </div>
@@ -7795,6 +7709,7 @@ function FavoritesView({
             <small>{favorites.artists.length}</small>
           </div>
           <ArtistList
+            config={config}
             artists={favorites.artists}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
@@ -7882,8 +7797,47 @@ function SearchResultsView({
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
+  const previewLimit = 8;
   const trimmedQuery = query.trim();
   const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
+  const [resultFilter, setResultFilter] = useState<"all" | "songs" | "albums" | "artists" | "playlists">("all");
+  const [expandedSections, setExpandedSections] = useState<Set<"songs" | "albums" | "artists" | "playlists">>(() => new Set());
+  const normalizedQuery = trimmedQuery.toLocaleLowerCase();
+  const filters = [
+    ["all", "All", totalResults],
+    ["songs", "Songs", results.songs.length],
+    ["albums", "Albums", results.albums.length],
+    ["artists", "Artists", results.artists.length],
+    ["playlists", "Playlists", results.playlists.length],
+  ] as const;
+  const shows = (type: Exclude<typeof resultFilter, "all">) => resultFilter === "all" || resultFilter === type;
+  const visible = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => expandedSections.has(type) ? items : items.slice(0, previewLimit);
+  const canShowMore = <T,>(type: "songs" | "albums" | "artists" | "playlists", items: T[]) => !expandedSections.has(type) && items.length > previewLimit;
+  const showMore = (type: "songs" | "albums" | "artists" | "playlists") => {
+    setExpandedSections((sections) => new Set(sections).add(type));
+  };
+  const primaryMatch = useMemo(() => {
+    const candidates = [
+      ...(resultFilter === "all" || resultFilter === "artists" ? results.artists.map((item, index) => ({ type: "artist" as const, item, label: item.name, index })) : []),
+      ...(resultFilter === "all" || resultFilter === "albums" ? results.albums.map((item, index) => ({ type: "album" as const, item, label: item.name, index })) : []),
+      ...(resultFilter === "all" || resultFilter === "songs" ? results.songs.map((item, index) => ({ type: "song" as const, item, label: item.title, index })) : []),
+      ...(resultFilter === "all" || resultFilter === "playlists" ? results.playlists.map((item, index) => ({ type: "playlist" as const, item, label: item.name, index })) : []),
+    ];
+    const matchRank = (label: string) => {
+      const normalizedLabel = label.toLocaleLowerCase();
+      if (normalizedLabel === normalizedQuery) return 0;
+      if (normalizedLabel.startsWith(normalizedQuery)) return 1;
+      if (normalizedLabel.includes(normalizedQuery)) return 2;
+      return 3;
+    };
+
+    return candidates.sort((left, right) => matchRank(left.label) - matchRank(right.label) || left.index - right.index)[0] ?? null;
+  }, [normalizedQuery, resultFilter, results]);
+
+  useEffect(() => {
+    setResultFilter("all");
+    setExpandedSections(new Set());
+  }, [trimmedQuery]);
 
   if (trimmedQuery.length < 2) {
     return <EmptyPanel icon={<Search size={20} />} text="Start typing in the top search." />;
@@ -7908,21 +7862,70 @@ function SearchResultsView({
           <p className="eyebrow">Search results</p>
           <h4>{trimmedQuery}</h4>
         </div>
-        <div className="search-counts" aria-label="Result counts">
-          <span>{results.songs.length} songs</span>
-          <span>{results.albums.length} albums</span>
-          <span>{results.artists.length} artists</span>
-          <span>{results.playlists.length} playlists</span>
+        <div className="search-counts" aria-label="Filter results by type">
+          {filters.map(([filter, label, count]) => (
+            <button
+              className={resultFilter === filter ? "active" : ""}
+              type="button"
+              key={filter}
+              onClick={() => setResultFilter(filter)}
+              aria-pressed={resultFilter === filter}
+            >
+              {label} {count}
+            </button>
+          ))}
         </div>
       </section>
-      {results.artists.length ? (
+      {primaryMatch ? (
+        <section className="search-primary" aria-labelledby="search-primary-heading">
+          <div className="search-section-heading">
+            <div>
+              <p className="eyebrow">Top result</p>
+              <h4 id="search-primary-heading">Best match</h4>
+            </div>
+          </div>
+          <button
+            className="search-primary-card"
+            type="button"
+            onClick={() => {
+              if (primaryMatch.type === "artist") onOpenArtist(primaryMatch.item);
+              if (primaryMatch.type === "album") onOpenAlbum(primaryMatch.item);
+              if (primaryMatch.type === "song") onPlaySong(primaryMatch.item);
+              if (primaryMatch.type === "playlist") onOpenPlaylist(primaryMatch.item);
+            }}
+          >
+            <CoverArt
+              src={config && primaryMatch.type !== "artist" ? buildCoverArtUrl(config, primaryMatch.item.coverArt, "160") : null}
+              label={primaryMatch.label}
+              className="search-primary-art"
+              fallbackIcon={primaryMatch.type === "artist" ? <UserRound size={28} /> : primaryMatch.type === "playlist" ? <ListMusic size={28} /> : primaryMatch.type === "album" ? <Disc3 size={28} /> : <Music2 size={28} />}
+            />
+            <span className="search-primary-copy">
+              <strong>{primaryMatch.label}</strong>
+              <small>
+                {primaryMatch.type === "artist"
+                  ? `${primaryMatch.item.albumCount ?? 0} ${primaryMatch.item.albumCount === 1 ? "album" : "albums"}`
+                  : primaryMatch.type === "album"
+                    ? primaryMatch.item.artist || "Album"
+                    : primaryMatch.type === "song"
+                      ? [primaryMatch.item.artist, primaryMatch.item.album].filter(Boolean).join(" - ") || "Song"
+                      : `${primaryMatch.item.songCount ?? 0} ${primaryMatch.item.songCount === 1 ? "song" : "songs"}`}
+              </small>
+            </span>
+            <span className="search-primary-type">{primaryMatch.type === "song" ? "Play" : primaryMatch.type}</span>
+            {primaryMatch.type === "song" ? <Play size={18} fill="currentColor" /> : <ChevronRight size={18} />}
+          </button>
+        </section>
+      ) : null}
+      {shows("artists") && results.artists.length ? (
         <section className="search-section">
-          <div className="section-label">
+          <div className="section-label search-section-label">
             <h4>Artists</h4>
             <small>{results.artists.length}</small>
           </div>
           <ArtistList
-            artists={results.artists}
+            config={config}
+            artists={visible("artists", results.artists)}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
@@ -7930,17 +7933,18 @@ function SearchResultsView({
             onPlayArtist={onPlayArtist}
             withAlphabetRail={false}
           />
+          {canShowMore("artists", results.artists) ? <button className="search-see-more" type="button" onClick={() => showMore("artists")}>See more artists ({results.artists.length - previewLimit})</button> : null}
         </section>
       ) : null}
-      {results.albums.length ? (
+      {shows("albums") && results.albums.length ? (
         <section className="search-section">
-          <div className="section-label">
+          <div className="section-label search-section-label">
             <h4>Albums</h4>
             <small>{results.albums.length}</small>
           </div>
           <AlbumList
             config={config}
-            albums={results.albums}
+            albums={visible("albums", results.albums)}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
             onToggleFavorite={onToggleFavorite}
@@ -7948,25 +7952,27 @@ function SearchResultsView({
             onPlayAlbum={onPlayAlbum}
             withAlphabetRail={false}
           />
+          {canShowMore("albums", results.albums) ? <button className="search-see-more" type="button" onClick={() => showMore("albums")}>See more albums ({results.albums.length - previewLimit})</button> : null}
         </section>
       ) : null}
-      {results.playlists.length ? (
+      {shows("playlists") && results.playlists.length ? (
         <section className="search-section">
-          <div className="section-label">
+          <div className="section-label search-section-label">
             <h4>Playlists</h4>
             <small>{results.playlists.length}</small>
           </div>
-          <SearchPlaylistList playlists={results.playlists} onOpenPlaylist={onOpenPlaylist} />
+          <SearchPlaylistList config={config} playlists={visible("playlists", results.playlists)} onOpenPlaylist={onOpenPlaylist} />
+          {canShowMore("playlists", results.playlists) ? <button className="search-see-more" type="button" onClick={() => showMore("playlists")}>See more playlists ({results.playlists.length - previewLimit})</button> : null}
         </section>
       ) : null}
-      {results.songs.length ? (
+      {shows("songs") && results.songs.length ? (
         <section className="search-section">
-          <div className="section-label">
+          <div className="section-label search-section-label">
             <h4>Songs</h4>
             <small>{results.songs.length}</small>
           </div>
           <SearchSongList
-            songs={results.songs}
+            songs={visible("songs", results.songs)}
             currentTrack={currentTrack}
             favoriteIds={favoriteIds}
             favoriteBusyKey={favoriteBusyKey}
@@ -7977,6 +7983,7 @@ function SearchResultsView({
             onQueueSong={onQueueSong}
             onSongContextMenu={onSongContextMenu}
           />
+          {canShowMore("songs", results.songs) ? <button className="search-see-more" type="button" onClick={() => showMore("songs")}>See more songs ({results.songs.length - previewLimit})</button> : null}
         </section>
       ) : null}
     </div>
@@ -7984,9 +7991,11 @@ function SearchResultsView({
 }
 
 function SearchPlaylistList({
+  config,
   playlists,
   onOpenPlaylist,
 }: {
+  config: NavidromeConfig | null;
   playlists: Playlist[];
   onOpenPlaylist: (playlist: Playlist) => void;
 }) {
@@ -8001,7 +8010,12 @@ function SearchPlaylistList({
           data-context-id={playlist.id}
           onClick={() => onOpenPlaylist(playlist)}
         >
-          <ListMusic size={18} />
+          <CoverArt
+            src={config ? buildCoverArtUrl(config, playlist.coverArt, "160") : null}
+            label={playlist.name}
+            className="search-playlist-cover"
+            fallbackIcon={<ListMusic size={18} />}
+          />
           <span>
             <strong>{playlist.name}</strong>
             <small>
@@ -8682,9 +8696,64 @@ function CoverArt({
   return <img className={className} src={src} alt={`${label} cover`} loading="lazy" onError={() => setImageFailed(true)} />;
 }
 
+function useArtistImageUrls(
+  config: NavidromeConfig | null,
+  artists: Artist[],
+  cachedImages: Record<string, string>,
+  onImageResolved: (artistId: string, imageUrl: string) => void,
+) {
+  const queryClient = useQueryClient();
+  const [imageUrls, setImageUrls] = useState<Record<string, string | null>>(cachedImages);
+
+  useEffect(() => {
+    setImageUrls((current) => ({ ...current, ...cachedImages }));
+  }, [cachedImages]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let nextArtistIndex = 0;
+
+    if (!config || !artists.length) return undefined;
+    const currentConfig = config;
+
+    async function loadNextArtist() {
+      while (!cancelled && nextArtistIndex < artists.length) {
+        const artist = artists[nextArtistIndex];
+        nextArtistIndex += 1;
+
+        if (cachedImages[artist.id]) continue;
+
+        const detail = await queryClient.fetchQuery({
+          queryKey: navidromeKeys.artist(currentConfig, artist.id),
+          queryFn: () => navidromeClient.artist(currentConfig, artist.id),
+          staleTime: 5 * 60_000,
+        }).catch(() => null);
+
+        const imageUrl = getArtistImageUrl(detail?.info);
+        if (!cancelled && imageUrl) {
+          setImageUrls((current) => ({ ...current, [artist.id]: imageUrl }));
+          onImageResolved(artist.id, imageUrl);
+        }
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(4, artists.length) }, () => loadNextArtist());
+    void Promise.all(workers);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [artists, cachedImages, config, onImageResolved, queryClient]);
+
+  return imageUrls;
+}
+
 function ArtistBrowser({
   viewMode,
+  config,
   artists,
+  artistImageCache,
+  onArtistImageResolved,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
@@ -8692,7 +8761,10 @@ function ArtistBrowser({
   onPlayArtist,
 }: {
   viewMode: ArtistViewMode;
+  config: NavidromeConfig | null;
   artists: Artist[];
+  artistImageCache: Record<string, string>;
+  onArtistImageResolved: (artistId: string, imageUrl: string) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -8702,7 +8774,10 @@ function ArtistBrowser({
   if (viewMode === "art") {
     return (
       <ArtistGrid
+        config={config}
         artists={artists}
+        artistImageCache={artistImageCache}
+        onArtistImageResolved={onArtistImageResolved}
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
         onToggleFavorite={onToggleFavorite}
@@ -8714,7 +8789,10 @@ function ArtistBrowser({
 
   return (
     <ArtistList
+      config={config}
       artists={artists}
+      artistImageCache={artistImageCache}
+      onArtistImageResolved={onArtistImageResolved}
       favoriteIds={favoriteIds}
       favoriteBusyKey={favoriteBusyKey}
       onToggleFavorite={onToggleFavorite}
@@ -8725,20 +8803,28 @@ function ArtistBrowser({
 }
 
 function ArtistGrid({
+  config,
   artists,
+  artistImageCache,
+  onArtistImageResolved,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
   onOpenArtist,
   onPlayArtist,
 }: {
+  config: NavidromeConfig | null;
   artists: Artist[];
+  artistImageCache: Record<string, string>;
+  onArtistImageResolved: (artistId: string, imageUrl: string) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayArtist: (artist: Artist) => void;
 }) {
+  const artistImageUrls = useArtistImageUrls(config, artists, artistImageCache, onArtistImageResolved);
+
   if (!artists.length) {
     return <EmptyPanel icon={<UserRound size={20} />} text="No artists loaded yet." />;
   }
@@ -8752,31 +8838,35 @@ function ArtistGrid({
           <section className="alpha-section" id={alphaSectionId("artists-art", group.letter)} key={group.letter}>
             <p className="alpha-heading">{group.letter}</p>
             <div className="artist-grid">
-              {group.items.map((artist) => (
-                <div className="artist-tile" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
-                  <PlayableCover
-                    src={null}
-                    label={artist.name}
-                    className="artist-grid-cover"
-                    rounded
-                    fallbackIcon={<UserRound size={30} />}
-                    onOpen={() => onOpenArtist(artist)}
-                    onPlay={() => onPlayArtist(artist)}
-                  />
-                  <button className="album-title-button" type="button" onClick={() => onOpenArtist(artist)}>
-                    {artist.name}
-                  </button>
-                  <div className="tile-meta-row">
-                    <small>{artist.albumCount ?? 0} albums</small>
-                    <FavoriteButton
-                      active={favoriteIds.artists.has(artist.id)}
-                      busy={favoriteBusyKey === `artist:${artist.id}`}
+              {group.items.map((artist) => {
+                const coverUrl = artistImageUrls[artist.id] ?? null;
+                const albumCount = artist.albumCount ?? 0;
+
+                return (
+                  <div className="artist-tile" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
+                    <PlayableCover
+                      src={coverUrl}
                       label={artist.name}
-                      onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+                      className="artist-grid-cover"
+                      fallbackIcon={<Disc3 size={30} />}
+                      onOpen={() => onOpenArtist(artist)}
+                      onPlay={() => onPlayArtist(artist)}
                     />
+                    <button className="album-title-button" type="button" onClick={() => onOpenArtist(artist)}>
+                      {artist.name}
+                    </button>
+                    <div className="tile-meta-row">
+                      <small>{albumCount} {albumCount === 1 ? "album" : "albums"}</small>
+                      <FavoriteButton
+                        active={favoriteIds.artists.has(artist.id)}
+                        busy={favoriteBusyKey === `artist:${artist.id}`}
+                        label={artist.name}
+                        onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         ))}
@@ -8787,7 +8877,10 @@ function ArtistGrid({
 }
 
 function ArtistList({
+  config,
   artists,
+  artistImageCache,
+  onArtistImageResolved,
   favoriteIds,
   favoriteBusyKey,
   onToggleFavorite,
@@ -8795,7 +8888,10 @@ function ArtistList({
   onPlayArtist,
   withAlphabetRail = true,
 }: {
+  config: NavidromeConfig | null;
   artists: Artist[];
+  artistImageCache?: Record<string, string>;
+  onArtistImageResolved?: (artistId: string, imageUrl: string) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -8803,8 +8899,23 @@ function ArtistList({
   onPlayArtist: (artist: Artist) => void;
   withAlphabetRail?: boolean;
 }) {
+  const artistImageUrls = useArtistImageUrls(config, artists, artistImageCache ?? {}, onArtistImageResolved ?? (() => undefined));
+
   if (!artists.length) {
     return <EmptyPanel icon={<UserRound size={20} />} text="No artists loaded yet." />;
+  }
+
+  function artistMain(artist: Artist) {
+    const coverUrl = artistImageUrls[artist.id] ?? null;
+    const albumCount = artist.albumCount ?? 0;
+
+    return (
+      <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
+        <CoverArt src={coverUrl} label={artist.name} className="artist-list-cover" fallbackIcon={<Disc3 size={16} />} />
+        <span>{artist.name}</span>
+        <small>{albumCount} {albumCount === 1 ? "album" : "albums"}</small>
+      </button>
+    );
   }
 
   if (!withAlphabetRail) {
@@ -8812,11 +8923,7 @@ function ArtistList({
       <div className="artist-list">
         {artists.map((artist) => (
           <div className="artist-row" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
-            <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
-              <UserRound size={18} />
-              <span>{artist.name}</span>
-              <small>{artist.albumCount ?? 0} albums</small>
-            </button>
+            {artistMain(artist)}
             <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
               <Play size={15} strokeWidth={1.6} />
             </button>
@@ -8843,11 +8950,7 @@ function ArtistList({
             <div className="artist-list">
               {group.items.map((artist) => (
                 <div className="artist-row" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
-                  <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
-                    <UserRound size={18} />
-                    <span>{artist.name}</span>
-                    <small>{artist.albumCount ?? 0} albums</small>
-                  </button>
+                  {artistMain(artist)}
                   <button className="track-play" type="button" onClick={() => onPlayArtist(artist)} aria-label={`Play ${artist.name}`}>
                     <Play size={15} strokeWidth={1.6} />
                   </button>
@@ -8957,10 +9060,12 @@ function PlaylistCreateForm({
 }
 
 function PlaylistBrowser({
+  config,
   playlists,
   onOpenPlaylist,
   onPlayPlaylist,
 }: {
+  config: NavidromeConfig | null;
   playlists: Playlist[];
   onOpenPlaylist: (playlist: Playlist) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
@@ -8972,23 +9077,30 @@ function PlaylistBrowser({
   const sortedPlaylists = [...playlists].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="playlist-list">
-      {sortedPlaylists.map((playlist) => (
-        <div className="playlist-row" key={playlist.id} data-context-kind="playlist" data-context-id={playlist.id}>
-          <button className="playlist-main" type="button" onClick={() => onOpenPlaylist(playlist)}>
-            <span className="playlist-icon" aria-hidden="true">
-              <ListMusic size={18} />
-            </span>
-            <span>
-              <strong>{playlist.name}</strong>
-              <small>{getPlaylistMeta(playlist)}</small>
-            </span>
-          </button>
-          <button className="track-play" type="button" onClick={() => onPlayPlaylist(playlist)} aria-label={`Play ${playlist.name}`}>
-            <Play size={15} strokeWidth={1.6} />
-          </button>
-        </div>
-      ))}
+    <div className="playlist-grid">
+      {sortedPlaylists.map((playlist) => {
+        const coverUrl = config ? buildCoverArtUrl(config, playlist.coverArt, "360") : null;
+
+        return (
+          <article className="playlist-card" key={playlist.id} data-context-kind="playlist" data-context-id={playlist.id}>
+            <button className="playlist-card-main" type="button" onClick={() => onOpenPlaylist(playlist)}>
+              <CoverArt
+                src={coverUrl}
+                label={playlist.name}
+                className="playlist-card-cover"
+                fallbackIcon={<ListMusic size={34} />}
+              />
+              <span className="playlist-card-copy">
+                <strong>{playlist.name}</strong>
+                <small>{getPlaylistMeta(playlist)}</small>
+              </span>
+            </button>
+            <button className="playlist-card-play" type="button" onClick={() => onPlayPlaylist(playlist)} aria-label={"Play " + playlist.name}>
+              <Play size={18} fill="currentColor" />
+            </button>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -9001,26 +9113,6 @@ function getPlaylistMeta(playlist: Playlist) {
   ].filter(Boolean);
 
   return parts.join(" - ") || "Playlist";
-}
-
-function formatPlaylistDuration(seconds?: number) {
-  if (!seconds || !Number.isFinite(seconds)) return null;
-  const totalMinutes = Math.floor(Math.max(0, seconds) / 60);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  if (hours) return `${hours}h${minutes ? ` ${minutes}m` : ""}`;
-  return `${Math.max(1, totalMinutes)}m`;
-}
-
-function getSidebarPlaylistMeta(playlist: Playlist, includeOwner = false) {
-  const parts = [
-    includeOwner && playlist.owner ? `by ${playlist.owner}` : null,
-    playlist.songCount != null ? `${playlist.songCount} songs` : null,
-    formatPlaylistDuration(playlist.duration),
-  ].filter(Boolean);
-
-  return parts.join(" · ") || "Playlist";
 }
 
 function PlaylistDetailPanel({
@@ -9062,7 +9154,7 @@ function PlaylistDetailPanel({
 }) {
   const songs = playlist.entry ?? [];
   const playlistCover =
-    config && songs.length ? buildCoverArtUrl(config, songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+    config ? buildCoverArtUrl(config, playlist.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [name, setName] = useState(playlist.name);
@@ -9183,23 +9275,21 @@ function PlaylistDetailPanel({
   }
 
   return (
-    <section className="detail-panel">
-      <div className="panel-heading">
-        <h3>{playlist.name}</h3>
-        <span>{songs.length} tracks</span>
-      </div>
-      <div className="playlist-hero">
-        <PlayableCover
-          src={playlistCover}
-          label={playlist.name}
-          className="detail-cover"
-          fallbackIcon={<ListMusic size={30} />}
-          disabled={!songs.length}
-          onPlay={() => onPlayPlaylist(playlist)}
-        />
-        <div>
-          <div className="detail-title">
-            <p className="eyebrow">Playlist</p>
+    <section className="detail-panel detail-page playlist-detail-page">
+      <div className="album-hero detail-page-hero playlist-hero">
+        <div className="detail-artwork-stage">
+          <PlayableCover
+            src={playlistCover}
+            label={playlist.name}
+            className="detail-cover"
+            fallbackIcon={<ListMusic size={30} />}
+            disabled={!songs.length}
+            onPlay={() => onPlayPlaylist(playlist)}
+          />
+        </div>
+        <div className="detail-hero-copy">
+          <p className="detail-type-label">Playlist</p>
+          <div className="detail-title detail-page-title">
             <h3>{playlist.name}</h3>
           </div>
           <div className="detail-stats">
@@ -9212,11 +9302,11 @@ function PlaylistDetailPanel({
           <div className="detail-actions">
             <button className="connect-button" type="button" onClick={() => onReplaceQueue(songs)} disabled={!songs.length}>
               <Play size={16} fill="currentColor" />
-              Play Playlist
+              Play
             </button>
             <button className="secondary-button" type="button" onClick={() => songs.forEach(onQueueSong)} disabled={!songs.length}>
               <ListMusic size={16} />
-              Queue Playlist
+              Queue
             </button>
             <button className="secondary-button" type="button" onClick={() => setEditing((value) => !value)}>
               <Settings size={16} />
@@ -9305,6 +9395,10 @@ function PlaylistDetailPanel({
           </section>
         </PrismAlertDialog>
       ) : null}
+      <div className="detail-tracks-heading">
+        <h4>Tracks</h4>
+        <span>{playlist.duration ? formatDuration(playlist.duration) : `${songs.length} tracks`}</span>
+      </div>
       <EditablePlaylistTrackList
         songs={draftSongs}
         busy={trackStatus === "saving"}
@@ -9329,8 +9423,115 @@ function PlaylistDetailPanel({
   );
 }
 
+function ArtistOptions({
+  artist,
+  artistImage,
+  biography,
+  lastFmUrl,
+  musicBrainzUrl,
+  similarArtists,
+  onOpenArtist,
+}: {
+  artist: Artist;
+  artistImage: string | null;
+  biography: string;
+  lastFmUrl: string | null;
+  musicBrainzUrl: string | null;
+  similarArtists: Artist[];
+  onOpenArtist: (artist: Artist) => void;
+}) {
+  const [aboutOpen, setAboutOpen] = useState(false);
+
+  function openSimilarArtist(similarArtist: Artist) {
+    setAboutOpen(false);
+    onOpenArtist(similarArtist);
+  }
+
+  return (
+    <>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button className="album-options-button" type="button" aria-label={`More options for ${artist.name}`}>
+            <MoreHorizontal size={18} aria-hidden="true" />
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            className="song-context-menu artist-options-menu"
+            sideOffset={6}
+            collisionPadding={12}
+            aria-label={`Options for ${artist.name}`}
+          >
+            <DropdownMenu.Item className="song-context-action" onSelect={() => setAboutOpen(true)}>
+              <Info size={15} aria-hidden="true" />
+              About artist
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      <PrismDialog open={aboutOpen} onOpenChange={setAboutOpen}>
+        <section className="artist-about-modal" aria-labelledby="artist-about-title" aria-describedby="artist-about-biography">
+          <div className="modal-heading">
+            <div>
+              <p className="eyebrow">About artist</p>
+              <Dialog.Title asChild><h3 id="artist-about-title">{artist.name}</h3></Dialog.Title>
+            </div>
+            <Dialog.Close asChild>
+              <button className="icon-button" type="button" aria-label={`Close about ${artist.name}`}>
+                <X size={16} />
+              </button>
+            </Dialog.Close>
+          </div>
+          <div className="artist-about-content">
+            <div className="artist-about-photo" aria-hidden={!artistImage}>
+              {artistImage ? <img src={artistImage} alt={`${artist.name} portrait`} /> : <UserRound size={42} aria-hidden="true" />}
+            </div>
+            <div className="artist-about-copy">
+              <Dialog.Description asChild>
+                <p id="artist-about-biography">{biography || `No biography is available for ${artist.name}.`}</p>
+              </Dialog.Description>
+              {similarArtists.length ? (
+                <div className="similar-artists" aria-labelledby="artist-about-similar-heading">
+                  <p className="eyebrow" id="artist-about-similar-heading">Similar artists</p>
+                  <div className="similar-list">
+                    {similarArtists.map((similar) =>
+                      similar.id ? (
+                        <button className="similar-chip" type="button" key={similar.id} onClick={() => openSimilarArtist(similar)}>
+                          {similar.name}
+                        </button>
+                      ) : (
+                        <span className="similar-chip" key={similar.name}>{similar.name}</span>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              {lastFmUrl || musicBrainzUrl ? (
+                <div className="artist-about-links" aria-label={`${artist.name} links`}>
+                  {lastFmUrl ? (
+                    <a href={lastFmUrl} target="_blank" rel="noreferrer">
+                      Last.fm <ExternalLink size={14} aria-hidden="true" />
+                    </a>
+                  ) : null}
+                  {musicBrainzUrl ? (
+                    <a href={musicBrainzUrl} target="_blank" rel="noreferrer">
+                      MusicBrainz <ExternalLink size={14} aria-hidden="true" />
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      </PrismDialog>
+    </>
+  );
+}
+
 function DetailPanel({
   config,
+  songs: librarySongs,
+  listeningHistory,
   detailSelection,
   detailStatus,
   detailMessage,
@@ -9355,6 +9556,8 @@ function DetailPanel({
   onSongContextMenu,
 }: {
   config: NavidromeConfig | null;
+  songs: Song[];
+  listeningHistory: ListeningHistoryEntry[];
   detailSelection: DetailSelection;
   detailStatus: "idle" | "loading" | "error";
   detailMessage: string;
@@ -9367,7 +9570,7 @@ function DetailPanel({
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: ArtistDetail) => void;
+  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -9396,69 +9599,116 @@ function DetailPanel({
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
-    const artistAlbums = sortAlbumsChronologically(artist.album ?? []);
+    const artistAlbums = sortAlbumsNewestFirst(artist.album ?? []);
     const artistInfo = artist.info;
     const artistImage = getArtistImageUrl(artistInfo);
     const firstCover = artistImage || (config ? buildCoverArtUrl(config, artistAlbums.find((album) => album.coverArt)?.coverArt, "420") : null);
     const biography = cleanBiography(artistInfo?.biography);
     const similarArtists = artistInfo?.similarArtist?.slice(0, 8) ?? [];
+    const topSongs = getArtistTopSongs(artist, librarySongs, listeningHistory);
+    const latestRelease = artistAlbums[0];
+    const latestReleaseCover = config && latestRelease ? buildCoverArtUrl(config, latestRelease.coverArt, "320") : null;
+    const lastFmUrl = getSafeExternalUrl(artistInfo?.lastFmUrl);
+    const musicBrainzUrl = getMusicBrainzArtistUrl(artistInfo?.musicBrainzId ?? artist.musicBrainzId);
     const activeYears = artistAlbums.map((album) => album.year).filter(Boolean) as number[];
     const yearRange = activeYears.length
       ? `${Math.min(...activeYears)}${Math.min(...activeYears) === Math.max(...activeYears) ? "" : `-${Math.max(...activeYears)}`}`
       : "Years unavailable";
 
     return (
-      <section className="detail-panel">
-        <div className="artist-hero">
-          <PlayableCover src={firstCover} label={artist.name} className="artist-cover" rounded onPlay={() => onPlayArtist(artist)} />
-          <div>
-            <p className="eyebrow">Artist</p>
-            <h3>{artist.name}</h3>
-            <FavoriteButton
-              active={favoriteIds.artists.has(artist.id)}
-              busy={favoriteBusyKey === `artist:${artist.id}`}
-              label={artist.name}
-              onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
-            />
+      <section className="detail-panel detail-page artist-detail-page">
+        <div className="album-hero detail-page-hero artist-hero">
+          <div className="detail-artwork-stage">
+            <PlayableCover src={firstCover} label={artist.name} className="detail-cover artist-cover" onPlay={() => onPlayArtist(artist)} />
+          </div>
+          <div className="detail-hero-copy">
+            <p className="detail-type-label">Artist</p>
+            <div className="detail-title detail-page-title">
+              <h3>{artist.name}</h3>
+            </div>
             <div className="detail-stats">
               <span>{artist.albumCount ?? artistAlbums.length} albums</span>
               <span>{yearRange}</span>
-              {artistInfo?.musicBrainzId ? <span>MusicBrainz</span> : null}
+            </div>
+            <div className="detail-actions">
+              <button className="connect-button" type="button" onClick={() => onPlayArtist(artist)} disabled={!artistAlbums.length}>
+                <Play size={16} fill="currentColor" />
+                Play
+              </button>
+              <button className="secondary-button" type="button" onClick={() => onPlayArtist(artist, true)} disabled={!artistAlbums.length}>
+                <Shuffle size={16} />
+                Shuffle
+              </button>
+              <FavoriteButton
+                active={favoriteIds.artists.has(artist.id)}
+                busy={favoriteBusyKey === `artist:${artist.id}`}
+                label={artist.name}
+                onToggle={(favorite) => onToggleFavorite("artist", artist.id, favorite)}
+              />
+              <ArtistOptions
+                artist={artist}
+                artistImage={artistImage}
+                biography={biography}
+                lastFmUrl={lastFmUrl}
+                musicBrainzUrl={musicBrainzUrl}
+                similarArtists={similarArtists}
+                onOpenArtist={onOpenArtist}
+              />
             </div>
           </div>
         </div>
-        {biography || similarArtists.length || artistInfo?.lastFmUrl ? (
-          <div className="artist-info-panel">
-            {biography ? (
-              <div className="artist-bio">
-                <p className="eyebrow">About</p>
-                <p>{biography}</p>
+        {topSongs.length ? (
+          <section className="artist-top-songs" aria-labelledby={`artist-top-songs-${artist.id}`}>
+            <div className="section-label">
+              <div>
+                <h4 id={`artist-top-songs-${artist.id}`}>Top Songs</h4>
+                <small>Popular and recently listened</small>
               </div>
-            ) : null}
-            {similarArtists.length ? (
-              <div className="similar-artists">
-                <p className="eyebrow">Similar artists</p>
-                <div className="similar-list">
-                  {similarArtists.map((similar) =>
-                    similar.id ? (
-                      <button className="similar-chip" type="button" key={similar.id} onClick={() => onOpenArtist(similar)}>
-                        {similar.name}
-                      </button>
-                    ) : (
-                      <span className="similar-chip" key={similar.name}>
-                        {similar.name}
-                      </span>
-                    ),
-                  )}
-                </div>
-              </div>
-            ) : null}
-            {artistInfo?.lastFmUrl ? (
-              <a className="artist-source-link" href={artistInfo.lastFmUrl} target="_blank" rel="noreferrer">
-                Last.fm
-              </a>
-            ) : null}
-          </div>
+              <button className="secondary-button compact-button" type="button" onClick={() => onReplaceQueue(topSongs)}>
+                <Play size={14} fill="currentColor" /> Play all
+              </button>
+            </div>
+            <ArtistTopSongsList
+              songs={topSongs}
+              currentTrack={currentTrack}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenAlbum={onOpenAlbum}
+              onReplaceQueue={onReplaceQueue}
+              onSongContextMenu={onSongContextMenu}
+            />
+          </section>
+        ) : null}
+        {latestRelease ? (
+          <section className="artist-latest-release" aria-labelledby={`artist-latest-release-${artist.id}`} data-context-kind="album" data-context-id={latestRelease.id}>
+            <div className="section-label">
+              <h4 id={`artist-latest-release-${artist.id}`}>Latest Release</h4>
+            </div>
+            <div className="latest-release-card">
+              <button className="latest-release-main" type="button" onClick={() => onOpenAlbum(latestRelease)}>
+                <CoverArt src={latestReleaseCover} label={latestRelease.name} className="latest-release-cover" />
+                <span>
+                  <strong>{latestRelease.name}</strong>
+                  <small>{[latestRelease.year, latestRelease.songCount ? `${latestRelease.songCount} tracks` : null].filter(Boolean).join(" · ") || "Album"}</small>
+                </span>
+              </button>
+              <button
+                className="connect-button latest-release-play"
+                type="button"
+                onClick={() => onPlayAlbum(latestRelease)}
+                aria-label={`Play ${latestRelease.name}`}
+              >
+                <Play size={15} fill="currentColor" /> Play
+              </button>
+              <FavoriteButton
+                active={favoriteIds.albums.has(latestRelease.id)}
+                busy={favoriteBusyKey === `album:${latestRelease.id}`}
+                label={latestRelease.name}
+                onToggle={(favorite) => onToggleFavorite("album", latestRelease.id, favorite)}
+              />
+            </div>
+          </section>
         ) : null}
         <div className="section-label">
           <h4>Albums</h4>
@@ -9471,17 +9721,72 @@ function DetailPanel({
             </button>
           </div>
         </div>
-        <AlbumBrowser
-          viewMode={albumViewMode}
-          config={config}
-          albums={artistAlbums}
-          favoriteIds={favoriteIds}
-          favoriteBusyKey={favoriteBusyKey}
-          onToggleFavorite={onToggleFavorite}
-          onOpenAlbum={onOpenAlbum}
-          onPlayAlbum={onPlayAlbum}
-          withAlphabetRail={false}
-        />
+        {albumViewMode === "art" ? (
+          <AlbumBrowser
+            viewMode="art"
+            config={config}
+            albums={artistAlbums}
+            favoriteIds={favoriteIds}
+            favoriteBusyKey={favoriteBusyKey}
+            onToggleFavorite={onToggleFavorite}
+            onOpenAlbum={onOpenAlbum}
+            onPlayAlbum={onPlayAlbum}
+            withAlphabetRail={false}
+          />
+        ) : (
+          <div className="artist-discography-list">
+            {artistAlbums.map((album) => {
+              const albumSongs = sortAlbumSongs(librarySongs.filter((song) =>
+                song.albumId === album.id ||
+                (!song.albumId && song.album === album.name && (song.artistId === artist.id || song.artist === artist.name)),
+              ));
+              const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+
+              return (
+                <section className="artist-album-group" key={album.id} data-context-kind="album" data-context-id={album.id}>
+                  <div className="artist-album-heading">
+                    <button className="artist-album-main" type="button" onClick={() => onOpenAlbum(album)}>
+                      <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
+                      <span>
+                        <strong>{album.name}</strong>
+                        <small>{[album.year, albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
+                      </span>
+                    </button>
+                    <button
+                      className="track-play"
+                      type="button"
+                      onClick={() => albumSongs.length ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
+                      aria-label={"Play " + album.name}
+                    >
+                      <Play size={15} strokeWidth={1.6} />
+                    </button>
+                    <FavoriteButton
+                      active={favoriteIds.albums.has(album.id)}
+                      busy={favoriteBusyKey === "album:" + album.id}
+                      label={album.name}
+                      onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+                    />
+                  </div>
+                  {albumSongs.length ? (
+                    <TrackList
+                      songs={albumSongs}
+                      albumName={album.name}
+                      currentTrack={currentTrack}
+                      favoriteIds={favoriteIds}
+                      favoriteBusyKey={favoriteBusyKey}
+                      onToggleFavorite={onToggleFavorite}
+                      onOpenArtist={onOpenArtist}
+                      onPlaySong={(song) => onReplaceQueue(albumSongs, Math.max(0, albumSongs.findIndex((albumSong) => albumSong.id === song.id)))}
+                      onSongContextMenu={onSongContextMenu}
+                    />
+                  ) : (
+                    <p className="artist-album-empty">Tracks are still loading.</p>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        )}
       </section>
     );
   }
@@ -9513,22 +9818,18 @@ function DetailPanel({
   const album = detailSelection.data;
   const songs = sortAlbumSongs(album.song ?? []);
   const albumCover = config ? buildCoverArtUrl(config, album.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
-  const discCount = new Set(songs.map((song) => song.discNumber).filter((discNumber) => discNumber != null)).size;
 
   return (
-    <section className="detail-panel">
-      <div className="album-hero album-detail-hero">
-        <PlayableCover src={albumCover} label={album.name} className="detail-cover" disabled={!songs.length} onPlay={() => onReplaceQueue(songs)} />
-        <div>
-          <div className="detail-title album-detail-title">
+    <section className="detail-panel detail-page album-detail-page">
+      <div className="album-hero detail-page-hero album-detail-hero">
+        <div className="detail-artwork-stage album-artwork-stage">
+          <PlayableCover src={albumCover} label={album.name} className="detail-cover" disabled={!songs.length} onPlay={() => onReplaceQueue(songs)} />
+        </div>
+        <div className="detail-hero-copy album-hero-copy">
+          <p className="detail-type-label album-type-label">Album</p>
+          <div className="detail-title detail-page-title album-detail-title">
             <div className="album-title-row">
               <h3>{album.name}</h3>
-              <FavoriteButton
-                active={favoriteIds.albums.has(album.id)}
-                busy={favoriteBusyKey === `album:${album.id}`}
-                label={album.name}
-                onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
-              />
             </div>
             {album.artistId ? (
               <button className="album-artist-link" type="button" onClick={() => onOpenArtist({ id: album.artistId!, name: album.artist })}>
@@ -9536,25 +9837,48 @@ function DetailPanel({
               </button>
             ) : <p className="album-artist-label">{album.artist}</p>}
           </div>
-          <div className="detail-stats">
-            <span>{album.year ?? "Year unavailable"}</span>
-            <span>{songs.length} tracks</span>
-            {discCount > 1 ? <span>{discCount} discs</span> : null}
-          </div>
           <div className="detail-actions">
             <button className="connect-button" type="button" onClick={() => onReplaceQueue(songs)} disabled={!songs.length}>
               <Play size={16} fill="currentColor" />
-              Play Album
+              Play
             </button>
-            <button className="secondary-button" type="button" onClick={() => songs.forEach(onQueueSong)} disabled={!songs.length}>
-              <ListMusic size={16} />
-              Queue Album
+            <button className="secondary-button" type="button" onClick={() => onReplaceQueue(shuffled(songs))} disabled={!songs.length}>
+              <Shuffle size={16} />
+              Shuffle
             </button>
+            <FavoriteButton
+              active={favoriteIds.albums.has(album.id)}
+              busy={favoriteBusyKey === `album:${album.id}`}
+              label={album.name}
+              onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+            />
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button className="album-options-button" type="button" aria-label={`More options for ${album.name}`}>
+                  <MoreHorizontal size={18} />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className="song-context-menu album-options-menu" sideOffset={6} collisionPadding={12}>
+                  <DropdownMenu.Item asChild>
+                    <button type="button" disabled={!songs.length} onClick={() => songs.forEach(onQueueSong)}>
+                      <ListMusic size={15} />
+                      Add album to queue
+                    </button>
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
         </div>
       </div>
+      <div className="detail-tracks-heading album-tracks-heading">
+        <h4>Tracks</h4>
+        <span>{formatDuration(songs.reduce((total, song) => total + (song.duration ?? 0), 0))}</span>
+      </div>
       <TrackList
         songs={songs}
+        albumName={album.name}
         currentTrack={currentTrack}
         favoriteIds={favoriteIds}
         favoriteBusyKey={favoriteBusyKey}
@@ -9567,8 +9891,88 @@ function DetailPanel({
   );
 }
 
+function ArtistTopSongsList({
+  songs,
+  currentTrack,
+  favoriteIds,
+  favoriteBusyKey,
+  onToggleFavorite,
+  onOpenAlbum,
+  onReplaceQueue,
+  onSongContextMenu,
+}: {
+  songs: Song[];
+  currentTrack: Song | null;
+  favoriteIds: FavoriteIds;
+  favoriteBusyKey: string;
+  onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
+  onOpenAlbum: (album: Album) => void;
+  onReplaceQueue: (songs: Song[], startIndex?: number) => void;
+  onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
+}) {
+  const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
+
+  return (
+    <div className="track-list artist-top-songs-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} role="list" aria-label="Top songs">
+      {songs.map((song, index) => (
+        <div
+          className={`track-row artist-top-song-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""}`}
+          key={song.id}
+          role="listitem"
+          onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
+          onClick={(event) => selectTrack(event, index)}
+          onDoubleClick={() => onReplaceQueue(songs, index)}
+        >
+          <span className="track-index">
+            <span className="track-number">{index + 1}</span>
+            <button
+              className="track-play"
+              type="button"
+              aria-label={`Play ${song.title}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onReplaceQueue(songs, index);
+              }}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <Play size={15} strokeWidth={1.6} />
+            </button>
+          </span>
+          <button className="track-name" type="button" aria-label={`Select ${song.title}`}>{song.title}</button>
+          <AlbumNameLink song={song} onOpenAlbum={onOpenAlbum} />
+          <span className="track-duration">{formatDuration(song.duration)}</span>
+          <FavoriteButton
+            active={favoriteIds.songs.has(song.id)}
+            busy={favoriteBusyKey === `song:${song.id}`}
+            label={song.title}
+            onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
+            onDoubleClick={(event) => event.stopPropagation()}
+          />
+          <button
+            className="track-options-button"
+            type="button"
+            aria-label={`More options for ${song.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              event.currentTarget.dispatchEvent(new window.MouseEvent("contextmenu", {
+                bubbles: true,
+                clientX: event.clientX,
+                clientY: event.clientY,
+              }));
+            }}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TrackList({
   songs,
+  albumName,
   currentTrack,
   favoriteIds,
   favoriteBusyKey,
@@ -9579,6 +9983,7 @@ function TrackList({
   onSongContextMenu,
 }: {
   songs: Song[];
+  albumName: string;
   currentTrack: Song | null;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
@@ -9589,23 +9994,16 @@ function TrackList({
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
-  const [sortKey, setSortKey] = useState<SongSortKey>("track");
-  const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
 
   if (!songs.length) {
     return <EmptyPanel icon={<Music2 size={20} />} text={emptyText} />;
   }
 
-  const sortedSongs = sortSongs(songs, sortKey, sortDirection);
-  const discGroups = groupSongsByDisc(sortedSongs);
+  const discGroups = groupSongsByDisc(songs);
   const showDiscHeaders = discGroups.length > 1;
 
   return (
     <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
-      <SongListHeader showAlbum={false} showPlayColumn={false} showQueueColumn={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
-        setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
-        setSortKey(key);
-      }} />
       {discGroups.map((group) => (
         <div className="disc-group" key={group.discNumber ?? "unknown-disc"}>
           {showDiscHeaders ? (
@@ -9640,14 +10038,17 @@ function TrackList({
                   <Play size={15} strokeWidth={1.6} />
                 </button>
               </span>
-              <button
-                className="track-name"
-                type="button"
-                aria-label={`Select ${song.title}`}
-              >
-                {song.title}
-              </button>
-              <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
+              <div className="track-title-stack">
+                <button
+                  className="track-name"
+                  type="button"
+                  aria-label={`Select ${song.title}`}
+                >
+                  {song.title}
+                </button>
+                <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
+              </div>
+              <span className="track-album album-track-album">{song.album || albumName}</span>
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
@@ -9656,6 +10057,22 @@ function TrackList({
                 onToggle={(favorite) => onToggleFavorite("song", song.id, favorite)}
                 onDoubleClick={(event) => event.stopPropagation()}
               />
+              <button
+                className="track-options-button"
+                type="button"
+                aria-label={`More options for ${song.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  event.currentTarget.dispatchEvent(new window.MouseEvent("contextmenu", {
+                    bubbles: true,
+                    clientX: event.clientX,
+                    clientY: event.clientY,
+                  }));
+                }}
+                onDoubleClick={(event) => event.stopPropagation()}
+              >
+                <MoreHorizontal size={16} />
+              </button>
             </div>
             );
           })}
@@ -9727,7 +10144,6 @@ function EditablePlaylistTrackList({
         {message ? <span className={busy ? "" : "bad"}>{message}</span> : null}
       </div>
       <div className="track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Playlist tracks">
-        <SongListHeader />
         {displayedSongs.map(({ song, index }, displayIndex) => (
           <div
             className={`track-row playlist-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(index) ? "selected" : ""} ${index === draggedIndex ? "dragging" : ""}`}
@@ -9762,14 +10178,16 @@ function EditablePlaylistTrackList({
               <Menu size={14} />
             </button>
             <span className="track-number">{displayIndex + 1}</span>
-            <button
-              className="track-name"
-              type="button"
-              aria-label={`Select ${song.title}`}
-            >
-              {song.title}
-            </button>
-            <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
+            <div className="track-title-stack">
+              <button
+                className="track-name"
+                type="button"
+                aria-label={`Select ${song.title}`}
+              >
+                {song.title}
+              </button>
+              <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
+            </div>
             <AlbumNameLink song={song} onOpenAlbum={onOpenAlbum} />
             <span className="track-duration">{formatDuration(song.duration)}</span>
             <FavoriteButton
