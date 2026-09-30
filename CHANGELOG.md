@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.0.0](https://github.com/kylejschultz/prism-player/compare/v0.5.0...v1.0.0) (2026-08-27)
+
+
+### Features
+
+* Add a mute toggle to volume controls ([#147](https://github.com/kylejschultz/prism-player/issues/147)) ([665d57f](https://github.com/kylejschultz/prism-player/commit/665d57f7092bf36b2f97278dc407cdcbf8a4ed08))
+* Add curated color themes to Appearance settings ([#149](https://github.com/kylejschultz/prism-player/issues/149)) ([12c5064](https://github.com/kylejschultz/prism-player/commit/12c5064810c61c2d02e16d60021444bd20d382c6))
+* Add gapless playback and crossfade controls ([#153](https://github.com/kylejschultz/prism-player/issues/153)) ([4f729dd](https://github.com/kylejschultz/prism-player/commit/4f729ddf4a54309bcb4cf78119aa3004acb648bf))
+* Add native playback controls and window restoration ([#124](https://github.com/kylejschultz/prism-player/issues/124)) ([cd1ed57](https://github.com/kylejschultz/prism-player/commit/cd1ed57f59d58b6e7a081427e791e4bf42aff4af))
+* Add Prism 1.0 release highlights ([#154](https://github.com/kylejschultz/prism-player/issues/154)) ([3d8a563](https://github.com/kylejschultz/prism-player/commit/3d8a563a9fbf906d5b96ac7ccbcf73fc52d433ed))
+* Add reusable what’s new release notes ([#150](https://github.com/kylejschultz/prism-player/issues/150)) ([a4d96fa](https://github.com/kylejschultz/prism-player/commit/a4d96fab3a723e15b1b73da9521a3549efb9903d))
+* Make library artist names easier to open ([#143](https://github.com/kylejschultz/prism-player/issues/143)) ([becbb39](https://github.com/kylejschultz/prism-player/commit/becbb3924767c48b9d4f027a62dd8ca6b4d07e62))
+* persist local library catalog ([#126](https://github.com/kylejschultz/prism-player/issues/126)) ([56e9681](https://github.com/kylejschultz/prism-player/commit/56e96810646942840974d746448d01a18e5dbb8b))
+* Refresh the library after Navidrome scans ([#104](https://github.com/kylejschultz/prism-player/issues/104)) ([facf38a](https://github.com/kylejschultz/prism-player/commit/facf38a0c4e4acd165cd9b691eb60b2bcacfc647))
+* Show meaningful recent listening on Home ([#121](https://github.com/kylejschultz/prism-player/issues/121)) ([2b8989c](https://github.com/kylejschultz/prism-player/commit/2b8989cefa9c4bd681b25f276b43c69e8db726db))
+* Show the Beacon install ID in About ([#157](https://github.com/kylejschultz/prism-player/issues/157)) ([c58417c](https://github.com/kylejschultz/prism-player/commit/c58417c6ca03dbf061cb87477ac78310b772adb2))
+* Sign Windows installers with Azure Artifact Signing ([#132](https://github.com/kylejschultz/prism-player/issues/132)) ([c86dd76](https://github.com/kylejschultz/prism-player/commit/c86dd764fda8cd133631106cb39b0dfd6c37d7a5))
+* store Navidrome password in native credential store ([#122](https://github.com/kylejschultz/prism-player/issues/122)) ([2db3934](https://github.com/kylejschultz/prism-player/commit/2db3934c5a05332d60f757018e6f0d37bcc926e3))
+* Use Radix primitives for dialogs and context menus ([#123](https://github.com/kylejschultz/prism-player/issues/123)) ([88a1818](https://github.com/kylejschultz/prism-player/commit/88a1818b1dcb8cce989729221627f72ba0efccbc))
+
+
+### Bug Fixes
+
+* Center artwork overlay controls ([#146](https://github.com/kylejschultz/prism-player/issues/146)) ([2a770c6](https://github.com/kylejschultz/prism-player/commit/2a770c6b7f28af1d514879e9ec41d69fd375893f))
+* Clear Discord presence when playback stops ([#108](https://github.com/kylejschultz/prism-player/issues/108)) ([9f28864](https://github.com/kylejschultz/prism-player/commit/9f28864c9d6de991f4710adb43363c4960ded26e))
+* Enable native gestures and album links ([#151](https://github.com/kylejschultz/prism-player/issues/151)) ([faedf7b](https://github.com/kylejschultz/prism-player/commit/faedf7bca15c57ce528a102608d317af970b0aab))
+* Keep active radio playback connected when opening Radio ([#140](https://github.com/kylejschultz/prism-player/issues/140)) ([9bf4197](https://github.com/kylejschultz/prism-player/commit/9bf419750b6e4478d358a5830f3eef41b1d56b0d))
+* Keep Now Playing titles and progress aligned ([#110](https://github.com/kylejschultz/prism-player/issues/110)) ([e68fa9e](https://github.com/kylejschultz/prism-player/commit/e68fa9ef058fd8dab0c794ad7ac31dc9ced274aa))
+* Keep playback transitions in sync ([#158](https://github.com/kylejschultz/prism-player/issues/158)) ([fbefe07](https://github.com/kylejschultz/prism-player/commit/fbefe077ab99acb0ced9cf0ad7c28dd1b46f6854))
+* Keep playlist context actions open on hover ([#130](https://github.com/kylejschultz/prism-player/issues/130)) ([2cb68e9](https://github.com/kylejschultz/prism-player/commit/2cb68e9490ff96106084f2fd1acbfd0ae1545b67))
+* Keep Prism playback and playlist menus stable ([#129](https://github.com/kylejschultz/prism-player/issues/129)) ([ad1bc5a](https://github.com/kylejschultz/prism-player/commit/ad1bc5a6e76338581c2d7e33a62bdfb99b614c8d))
+* Keep radio metadata current after retuning ([#139](https://github.com/kylejschultz/prism-player/issues/139)) ([0884c6a](https://github.com/kylejschultz/prism-player/commit/0884c6af19cb744821a57407ffb4022f4dd86530))
+* Make the album-art wash clearer and more vivid ([#148](https://github.com/kylejschultz/prism-player/issues/148)) ([ee1f420](https://github.com/kylejschultz/prism-player/commit/ee1f420c07894b1002baa0f3b089ba445cdf3484))
+* Polish themed surfaces and playback settings ([#155](https://github.com/kylejschultz/prism-player/issues/155)) ([94171ee](https://github.com/kylejschultz/prism-player/commit/94171ee289ed42ab6083bd57eef7f8345ff9c8e1))
+* Remove release-note settings action ([#156](https://github.com/kylejschultz/prism-player/issues/156)) ([a5228b7](https://github.com/kylejschultz/prism-player/commit/a5228b708bed90b0513685fe4c7bd202183840ad))
+* Report native desktop architecture to Beacon ([#152](https://github.com/kylejschultz/prism-player/issues/152)) ([ff50af4](https://github.com/kylejschultz/prism-player/commit/ff50af49da5dc1f6fb5687b20c89798ee0a15947))
+* Show track artists in Discord activity ([#131](https://github.com/kylejschultz/prism-player/issues/131)) ([16c2803](https://github.com/kylejschultz/prism-player/commit/16c280337a77d7c02f65207236901d3b79b3ef42))
+* Support native back and forward navigation ([#145](https://github.com/kylejschultz/prism-player/issues/145)) ([a178d15](https://github.com/kylejschultz/prism-player/commit/a178d15bfecf8560f6b397bdddf949ade542d6a9))
+* Use Navidrome profile names in Home greetings ([#105](https://github.com/kylejschultz/prism-player/issues/105)) ([246a792](https://github.com/kylejschultz/prism-player/commit/246a7923a69f99cd185ef2ca7b2b7f57ec3cf34d))
+
+
+### Performance Improvements
+
+* Keep large Songs libraries responsive ([#125](https://github.com/kylejschultz/prism-player/issues/125)) ([10f68ad](https://github.com/kylejschultz/prism-player/commit/10f68ad27f82ca8e226ed8216363c243c6ba485f))
+* Load Songs incrementally for large libraries ([#141](https://github.com/kylejschultz/prism-player/issues/141)) ([74a23db](https://github.com/kylejschultz/prism-player/commit/74a23db39176898f85ee227f8317265c12ed33ce))
+
 ## [0.5.0](https://github.com/kylejschultz/prism-player/compare/v0.4.1...v0.5.0) (2026-08-19)
 
 
