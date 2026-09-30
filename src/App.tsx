@@ -3789,7 +3789,9 @@ export function App() {
     const audio = getActiveAudio();
 
     if (isPlaying) {
-      stopTrackTransition(true);
+      // Cancel any crossfade and clear the standby player without resetting
+      // the active element, so playback resumes from the paused position.
+      stopTrackTransition();
       setIsPlaying(false);
       return;
     }
@@ -4566,7 +4568,7 @@ export function App() {
         setRadioMessage("Radio paused.");
         return;
       }
-      stopTrackTransition(true);
+      stopTrackTransition();
       setIsPlaying(false);
     });
     navigator.mediaSession.setActionHandler("previoustrack", controlsRadio ? null : playPrevious);
@@ -7982,6 +7984,7 @@ function SearchResultsView({
             onPlaySong={onPlaySong}
             onQueueSong={onQueueSong}
             onSongContextMenu={onSongContextMenu}
+            preserveResultOrder
           />
           {canShowMore("songs", results.songs) ? <button className="search-see-more" type="button" onClick={() => showMore("songs")}>See more songs ({results.songs.length - previewLimit})</button> : null}
         </section>
@@ -8042,6 +8045,7 @@ function SearchSongList({
   onPlaySong,
   onQueueSong,
   onSongContextMenu,
+  preserveResultOrder = false,
 }: {
   songs: Song[];
   currentTrack: Song | null;
@@ -8053,12 +8057,13 @@ function SearchSongList({
   onPlaySong: (song: Song) => void;
   onQueueSong: (song: Song) => void;
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
+  preserveResultOrder?: boolean;
 }) {
   const { isSelected, selectTrack, selectedSongs, handleKeyDown, listRef } = useTrackSelection(songs);
-  const [sortKey, setSortKey] = useState<SongSortKey>("title");
+  const [sortKey, setSortKey] = useState<SongSortKey | null>(preserveResultOrder ? null : "title");
   const [sortDirection, setSortDirection] = useState<SongSortDirection>("asc");
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
-  const sortedSongs = useMemo(() => sortSongs(songs, sortKey, sortDirection), [songs, sortKey, sortDirection]);
+  const sortedSongs = useMemo(() => sortKey ? sortSongs(songs, sortKey, sortDirection) : songs, [songs, sortKey, sortDirection]);
   const songIndexes = useMemo(() => new Map(songs.map((song, index) => [song.id, index])), [songs]);
   const virtualizer = useVirtualizer({
     count: sortedSongs.length,
@@ -8075,7 +8080,7 @@ function SearchSongList({
 
   return (
     <div className="track-list song-browser-list" ref={setSongListRef} tabIndex={0} onKeyDown={handleKeyDown} role="list" aria-label="Songs">
-      <SongListHeader showTrackNumber={false} sortKey={sortKey} sortDirection={sortDirection} onSort={(key) => {
+      <SongListHeader showTrackNumber={false} sortKey={sortKey ?? undefined} sortDirection={sortDirection} onSort={(key) => {
         setSortDirection((direction) => key === sortKey ? (direction === "asc" ? "desc" : "asc") : "asc");
         setSortKey(key);
       }} />
