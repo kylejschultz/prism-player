@@ -100,20 +100,22 @@ export const navidromeClient = {
     return (await request<{ scanStatus?: { scanning?: boolean; lastScan?: string | number } }>(config, "getScanStatus")).scanStatus ?? null;
   },
   async library(config: NavidromeConfig): Promise<LibraryData> {
-    const [albums, newest, recent, artists, playlists, starred] = await Promise.all([
+    const [albums, newest, recent, frequent, artists, playlists, starred] = await Promise.all([
       fetchAlbums(config),
       request<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", { type: "newest", size: "60" }),
       request<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", { type: "recent", size: "60" }),
+      request<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", { type: "frequent", size: "60" }),
       request<{ artists?: { index?: Array<{ artist?: Artist[] }> } }>(config, "getArtists"),
       request<{ playlists?: { playlist?: Playlist[] } }>(config, "getPlaylists").catch(() => null),
       request<{ starred2?: { artist?: Artist[]; album?: Album[]; song?: Song[] } }>(config, "getStarred2").catch(() => null),
     ]);
-    return { albums, recentAlbums: newest.albumList2?.album ?? [], recentlyPlayedAlbums: recent.albumList2?.album ?? [], artists: artists.artists?.index?.flatMap((index) => index.artist ?? []) ?? [], playlists: playlists?.playlists?.playlist ?? [], favorites: { artists: starred?.starred2?.artist ?? [], albums: starred?.starred2?.album ?? [], songs: starred?.starred2?.song ?? [] } };
+    return { albums, recentAlbums: newest.albumList2?.album ?? [], recentlyPlayedAlbums: recent.albumList2?.album ?? [], frequentAlbums: frequent.albumList2?.album ?? [], artists: artists.artists?.index?.flatMap((index) => index.artist ?? []) ?? [], playlists: playlists?.playlists?.playlist ?? [], favorites: { artists: starred?.starred2?.artist ?? [], albums: starred?.starred2?.album ?? [], songs: starred?.starred2?.song ?? [] } };
   },
   async album(config: NavidromeConfig, id: string) { return (await request<{ album: AlbumDetail }>(config, "getAlbum", { id })).album; },
   async artist(config: NavidromeConfig, id: string): Promise<ArtistDetail> {
     const [artist, info] = await Promise.all([request<{ artist: ArtistDetail }>(config, "getArtist", { id }), request<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id }).catch(() => null)]);
-    return { ...artist.artist, info: info?.artistInfo2 ?? null };
+    const topSongs = await request<{ topSongs?: { song?: Song[] } }>(config, "getTopSongs", { artist: artist.artist.name, count: "20" }).catch(() => null);
+    return { ...artist.artist, info: info?.artistInfo2 ?? null, topSong: topSongs?.topSongs?.song ?? [] };
   },
   async playlist(config: NavidromeConfig, id: string) { return (await request<{ playlist: PlaylistDetail }>(config, "getPlaylist", { id })).playlist; },
   async lyrics(config: NavidromeConfig, song: Song) { return request<LyricsPayload>(config, "getLyrics", { artist: song.artist ?? "", title: song.title }); },
