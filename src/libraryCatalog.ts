@@ -1,6 +1,7 @@
 /**
- * Durable, metadata-only catalog storage. Album artwork is deliberately not
- * stored here: the WebView's HTTP cache owns image bytes.
+ * Durable catalog metadata storage. Artwork bytes remain in the WebView's
+ * HTTP cache; artist image URLs are persisted so artist browsing can render
+ * immediately while missing entries refresh in the background.
  */
 const DATABASE_NAME = "prism-player-library-catalog";
 const STORE_NAME = "catalogs";
@@ -12,6 +13,8 @@ export type LibraryCatalogSnapshot<TLibrary, TSong> = {
   savedAt: string;
   library: TLibrary;
   songs: TSong[];
+  /** Artist portrait URLs keyed by Navidrome artist id. */
+  artistImages?: Record<string, string>;
   /** True once the complete song catalog has been fetched. */
   songsComplete: boolean;
 };
