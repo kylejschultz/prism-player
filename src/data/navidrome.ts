@@ -71,6 +71,7 @@ export const navidromeKeys = {
   library: (config: NavidromeConfig) => [...navidromeKeys.root(config), "library"] as const,
   album: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "album", id] as const,
   artist: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "artist", id] as const,
+  artistInfo: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "artistInfo", id] as const,
   playlist: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "playlist", id] as const,
   search: (config: NavidromeConfig, query: string) => [...navidromeKeys.root(config), "search", query] as const,
 };
@@ -116,6 +117,9 @@ export const navidromeClient = {
     const [artist, info] = await Promise.all([request<{ artist: ArtistDetail }>(config, "getArtist", { id }), request<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id }).catch(() => null)]);
     const topSongs = await request<{ topSongs?: { song?: Song[] } }>(config, "getTopSongs", { artist: artist.artist.name, count: "20" }).catch(() => null);
     return { ...artist.artist, info: info?.artistInfo2 ?? null, topSong: topSongs?.topSongs?.song ?? [] };
+  },
+  async artistInfo(config: NavidromeConfig, id: string): Promise<ArtistInfo | null> {
+    return (await request<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id })).artistInfo2 ?? null;
   },
   async playlist(config: NavidromeConfig, id: string) { return (await request<{ playlist: PlaylistDetail }>(config, "getPlaylist", { id })).playlist; },
   async lyrics(config: NavidromeConfig, song: Song) { return request<LyricsPayload>(config, "getLyrics", { artist: song.artist ?? "", title: song.title }); },
