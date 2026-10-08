@@ -4812,6 +4812,31 @@ button.similar-chip:focus-visible {
   background: rgba(255, 255, 255, 0.16);
 }
 
+.transport .playback-mode-button {
+  border: 1px solid transparent;
+  color: rgba(244, 241, 236, 0.62);
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.transport .playback-mode-button.active {
+  border-color: rgba(var(--prism-highlight-rgb), 0.88);
+  background: var(--prism-highlight);
+  color: #17130b;
+  box-shadow: 0 0 0 1px rgba(7, 10, 12, 0.42), 0 6px 18px rgba(var(--prism-highlight-rgb), 0.24);
+}
+
+.transport .playback-mode-button.active:hover:not(:disabled) {
+  border-color: #ffe9a6;
+  background: #ffe391;
+  color: #0d0b07;
+}
+
+.transport .playback-mode-button:focus-visible {
+  outline-color: #fff1bb;
+  outline-width: 3px;
+  outline-offset: 3px;
+}
+
 .transport .play-button:hover:not(:disabled) {
   background: #ffe391;
 }
@@ -6701,7 +6726,32 @@ button.similar-chip:focus-visible {
 }
 
 .radio-hero {
+  width: 100%;
+  max-width: 1180px;
+  margin-inline: auto;
   padding: clamp(18px, 3vw, 36px);
+}
+
+.radio-view.radio-hero {
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1fr);
+  gap: clamp(18px, 3vw, 40px) clamp(36px, 6vw, 88px);
+}
+
+.radio-cover-card {
+  width: min(100%, 48vh, 460px);
+  border-radius: 14px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.4);
+  transform: none;
+}
+
+.radio-copy {
+  justify-content: center;
+  transform: none;
+}
+
+.radio-copy h3 {
+  font-weight: 680;
+  letter-spacing: -0.035em;
 }
 
 .radio-cover-wash {
@@ -6711,7 +6761,57 @@ button.similar-chip:focus-visible {
 }
 
 .radio-dj-callout {
-  background: rgba(5, 8, 10, 0.18);
+  border: 1px solid var(--glass-border);
+  border-left: 3px solid rgba(var(--prism-highlight-rgb), 0.82);
+  border-radius: 12px;
+  background: rgba(7, 10, 12, 0.46);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(22px) saturate(125%);
+}
+
+.radio-broadcast-details {
+  gap: 12px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.radio-broadcast-details div {
+  padding: 14px 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: rgba(7, 10, 12, 0.42);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(20px) saturate(120%);
+}
+
+@media (max-width: 940px) {
+  .radio-view.radio-hero {
+    grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, auto) minmax(20px, 1fr) auto;
+    gap: 12px 22px;
+  }
+
+  .radio-cover-card,
+  .radio-copy {
+    grid-row: 1;
+  }
+
+  .radio-cover-card {
+    width: min(100%, 32vh, 220px);
+  }
+
+  .radio-broadcast-details {
+    grid-row: 3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .radio-copy h3 {
+    font-size: clamp(28px, 5cqw, 36px);
+  }
+
+  .radio-artist {
+    font-size: 19px;
+  }
 }
 
 /* Reserve a soft bleed area so album-art shadows fade before the scroll clip. */
