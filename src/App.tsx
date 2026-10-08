@@ -12,6 +12,7 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
 import { compareVersions, getCurrentReleaseNotes, getUnreadReleaseNotes, WHATS_NEW_RELEASES, type WhatsNewRelease } from "./whatsNew";
+import { advancePlaybackQueue, nextRepeatMode, toggleShuffleTraversal, type RepeatMode } from "./playbackQueue";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
@@ -72,7 +73,6 @@ type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "err
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type HomeShelfViewMode = "art" | "list";
-type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
@@ -370,8 +370,11 @@ type LyricLine = {
 
 type PlaybackSnapshot = {
   queue: Song[];
+  sourceQueue: Song[];
   currentIndex: number;
   position: number;
+  shuffleEnabled: boolean;
+  repeatMode: RepeatMode;
 };
 
 type RadioTrack = {
@@ -960,22 +963,45 @@ function isStoredSong(value: unknown): value is Song {
   );
 }
 
+function sameSongIds(first: Song[], second: Song[]) {
+  if (first.length !== second.length) return false;
+  const counts = new Map<string, number>();
+  first.forEach((song) => counts.set(song.id, (counts.get(song.id) ?? 0) + 1));
+  second.forEach((song) => counts.set(song.id, (counts.get(song.id) ?? 0) - 1));
+  return [...counts.values()].every((count) => count === 0);
+}
+
+function playbackSnapshotForSingleTrack(track: Song): PlaybackSnapshot {
+  return {
+    queue: [track],
+    sourceQueue: [track],
+    currentIndex: 0,
+    position: 0,
+    shuffleEnabled: false,
+    repeatMode: "off",
+  };
+}
+
 function loadPlaybackSnapshot(): PlaybackSnapshot | null {
   try {
     const raw = localStorage.getItem(PLAYBACK_STATE_KEY);
     if (!raw) {
       const lastPlayedTrack = loadLastPlayedTrack();
-      return lastPlayedTrack ? { queue: [lastPlayedTrack], currentIndex: 0, position: 0 } : null;
+      return lastPlayedTrack ? playbackSnapshotForSingleTrack(lastPlayedTrack) : null;
     }
     const parsed = JSON.parse(raw) as Partial<PlaybackSnapshot>;
     const queue = Array.isArray(parsed.queue) ? parsed.queue.filter(isStoredSong) : [];
+    const storedSourceQueue = Array.isArray(parsed.sourceQueue) ? parsed.sourceQueue.filter(isStoredSong) : [];
+    const sourceQueue = sameSongIds(queue, storedSourceQueue) ? storedSourceQueue : queue;
     const currentIndex = Math.round(clampNumber(Number(parsed.currentIndex ?? 0), 0, Math.max(queue.length - 1, 0)));
     const position = clampNumber(Number(parsed.position ?? 0), 0, 24 * 60 * 60);
+    const shuffleEnabled = parsed.shuffleEnabled === true;
+    const repeatMode = parsed.repeatMode === "all" || parsed.repeatMode === "one" ? parsed.repeatMode : "off";
 
-    return queue.length ? { queue, currentIndex, position } : null;
+    return queue.length ? { queue, sourceQueue, currentIndex, position, shuffleEnabled, repeatMode } : null;
   } catch {
     const lastPlayedTrack = loadLastPlayedTrack();
-    return lastPlayedTrack ? { queue: [lastPlayedTrack], currentIndex: 0, position: 0 } : null;
+    return lastPlayedTrack ? playbackSnapshotForSingleTrack(lastPlayedTrack) : null;
   }
 }
 
@@ -2063,7 +2089,7 @@ export function App() {
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [queue, setQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
-  const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
+  const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.sourceQueue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePlaybackSource, setActivePlaybackSource] = useState<"local" | "radio">("local");
@@ -2080,8 +2106,8 @@ export function App() {
   const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
   const [lyricsMessage, setLyricsMessage] = useState("");
   const [playerError, setPlayerError] = useState("");
-  const [shuffleEnabled, setShuffleEnabled] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
+  const [shuffleEnabled, setShuffleEnabled] = useState(() => initialPlaybackSnapshot?.shuffleEnabled ?? false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(() => initialPlaybackSnapshot?.repeatMode ?? "off");
   const [radioStationInput, setRadioStationInput] = useState(appSettings.radioStationUrl);
   const [radioStationState, setRadioStationState] = useState<RadioStationState | null>(null);
   const [radioSession, setRadioSession] = useState<RadioSessionPayload | null>(null);
@@ -3430,8 +3456,13 @@ export function App() {
     if (!queue.length) return;
     if (!fromTrackEnd) stopTrackTransition();
     recordListeningHistory(fromTrackEnd, fromTrackEnd ? playerDuration || currentTrack?.duration || position : position);
+    const transition = advancePlaybackQueue(
+      { queue, sourceQueue, currentIndex, shuffleEnabled, repeatMode },
+      fromTrackEnd,
+      shuffled,
+    );
 
-    if (fromTrackEnd && repeatMode === "one") {
+    if (transition.effect === "restart") {
       scrobbledPlayRef.current = "";
       locallyRecordedPlayRef.current = "";
       seekTo(0);
@@ -3443,29 +3474,7 @@ export function App() {
       return;
     }
 
-    if (currentIndex >= queue.length - 1) {
-      if (repeatMode === "all") {
-        getActiveAudio()?.pause();
-        if (sourceQueue.length > 1) {
-          const nextQueue = shuffleEnabled ? shuffled(sourceQueue) : sourceQueue;
-          setQueue(nextQueue);
-          scrobbledPlayRef.current = "";
-          locallyRecordedPlayRef.current = "";
-          setCurrentIndex(0);
-        } else {
-          scrobbledPlayRef.current = "";
-          locallyRecordedPlayRef.current = "";
-          seekTo(0);
-          void getActiveAudio()?.play().catch(() => {
-            setPlayerError("Playback was blocked by the browser.");
-          });
-        }
-        resetPlaybackPosition();
-        setPlayerError("");
-        setIsPlaying(true);
-        return;
-      }
-
+    if (transition.effect === "stop") {
       setIsPlaying(false);
       seekTo(0);
       return;
@@ -3474,7 +3483,8 @@ export function App() {
     getActiveAudio()?.pause();
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
-    setCurrentIndex((index) => Math.min(index + 1, queue.length - 1));
+    if (transition.queue !== queue) setQueue(transition.queue);
+    setCurrentIndex(transition.currentIndex);
     resetPlaybackPosition();
     setPlayerError("");
     setIsPlaying(true);
@@ -3630,8 +3640,11 @@ export function App() {
       PLAYBACK_STATE_KEY,
       JSON.stringify({
         queue,
+        sourceQueue,
         currentIndex: safeIndex,
         position: safePosition,
+        shuffleEnabled,
+        repeatMode,
       }),
     );
   }
@@ -3649,26 +3662,20 @@ export function App() {
   }
 
   function cycleRepeatMode() {
-    setRepeatMode((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
+    setRepeatMode(nextRepeatMode);
   }
 
   function toggleShuffle() {
     if (queue.length < 2 || !currentTrack) return;
     stopTrackTransition();
-
-    if (shuffleEnabled) {
-      const sourceIndex = sourceQueue.indexOf(currentTrack);
-      setQueue(sourceQueue);
-      setCurrentIndex(sourceIndex >= 0 ? sourceIndex : 0);
-      setShuffleEnabled(false);
-      return;
-    }
-
-    const sourceIndex = sourceQueue.indexOf(currentTrack);
-    const remaining = sourceQueue.filter((_, index) => index !== sourceIndex);
-    setQueue([currentTrack, ...shuffled(remaining)]);
-    setCurrentIndex(0);
-    setShuffleEnabled(true);
+    const next = toggleShuffleTraversal(
+      { queue, sourceQueue, currentIndex, shuffleEnabled },
+      shuffled,
+      (song) => song.id,
+    );
+    setQueue(next.queue);
+    setCurrentIndex(next.currentIndex);
+    setShuffleEnabled(next.shuffleEnabled);
   }
 
     function reorderQueueItem(fromIndex: number, insertAtIndex: number) {
@@ -4353,7 +4360,7 @@ export function App() {
     lastPlaybackPersistRef.current = now;
     lastPlaybackPersistTrackRef.current = trackKey;
     persistPlaybackSnapshot(position);
-  }, [currentIndex, position, queue]);
+  }, [currentIndex, position, queue, repeatMode, shuffleEnabled, sourceQueue]);
 
   useEffect(() => {
     function persistBeforeUnload() {
@@ -4364,7 +4371,7 @@ export function App() {
     return () => {
       window.removeEventListener("beforeunload", persistBeforeUnload);
     };
-  }, [currentIndex, position, queue]);
+  }, [currentIndex, position, queue, repeatMode, shuffleEnabled, sourceQueue]);
 
   async function checkForUpdates(signal?: AbortSignal) {
     setUpdateCheckStatus("checking");
@@ -5076,7 +5083,7 @@ export function App() {
             ) : (
               <>
                 <button
-                  className={shuffleEnabled ? "active" : ""}
+                  className={`playback-mode-button ${shuffleEnabled ? "active" : ""}`}
                   type="button"
                   aria-label={shuffleEnabled ? "Disable shuffle" : "Enable shuffle"}
                   aria-pressed={shuffleEnabled}
@@ -5101,9 +5108,9 @@ export function App() {
                   <SkipForward size={16} />
                 </button>
                 <button
-                  className={`repeat-button ${repeatMode !== "off" ? "active" : ""} ${repeatMode === "one" ? "repeat-one" : ""}`}
+                  className={`playback-mode-button repeat-button ${repeatMode !== "off" ? "active" : ""} ${repeatMode === "one" ? "repeat-one" : ""}`}
                   type="button"
-                  aria-label={`Repeat ${repeatMode}`}
+                  aria-label={repeatMode === "off" ? "Enable repeat all" : repeatMode === "all" ? "Enable repeat one" : "Turn repeat off"}
                   aria-pressed={repeatMode !== "off"}
                   onClick={cycleRepeatMode}
                   disabled={!queue.length}
@@ -6862,68 +6869,66 @@ function RadioView({
   ].filter(Boolean);
 
   return (
-    <section className="radio-view">
-      <div className="radio-hero">
-        {isPlaying && appSettings.coverWashEnabled && visualEffectsEnabled && coverUrl ? (
-          <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" />
+    <section className="radio-view radio-hero">
+      {isPlaying && appSettings.coverWashEnabled && visualEffectsEnabled && coverUrl ? (
+        <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" />
+      ) : null}
+      <div className="radio-cover-card">
+        {coverUrl ? (
+          <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />
+        ) : (
+          <div className="radio-cover-fallback">
+            <RadioTower size={42} />
+          </div>
+        )}
+      </div>
+
+      <div className="radio-copy">
+        <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
+        <h3 aria-label={radioTitle}>
+          <span>{radioTitleParts.main}</span>
+          {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
+        </h3>
+        <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
+        {nowPlayingDetails.length ? <p className="radio-album">{nowPlayingDetails.join(" / ")}</p> : null}
+
+        {savedStations.length > 1 ? (
+          <label className="radio-channel-select">
+            <span>Channel</span>
+            <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
+              {savedStations.map((savedStationUrl) => (
+                <option value={savedStationUrl} key={savedStationUrl}>
+                  {stationLabel(savedStationUrl)}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
-        <div className="radio-cover-card">
-          {coverUrl ? (
-            <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />
-          ) : (
-            <div className="radio-cover-fallback">
-              <RadioTower size={42} />
-            </div>
-          )}
+
+        <div className="radio-dj-callout">
+          <div>
+            <span>From the Booth</span>
+            {latestVoiceAge ? <small>{latestVoiceAge}</small> : null}
+          </div>
+          <p>{latestVoice?.text ?? "Quiet in the booth..."}</p>
         </div>
+      </div>
 
-        <div className="radio-copy">
-          <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
-          <h3 aria-label={radioTitle}>
-            <span>{radioTitleParts.main}</span>
-            {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
-          </h3>
-          <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
-          {nowPlayingDetails.length ? <p className="radio-album">{nowPlayingDetails.join(" / ")}</p> : null}
-
-          {savedStations.length > 1 ? (
-            <label className="radio-channel-select">
-              <span>Channel</span>
-              <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
-                {savedStations.map((savedStationUrl) => (
-                  <option value={savedStationUrl} key={savedStationUrl}>
-                    {stationLabel(savedStationUrl)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          <div className="radio-dj-callout">
-            <div>
-              <span>From the Booth</span>
-              {latestVoiceAge ? <small>{latestVoiceAge}</small> : null}
-            </div>
-            <p>{latestVoice?.text ?? "Quiet in the booth..."}</p>
-          </div>
+      <div className="radio-broadcast-details" aria-label="Station details">
+        <div>
+          <span>In the Booth</span>
+          <strong>{boothLine}</strong>
+          <small>{showTiming?.until ?? "Schedule unavailable"}</small>
         </div>
-
-        <div className="radio-broadcast-details" aria-label="Station details">
-          <div>
-            <span>In the Booth</span>
-            <strong>{boothLine}</strong>
-            <small>{showTiming?.until ?? "Schedule unavailable"}</small>
-          </div>
-          <div>
-            <span>Up Next</span>
-            <strong>{nextShowLine}</strong>
-            {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
-          </div>
-          <div>
-            <span>Stream</span>
-            <strong>{stationName}</strong>
-            <small>{listenerCount ?? "0"} listener{listenerCount === 1 ? "" : "s"} / {streamLabel}</small>
-          </div>
+        <div>
+          <span>Up Next</span>
+          <strong>{nextShowLine}</strong>
+          {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
+        </div>
+        <div>
+          <span>Stream</span>
+          <strong>{stationName}</strong>
+          <small>{listenerCount ?? "0"} listener{listenerCount === 1 ? "" : "s"} / {streamLabel}</small>
         </div>
       </div>
     </section>
