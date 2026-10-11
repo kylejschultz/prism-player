@@ -234,9 +234,9 @@ pub fn run() {
                     .expect("main Prism webview should exist during setup");
                 main_webview.with_webview(|webview| unsafe {
                     let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
-                    // Keep native trackpad history navigation. Tauri/Wry maps
-                    // the configured window color to WebKit's under-page surface.
-                    view.setAllowsBackForwardNavigationGestures(true);
+                    // Prism converts completed trackpad wheel gestures into
+                    // history navigation without letting WebKit drag the page.
+                    view.setAllowsBackForwardNavigationGestures(false);
                 })?;
             }
 
