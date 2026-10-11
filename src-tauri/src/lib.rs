@@ -234,9 +234,9 @@ pub fn run() {
                     .expect("main Prism webview should exist during setup");
                 main_webview.with_webview(|webview| unsafe {
                     let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
-                    // Prism provides explicit navigation controls; keep WebKit
-                    // from dragging the page aside for history navigation.
-                    view.setAllowsBackForwardNavigationGestures(false);
+                    // Keep native trackpad history navigation. Tauri/Wry maps
+                    // the configured window color to WebKit's under-page surface.
+                    view.setAllowsBackForwardNavigationGestures(true);
                 })?;
             }
 
