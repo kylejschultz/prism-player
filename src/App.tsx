@@ -12,6 +12,16 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
 import { compareVersions, getCurrentReleaseNotes, getUnreadReleaseNotes, WHATS_NEW_RELEASES, type WhatsNewRelease } from "./whatsNew";
+import { advancePlaybackQueue, nextRepeatMode, toggleShuffleTraversal, type RepeatMode } from "./playbackQueue";
+import {
+  armedHistorySwipeDirection,
+  cancelHistorySwipe,
+  completeHistorySwipe,
+  createHistorySwipeState,
+  HISTORY_SWIPE_IDLE_MS,
+  recordHistorySwipe,
+  shouldIgnoreHistorySwipeTarget,
+} from "./navigationGesture";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
@@ -72,12 +82,15 @@ type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "err
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type HomeShelfViewMode = "art" | "list";
-type RepeatMode = "off" | "all" | "one";
 type RightPanelTab = "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
+type HistorySwipeIndicator = {
+  direction: "back" | "forward";
+  phase: "idle" | "armed" | "committed" | "cancelled";
+};
 
 const LIBRARY_SCAN_POLL_INTERVAL_MS = 5 * 60 * 1000;
 const MEDIA_SHORTCUTS = [
@@ -168,6 +181,28 @@ function isVersionNewer(candidate: string, current: string) {
 
 function isTauriDesktopApp() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function isMacOSDesktopApp() {
+  return isTauriDesktopApp() && /mac/i.test(navigator.platform || navigator.userAgent);
+}
+
+function historySwipeTargetTraits(target: EventTarget | null) {
+  const element = target instanceof Element ? target : null;
+  const isControl = Boolean(element?.closest("input, textarea, select, [contenteditable='true'], [role='slider']"));
+  let candidate = element;
+  let hasHorizontalScroll = false;
+
+  while (candidate) {
+    const { overflowX } = getComputedStyle(candidate);
+    if ((overflowX === "auto" || overflowX === "scroll") && candidate.scrollWidth > candidate.clientWidth) {
+      hasHorizontalScroll = true;
+      break;
+    }
+    candidate = candidate.parentElement;
+  }
+
+  return { isControl, hasHorizontalScroll };
 }
 
 function isAppForegrounded() {
@@ -370,8 +405,11 @@ type LyricLine = {
 
 type PlaybackSnapshot = {
   queue: Song[];
+  sourceQueue: Song[];
   currentIndex: number;
   position: number;
+  shuffleEnabled: boolean;
+  repeatMode: RepeatMode;
 };
 
 type RadioTrack = {
@@ -960,22 +998,45 @@ function isStoredSong(value: unknown): value is Song {
   );
 }
 
+function sameSongIds(first: Song[], second: Song[]) {
+  if (first.length !== second.length) return false;
+  const counts = new Map<string, number>();
+  first.forEach((song) => counts.set(song.id, (counts.get(song.id) ?? 0) + 1));
+  second.forEach((song) => counts.set(song.id, (counts.get(song.id) ?? 0) - 1));
+  return [...counts.values()].every((count) => count === 0);
+}
+
+function playbackSnapshotForSingleTrack(track: Song): PlaybackSnapshot {
+  return {
+    queue: [track],
+    sourceQueue: [track],
+    currentIndex: 0,
+    position: 0,
+    shuffleEnabled: false,
+    repeatMode: "off",
+  };
+}
+
 function loadPlaybackSnapshot(): PlaybackSnapshot | null {
   try {
     const raw = localStorage.getItem(PLAYBACK_STATE_KEY);
     if (!raw) {
       const lastPlayedTrack = loadLastPlayedTrack();
-      return lastPlayedTrack ? { queue: [lastPlayedTrack], currentIndex: 0, position: 0 } : null;
+      return lastPlayedTrack ? playbackSnapshotForSingleTrack(lastPlayedTrack) : null;
     }
     const parsed = JSON.parse(raw) as Partial<PlaybackSnapshot>;
     const queue = Array.isArray(parsed.queue) ? parsed.queue.filter(isStoredSong) : [];
+    const storedSourceQueue = Array.isArray(parsed.sourceQueue) ? parsed.sourceQueue.filter(isStoredSong) : [];
+    const sourceQueue = sameSongIds(queue, storedSourceQueue) ? storedSourceQueue : queue;
     const currentIndex = Math.round(clampNumber(Number(parsed.currentIndex ?? 0), 0, Math.max(queue.length - 1, 0)));
     const position = clampNumber(Number(parsed.position ?? 0), 0, 24 * 60 * 60);
+    const shuffleEnabled = parsed.shuffleEnabled === true;
+    const repeatMode = parsed.repeatMode === "all" || parsed.repeatMode === "one" ? parsed.repeatMode : "off";
 
-    return queue.length ? { queue, currentIndex, position } : null;
+    return queue.length ? { queue, sourceQueue, currentIndex, position, shuffleEnabled, repeatMode } : null;
   } catch {
     const lastPlayedTrack = loadLastPlayedTrack();
-    return lastPlayedTrack ? { queue: [lastPlayedTrack], currentIndex: 0, position: 0 } : null;
+    return lastPlayedTrack ? playbackSnapshotForSingleTrack(lastPlayedTrack) : null;
   }
 }
 
@@ -2043,6 +2104,10 @@ export function App() {
   const [detailMessage, setDetailMessage] = useState("");
   const [backStack, setBackStack] = useState<BrowserSnapshot[]>([]);
   const [forwardStack, setForwardStack] = useState<BrowserSnapshot[]>([]);
+  const [historySwipeIndicator, setHistorySwipeIndicator] = useState<HistorySwipeIndicator>({
+    direction: "back",
+    phase: "idle",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResults>(emptySearchResults);
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
@@ -2063,7 +2128,7 @@ export function App() {
   const [albumViewMode, setAlbumViewMode] = useState<AlbumViewMode>(() => loadStoredSettings().defaultAlbumView);
   const [artistViewMode, setArtistViewMode] = useState<ArtistViewMode>(() => loadStoredSettings().defaultArtistView);
   const [queue, setQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
-  const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.queue ?? []);
+  const [sourceQueue, setSourceQueue] = useState<Song[]>(() => initialPlaybackSnapshot?.sourceQueue ?? []);
   const [currentIndex, setCurrentIndex] = useState(() => initialPlaybackSnapshot?.currentIndex ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activePlaybackSource, setActivePlaybackSource] = useState<"local" | "radio">("local");
@@ -2080,8 +2145,8 @@ export function App() {
   const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
   const [lyricsMessage, setLyricsMessage] = useState("");
   const [playerError, setPlayerError] = useState("");
-  const [shuffleEnabled, setShuffleEnabled] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
+  const [shuffleEnabled, setShuffleEnabled] = useState(() => initialPlaybackSnapshot?.shuffleEnabled ?? false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>(() => initialPlaybackSnapshot?.repeatMode ?? "off");
   const [radioStationInput, setRadioStationInput] = useState(appSettings.radioStationUrl);
   const [radioStationState, setRadioStationState] = useState<RadioStationState | null>(null);
   const [radioSession, setRadioSession] = useState<RadioSessionPayload | null>(null);
@@ -2202,6 +2267,90 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!isMacOSDesktopApp()) return;
+
+    let swipe = createHistorySwipeState();
+    let completionTimer: number | null = null;
+    let indicatorTimer: number | null = null;
+
+    function clearCompletionTimer() {
+      if (completionTimer != null) window.clearTimeout(completionTimer);
+      completionTimer = null;
+    }
+
+    function clearIndicatorTimer() {
+      if (indicatorTimer != null) window.clearTimeout(indicatorTimer);
+      indicatorTimer = null;
+    }
+
+    function cancelIndicator() {
+      clearIndicatorTimer();
+      setHistorySwipeIndicator((current) => current.phase === "idle"
+        ? current
+        : { ...current, phase: "cancelled" });
+      indicatorTimer = window.setTimeout(() => {
+        indicatorTimer = null;
+        setHistorySwipeIndicator((current) => ({ ...current, phase: "idle" }));
+      }, 100);
+    }
+
+    function completeSwipe() {
+      completionTimer = null;
+      const { backStack: currentBackStack, forwardStack: currentForwardStack } = navigationStateRef.current;
+      const availability = {
+        back: currentBackStack.length > 0,
+        forward: currentForwardStack.length > 0,
+      };
+      const completed = completeHistorySwipe(swipe, performance.now(), availability);
+      swipe = completed.state;
+
+      if (completed.direction) {
+        clearIndicatorTimer();
+        setHistorySwipeIndicator({ direction: completed.direction, phase: "committed" });
+        indicatorTimer = window.setTimeout(() => {
+          indicatorTimer = null;
+          setHistorySwipeIndicator((current) => ({ ...current, phase: "idle" }));
+        }, 100);
+        if (completed.direction === "back") window.history.back();
+        if (completed.direction === "forward") window.history.forward();
+      } else {
+        cancelIndicator();
+      }
+    }
+
+    function handleHistorySwipe(event: WheelEvent) {
+      if (event.ctrlKey || event.shiftKey || shouldIgnoreHistorySwipeTarget(historySwipeTargetTraits(event.target))) {
+        swipe = cancelHistorySwipe(swipe);
+        clearCompletionTimer();
+        cancelIndicator();
+        return;
+      }
+
+      swipe = recordHistorySwipe(swipe, event.deltaX, event.deltaY, performance.now());
+      const { backStack: currentBackStack, forwardStack: currentForwardStack } = navigationStateRef.current;
+      const armedDirection = armedHistorySwipeDirection(swipe, {
+        back: currentBackStack.length > 0,
+        forward: currentForwardStack.length > 0,
+      });
+      if (armedDirection) {
+        clearIndicatorTimer();
+        setHistorySwipeIndicator({ direction: armedDirection, phase: "armed" });
+      } else {
+        cancelIndicator();
+      }
+      clearCompletionTimer();
+      if (swipe.active) completionTimer = window.setTimeout(completeSwipe, HISTORY_SWIPE_IDLE_MS);
+    }
+
+    window.addEventListener("wheel", handleHistorySwipe, { passive: true });
+    return () => {
+      clearCompletionTimer();
+      clearIndicatorTimer();
+      window.removeEventListener("wheel", handleHistorySwipe);
+    };
   }, []);
 
   const hasConfig = Boolean(config);
@@ -3430,8 +3579,13 @@ export function App() {
     if (!queue.length) return;
     if (!fromTrackEnd) stopTrackTransition();
     recordListeningHistory(fromTrackEnd, fromTrackEnd ? playerDuration || currentTrack?.duration || position : position);
+    const transition = advancePlaybackQueue(
+      { queue, sourceQueue, currentIndex, shuffleEnabled, repeatMode },
+      fromTrackEnd,
+      shuffled,
+    );
 
-    if (fromTrackEnd && repeatMode === "one") {
+    if (transition.effect === "restart") {
       scrobbledPlayRef.current = "";
       locallyRecordedPlayRef.current = "";
       seekTo(0);
@@ -3443,29 +3597,7 @@ export function App() {
       return;
     }
 
-    if (currentIndex >= queue.length - 1) {
-      if (repeatMode === "all") {
-        getActiveAudio()?.pause();
-        if (sourceQueue.length > 1) {
-          const nextQueue = shuffleEnabled ? shuffled(sourceQueue) : sourceQueue;
-          setQueue(nextQueue);
-          scrobbledPlayRef.current = "";
-          locallyRecordedPlayRef.current = "";
-          setCurrentIndex(0);
-        } else {
-          scrobbledPlayRef.current = "";
-          locallyRecordedPlayRef.current = "";
-          seekTo(0);
-          void getActiveAudio()?.play().catch(() => {
-            setPlayerError("Playback was blocked by the browser.");
-          });
-        }
-        resetPlaybackPosition();
-        setPlayerError("");
-        setIsPlaying(true);
-        return;
-      }
-
+    if (transition.effect === "stop") {
       setIsPlaying(false);
       seekTo(0);
       return;
@@ -3474,7 +3606,8 @@ export function App() {
     getActiveAudio()?.pause();
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
-    setCurrentIndex((index) => Math.min(index + 1, queue.length - 1));
+    if (transition.queue !== queue) setQueue(transition.queue);
+    setCurrentIndex(transition.currentIndex);
     resetPlaybackPosition();
     setPlayerError("");
     setIsPlaying(true);
@@ -3630,8 +3763,11 @@ export function App() {
       PLAYBACK_STATE_KEY,
       JSON.stringify({
         queue,
+        sourceQueue,
         currentIndex: safeIndex,
         position: safePosition,
+        shuffleEnabled,
+        repeatMode,
       }),
     );
   }
@@ -3649,26 +3785,20 @@ export function App() {
   }
 
   function cycleRepeatMode() {
-    setRepeatMode((mode) => (mode === "off" ? "all" : mode === "all" ? "one" : "off"));
+    setRepeatMode(nextRepeatMode);
   }
 
   function toggleShuffle() {
     if (queue.length < 2 || !currentTrack) return;
     stopTrackTransition();
-
-    if (shuffleEnabled) {
-      const sourceIndex = sourceQueue.indexOf(currentTrack);
-      setQueue(sourceQueue);
-      setCurrentIndex(sourceIndex >= 0 ? sourceIndex : 0);
-      setShuffleEnabled(false);
-      return;
-    }
-
-    const sourceIndex = sourceQueue.indexOf(currentTrack);
-    const remaining = sourceQueue.filter((_, index) => index !== sourceIndex);
-    setQueue([currentTrack, ...shuffled(remaining)]);
-    setCurrentIndex(0);
-    setShuffleEnabled(true);
+    const next = toggleShuffleTraversal(
+      { queue, sourceQueue, currentIndex, shuffleEnabled },
+      shuffled,
+      (song) => song.id,
+    );
+    setQueue(next.queue);
+    setCurrentIndex(next.currentIndex);
+    setShuffleEnabled(next.shuffleEnabled);
   }
 
     function reorderQueueItem(fromIndex: number, insertAtIndex: number) {
@@ -4353,7 +4483,7 @@ export function App() {
     lastPlaybackPersistRef.current = now;
     lastPlaybackPersistTrackRef.current = trackKey;
     persistPlaybackSnapshot(position);
-  }, [currentIndex, position, queue]);
+  }, [currentIndex, position, queue, repeatMode, shuffleEnabled, sourceQueue]);
 
   useEffect(() => {
     function persistBeforeUnload() {
@@ -4364,7 +4494,7 @@ export function App() {
     return () => {
       window.removeEventListener("beforeunload", persistBeforeUnload);
     };
-  }, [currentIndex, position, queue]);
+  }, [currentIndex, position, queue, repeatMode, shuffleEnabled, sourceQueue]);
 
   async function checkForUpdates(signal?: AbortSignal) {
     setUpdateCheckStatus("checking");
@@ -4681,6 +4811,14 @@ export function App() {
       style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
+      {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
+      <div
+        className={`history-swipe-indicator history-swipe-indicator-${historySwipeIndicator.direction}`}
+        data-phase={historySwipeIndicator.phase}
+        aria-hidden="true"
+      >
+        {historySwipeIndicator.direction === "back" ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+      </div>
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <PrismMark className="brand-mark" />
@@ -4786,8 +4924,7 @@ export function App() {
         </div>
       )}
 
-      <section className="workspace" aria-label="Music workspace">
-        {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
+      <section className={`workspace ${activeView === "radio" ? "radio-workspace-active" : ""}`} aria-label="Music workspace">
         <header className="topbar">
           {detailSelection && canNavigateBack ? (
             <button className="content-back-button topbar-back-button" type="button" onClick={onNavigateBack}>
@@ -4811,7 +4948,7 @@ export function App() {
           />
         </header>
 
-        <div className={`workspace-viewport ${activeView === "settings" ? "settings-workspace" : ""}`}>
+        <div className={`workspace-viewport ${activeView === "settings" ? "settings-workspace" : ""} ${activeView === "radio" ? "radio-workspace" : ""}`}>
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
           ) : null}
@@ -5076,7 +5213,7 @@ export function App() {
             ) : (
               <>
                 <button
-                  className={shuffleEnabled ? "active" : ""}
+                  className={`playback-mode-button ${shuffleEnabled ? "active" : ""}`}
                   type="button"
                   aria-label={shuffleEnabled ? "Disable shuffle" : "Enable shuffle"}
                   aria-pressed={shuffleEnabled}
@@ -5101,9 +5238,9 @@ export function App() {
                   <SkipForward size={16} />
                 </button>
                 <button
-                  className={`repeat-button ${repeatMode !== "off" ? "active" : ""} ${repeatMode === "one" ? "repeat-one" : ""}`}
+                  className={`playback-mode-button repeat-button ${repeatMode !== "off" ? "active" : ""} ${repeatMode === "one" ? "repeat-one" : ""}`}
                   type="button"
-                  aria-label={`Repeat ${repeatMode}`}
+                  aria-label={repeatMode === "off" ? "Enable repeat all" : repeatMode === "all" ? "Enable repeat one" : "Turn repeat off"}
                   aria-pressed={repeatMode !== "off"}
                   onClick={cycleRepeatMode}
                   disabled={!queue.length}
@@ -6849,7 +6986,6 @@ function RadioView({
     ? `${showTiming.nextShow?.name ?? "Autonomous"}${nextDjName ? ` with ${nextDjName}` : ""}`
     : "No later show";
   const coverUrl = buildRadioCoverUrl(stationUrl, nowPlaying);
-  const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
   const radioTitleParts = splitFeaturedTitle(radioTitle);
   const latestVoice = latestRadioVoiceLine(session, nowPlaying);
@@ -6862,68 +6998,63 @@ function RadioView({
   ].filter(Boolean);
 
   return (
-    <section className="radio-view">
-      <div className="radio-hero">
-        {isPlaying && appSettings.coverWashEnabled && visualEffectsEnabled && coverUrl ? (
-          <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" />
+    <section className="radio-view radio-hero">
+      <div className="radio-cover-card">
+        {coverUrl ? (
+          <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />
+        ) : (
+          <div className="radio-cover-fallback">
+            <RadioTower size={42} />
+          </div>
+        )}
+      </div>
+
+      <div className="radio-copy">
+        <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
+        <h3 aria-label={radioTitle}>
+          <span>{radioTitleParts.main}</span>
+          {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
+        </h3>
+        <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
+        {nowPlayingDetails.length ? <p className="radio-album">{nowPlayingDetails.join(" / ")}</p> : null}
+
+        {savedStations.length > 1 ? (
+          <label className="radio-channel-select">
+            <span>Channel</span>
+            <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
+              {savedStations.map((savedStationUrl) => (
+                <option value={savedStationUrl} key={savedStationUrl}>
+                  {stationLabel(savedStationUrl)}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
-        <div className="radio-cover-card">
-          {coverUrl ? (
-            <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />
-          ) : (
-            <div className="radio-cover-fallback">
-              <RadioTower size={42} />
-            </div>
-          )}
+
+        <div className="radio-dj-callout">
+          <div>
+            <span>From the Booth</span>
+            {latestVoiceAge ? <small>{latestVoiceAge}</small> : null}
+          </div>
+          <p>{latestVoice?.text ?? "Quiet in the booth..."}</p>
         </div>
+      </div>
 
-        <div className="radio-copy">
-          <p className="eyebrow">Now Playing{listenerCount == null ? "" : ` / ${listenerCount} listener${listenerCount === 1 ? "" : "s"}`}</p>
-          <h3 aria-label={radioTitle}>
-            <span>{radioTitleParts.main}</span>
-            {radioTitleParts.feature ? <em>{radioTitleParts.feature}</em> : null}
-          </h3>
-          <p className="radio-artist">{nowPlaying?.artist ?? stationName}</p>
-          {nowPlayingDetails.length ? <p className="radio-album">{nowPlayingDetails.join(" / ")}</p> : null}
-
-          {savedStations.length > 1 ? (
-            <label className="radio-channel-select">
-              <span>Channel</span>
-              <select value={stationUrl} onChange={(event) => onSelectStation(event.target.value)}>
-                {savedStations.map((savedStationUrl) => (
-                  <option value={savedStationUrl} key={savedStationUrl}>
-                    {stationLabel(savedStationUrl)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          <div className="radio-dj-callout">
-            <div>
-              <span>From the Booth</span>
-              {latestVoiceAge ? <small>{latestVoiceAge}</small> : null}
-            </div>
-            <p>{latestVoice?.text ?? "Quiet in the booth..."}</p>
-          </div>
+      <div className="radio-broadcast-details" aria-label="Station details">
+        <div>
+          <span>In the Booth</span>
+          <strong>{boothLine}</strong>
+          <small>{showTiming?.until ?? "Schedule unavailable"}</small>
         </div>
-
-        <div className="radio-broadcast-details" aria-label="Station details">
-          <div>
-            <span>In the Booth</span>
-            <strong>{boothLine}</strong>
-            <small>{showTiming?.until ?? "Schedule unavailable"}</small>
-          </div>
-          <div>
-            <span>Up Next</span>
-            <strong>{nextShowLine}</strong>
-            {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
-          </div>
-          <div>
-            <span>Stream</span>
-            <strong>{stationName}</strong>
-            <small>{listenerCount ?? "0"} listener{listenerCount === 1 ? "" : "s"} / {streamLabel}</small>
-          </div>
+        <div>
+          <span>Up Next</span>
+          <strong>{nextShowLine}</strong>
+          {showTiming?.nextShowAt ? <small>at {showTiming.nextShowAt}</small> : null}
+        </div>
+        <div>
+          <span>Stream</span>
+          <strong>{stationName}</strong>
+          <small>{listenerCount ?? "0"} listener{listenerCount === 1 ? "" : "s"} / {streamLabel}</small>
         </div>
       </div>
     </section>
