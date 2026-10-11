@@ -4793,7 +4793,7 @@ export function App() {
         </div>
       )}
 
-      <section className="workspace" aria-label="Music workspace">
+      <section className={`workspace ${activeView === "radio" ? "radio-workspace-active" : ""}`} aria-label="Music workspace">
         {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
         <header className="topbar">
           {detailSelection && canNavigateBack ? (
@@ -6856,7 +6856,6 @@ function RadioView({
     ? `${showTiming.nextShow?.name ?? "Autonomous"}${nextDjName ? ` with ${nextDjName}` : ""}`
     : "No later show";
   const coverUrl = buildRadioCoverUrl(stationUrl, nowPlaying);
-  const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   const radioTitle = nowPlaying?.title ?? "Tune into Subwave";
   const radioTitleParts = splitFeaturedTitle(radioTitle);
   const latestVoice = latestRadioVoiceLine(session, nowPlaying);
@@ -6870,9 +6869,6 @@ function RadioView({
 
   return (
     <section className="radio-view radio-hero">
-      {isPlaying && appSettings.coverWashEnabled && visualEffectsEnabled && coverUrl ? (
-        <div className="radio-cover-wash" style={{ backgroundImage: `url(${coverUrl})` }} aria-hidden="true" />
-      ) : null}
       <div className="radio-cover-card">
         {coverUrl ? (
           <img src={coverUrl} alt={`${nowPlaying?.title ?? stationName} cover`} />

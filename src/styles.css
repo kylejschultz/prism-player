@@ -3349,24 +3349,6 @@ button.similar-chip:focus-visible {
     rgba(10, 10, 10, 0.34);
 }
 
-.radio-cover-wash {
-  position: absolute;
-  inset: -18%;
-  pointer-events: none;
-  background-position: center;
-  background-size: cover;
-  opacity: 0.72;
-  filter: blur(34px) saturate(155%);
-  transform: scale(1.08);
-}
-
-.radio-cover-wash::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  background: linear-gradient(115deg, rgba(13, 13, 12, 0.24), rgba(13, 13, 12, 0.52) 58%, rgba(13, 13, 12, 0.36));
-}
-
 .radio-cover-card,
 .radio-copy {
   position: relative;
@@ -6724,6 +6706,10 @@ button.similar-chip:focus-visible {
   padding: 0;
 }
 
+.workspace.radio-workspace-active > .topbar {
+  background: transparent;
+}
+
 .radio-hero,
 .radio-tune-gate {
   border: 0;
@@ -6757,12 +6743,6 @@ button.similar-chip:focus-visible {
 .radio-copy h3 {
   font-weight: 680;
   letter-spacing: -0.035em;
-}
-
-.radio-cover-wash {
-  inset: -28%;
-  opacity: 0.56;
-  mask-image: radial-gradient(ellipse at 30% 35%, #000 0%, rgba(0, 0, 0, 0.76) 42%, transparent 78%);
 }
 
 .radio-dj-callout {
