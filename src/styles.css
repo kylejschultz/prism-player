@@ -5873,13 +5873,20 @@ button.similar-chip:focus-visible {
 .app-shell {
   --glass-border: rgba(255, 255, 255, 0.11);
   --glass-surface: rgba(8, 11, 13, 0.58);
-  grid-template-rows: minmax(0, 1fr) 96px;
+  --player-bar-height: 96px;
+  --workspace-sidebar-width: var(--sidebar-width, 248px);
+  --workspace-right-sidebar-width: 0px;
+  grid-template-rows: minmax(0, 1fr) var(--player-bar-height);
   overflow: hidden;
   background:
     radial-gradient(circle at 72% 18%, rgba(var(--prism-glow-right-rgb), 0.3), transparent 38%),
     radial-gradient(circle at 14% 30%, rgba(var(--prism-glow-left-rgb), 0.34), transparent 34%),
     radial-gradient(circle at 48% 88%, rgba(var(--prism-glow-bottom-rgb), 0.15), transparent 34%),
     linear-gradient(135deg, #0a0d0e 0%, #151414 54%, #080a0b 100%);
+}
+
+.app-shell.with-right-panel:not(.right-panel-collapsed) {
+  --workspace-right-sidebar-width: var(--right-sidebar-width, 338px);
 }
 
 .cover-wash-backdrop {
@@ -5988,6 +5995,14 @@ button.similar-chip:focus-visible {
 }
 
 @media (max-width: 1120px) {
+  .app-shell {
+    --workspace-sidebar-width: min(var(--sidebar-width, 248px), 188px);
+  }
+
+  .app-shell.with-right-panel:not(.right-panel-collapsed) {
+    --workspace-right-sidebar-width: min(var(--right-sidebar-width, 338px), 300px);
+  }
+
   .workspace {
     padding: 0;
   }
@@ -6007,6 +6022,14 @@ button.similar-chip:focus-visible {
 }
 
 @media (max-width: 940px) {
+  .app-shell {
+    --workspace-sidebar-width: min(var(--sidebar-width, 248px), 172px);
+  }
+
+  .app-shell.with-right-panel:not(.right-panel-collapsed) {
+    --workspace-right-sidebar-width: min(var(--right-sidebar-width, 338px), 280px);
+  }
+
   .workspace {
     padding: 0;
   }
@@ -7012,12 +7035,71 @@ button.similar-chip:focus-visible {
 
 /* Shared detail-page composition and a single uninterrupted workspace wash. */
 .cover-wash-backdrop {
-  inset: -4%;
+  inset:
+    0
+    min(0px, calc(var(--workspace-right-sidebar-width) - var(--workspace-sidebar-width)))
+    var(--player-bar-height)
+    min(0px, calc(var(--workspace-sidebar-width) - var(--workspace-right-sidebar-width)));
   z-index: 0;
   opacity: 0.78;
   filter: blur(24px) saturate(128%);
-  transform: scale(1.04);
+  transform: none;
   mask-image: none;
+}
+
+.app-shell.sidebar-collapsed {
+  --workspace-sidebar-width: 0px;
+}
+
+.history-swipe-indicator {
+  position: fixed;
+  top: calc((100vh - var(--player-bar-height)) / 2);
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 58px;
+  margin-top: -29px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.78);
+  background: rgba(12, 16, 18, 0.58);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24), inset 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(125%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease, border-color 100ms ease, color 100ms ease, background 100ms ease;
+}
+
+.history-swipe-indicator-back {
+  left: calc(var(--workspace-sidebar-width) + 14px);
+}
+
+.history-swipe-indicator-forward {
+  right: calc(var(--workspace-right-sidebar-width) + 14px);
+}
+
+.history-swipe-indicator[data-phase="armed"],
+.history-swipe-indicator[data-phase="committed"] {
+  opacity: 1;
+}
+
+.history-swipe-indicator[data-phase="committed"] {
+  border-color: rgba(var(--prism-highlight-rgb), 0.72);
+  color: #fff;
+  background: rgba(var(--prism-accent-rgb), 0.3);
+}
+
+.history-swipe-indicator[data-phase="cancelled"] {
+  opacity: 0;
+  transition-duration: 100ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-swipe-indicator {
+    transition-property: opacity !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .cover-wash-backdrop::after {

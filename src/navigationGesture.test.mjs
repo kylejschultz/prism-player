@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  armedHistorySwipeDirection,
   completeHistorySwipe,
   createHistorySwipeState,
+  HISTORY_SWIPE_IDLE_MS,
   recordHistorySwipe,
   shouldIgnoreHistorySwipeTarget,
 } from "./navigationGesture.ts";
@@ -37,6 +39,21 @@ test("unavailable history directions never navigate", () => {
 
   assert.equal(completeHistorySwipe(rightSwipe, 200, { back: false, forward: true }).direction, null);
   assert.equal(completeHistorySwipe(leftSwipe, 200, { back: true, forward: false }).direction, null);
+});
+
+test("feedback arms only after a dominant threshold crossing in an available direction", () => {
+  const belowThreshold = record([[-119, 0, 0]]);
+  const backSwipe = record([[-70, 4, 0], [-65, 3, 20]]);
+  const verticalSwipe = record([[-130, 100, 0]]);
+
+  assert.equal(armedHistorySwipeDirection(belowThreshold, available), null);
+  assert.equal(armedHistorySwipeDirection(backSwipe, available), "back");
+  assert.equal(armedHistorySwipeDirection(backSwipe, { back: false, forward: true }), null);
+  assert.equal(armedHistorySwipeDirection(verticalSwipe, available), null);
+});
+
+test("completed gestures use the 100 ms idle window", () => {
+  assert.equal(HISTORY_SWIPE_IDLE_MS, 100);
 });
 
 test("completion applies one cooldown across momentum tails", () => {
