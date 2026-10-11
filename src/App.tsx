@@ -13,6 +13,14 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
 import { compareVersions, getCurrentReleaseNotes, getUnreadReleaseNotes, WHATS_NEW_RELEASES, type WhatsNewRelease } from "./whatsNew";
 import { advancePlaybackQueue, nextRepeatMode, toggleShuffleTraversal, type RepeatMode } from "./playbackQueue";
+import {
+  cancelHistorySwipe,
+  completeHistorySwipe,
+  createHistorySwipeState,
+  HISTORY_SWIPE_IDLE_MS,
+  recordHistorySwipe,
+  shouldIgnoreHistorySwipeTarget,
+} from "./navigationGesture";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
@@ -168,6 +176,28 @@ function isVersionNewer(candidate: string, current: string) {
 
 function isTauriDesktopApp() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function isMacOSDesktopApp() {
+  return isTauriDesktopApp() && /mac/i.test(navigator.platform || navigator.userAgent);
+}
+
+function historySwipeTargetTraits(target: EventTarget | null) {
+  const element = target instanceof Element ? target : null;
+  const isControl = Boolean(element?.closest("input, textarea, select, [contenteditable='true'], [role='slider']"));
+  let candidate = element;
+  let hasHorizontalScroll = false;
+
+  while (candidate) {
+    const { overflowX } = getComputedStyle(candidate);
+    if ((overflowX === "auto" || overflowX === "scroll") && candidate.scrollWidth > candidate.clientWidth) {
+      hasHorizontalScroll = true;
+      break;
+    }
+    candidate = candidate.parentElement;
+  }
+
+  return { isControl, hasHorizontalScroll };
 }
 
 function isAppForegrounded() {
@@ -2228,6 +2258,49 @@ export function App() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (!isMacOSDesktopApp()) return;
+
+    let swipe = createHistorySwipeState();
+    let completionTimer: number | null = null;
+
+    function clearCompletionTimer() {
+      if (completionTimer != null) window.clearTimeout(completionTimer);
+      completionTimer = null;
+    }
+
+    function completeSwipe() {
+      completionTimer = null;
+      const { backStack: currentBackStack, forwardStack: currentForwardStack } = navigationStateRef.current;
+      const completed = completeHistorySwipe(swipe, performance.now(), {
+        back: currentBackStack.length > 0,
+        forward: currentForwardStack.length > 0,
+      });
+      swipe = completed.state;
+
+      if (completed.direction === "back") window.history.back();
+      if (completed.direction === "forward") window.history.forward();
+    }
+
+    function handleHistorySwipe(event: WheelEvent) {
+      if (event.ctrlKey || event.shiftKey || shouldIgnoreHistorySwipeTarget(historySwipeTargetTraits(event.target))) {
+        swipe = cancelHistorySwipe(swipe);
+        clearCompletionTimer();
+        return;
+      }
+
+      swipe = recordHistorySwipe(swipe, event.deltaX, event.deltaY, performance.now());
+      clearCompletionTimer();
+      if (swipe.active) completionTimer = window.setTimeout(completeSwipe, HISTORY_SWIPE_IDLE_MS);
+    }
+
+    window.addEventListener("wheel", handleHistorySwipe, { passive: true });
+    return () => {
+      clearCompletionTimer();
+      window.removeEventListener("wheel", handleHistorySwipe);
+    };
   }, []);
 
   const hasConfig = Boolean(config);
@@ -4688,6 +4761,7 @@ export function App() {
       style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
+      {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <PrismMark className="brand-mark" />
@@ -4794,7 +4868,6 @@ export function App() {
       )}
 
       <section className={`workspace ${activeView === "radio" ? "radio-workspace-active" : ""}`} aria-label="Music workspace">
-        {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
         <header className="topbar">
           {detailSelection && canNavigateBack ? (
             <button className="content-back-button topbar-back-button" type="button" onClick={onNavigateBack}>

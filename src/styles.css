@@ -7012,18 +7012,23 @@ button.similar-chip:focus-visible {
 
 /* Shared detail-page composition and a single uninterrupted workspace wash. */
 .cover-wash-backdrop {
-  inset: -12%;
+  inset: -4%;
   z-index: 0;
-  opacity: 0.58;
-  filter: blur(72px) saturate(135%);
-  transform: scale(1.1);
+  opacity: 0.78;
+  filter: blur(24px) saturate(128%);
+  transform: scale(1.04);
   mask-image: none;
 }
 
 .cover-wash-backdrop::after {
   background:
-    linear-gradient(180deg, rgba(6, 8, 10, 0.42), rgba(7, 9, 11, 0.58)),
-    radial-gradient(circle at 24% 18%, rgba(var(--prism-accent-rgb), 0.08), transparent 42%);
+    linear-gradient(180deg, rgba(6, 8, 10, 0.28), rgba(7, 9, 11, 0.44)),
+    radial-gradient(circle at 24% 18%, rgba(var(--prism-accent-rgb), 0.05), transparent 42%);
+}
+
+.app-shell.with-cover-wash .sidebar {
+  background: linear-gradient(180deg, rgba(8, 11, 13, 0.58), rgba(8, 10, 12, 0.42));
+  backdrop-filter: blur(20px) saturate(120%);
 }
 
 .workspace > .topbar {
