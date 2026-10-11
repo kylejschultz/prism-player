@@ -14,6 +14,7 @@ import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from ".
 import { compareVersions, getCurrentReleaseNotes, getUnreadReleaseNotes, WHATS_NEW_RELEASES, type WhatsNewRelease } from "./whatsNew";
 import { advancePlaybackQueue, nextRepeatMode, toggleShuffleTraversal, type RepeatMode } from "./playbackQueue";
 import {
+  armedHistorySwipeDirection,
   cancelHistorySwipe,
   completeHistorySwipe,
   createHistorySwipeState,
@@ -86,6 +87,10 @@ type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
 type SongSortDirection = "asc" | "desc";
+type HistorySwipeIndicator = {
+  direction: "back" | "forward";
+  phase: "idle" | "armed" | "committed" | "cancelled";
+};
 
 const LIBRARY_SCAN_POLL_INTERVAL_MS = 5 * 60 * 1000;
 const MEDIA_SHORTCUTS = [
@@ -2099,6 +2104,10 @@ export function App() {
   const [detailMessage, setDetailMessage] = useState("");
   const [backStack, setBackStack] = useState<BrowserSnapshot[]>([]);
   const [forwardStack, setForwardStack] = useState<BrowserSnapshot[]>([]);
+  const [historySwipeIndicator, setHistorySwipeIndicator] = useState<HistorySwipeIndicator>({
+    direction: "back",
+    phase: "idle",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResults>(emptySearchResults);
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
@@ -2265,33 +2274,73 @@ export function App() {
 
     let swipe = createHistorySwipeState();
     let completionTimer: number | null = null;
+    let indicatorTimer: number | null = null;
 
     function clearCompletionTimer() {
       if (completionTimer != null) window.clearTimeout(completionTimer);
       completionTimer = null;
     }
 
+    function clearIndicatorTimer() {
+      if (indicatorTimer != null) window.clearTimeout(indicatorTimer);
+      indicatorTimer = null;
+    }
+
+    function cancelIndicator() {
+      clearIndicatorTimer();
+      setHistorySwipeIndicator((current) => current.phase === "idle"
+        ? current
+        : { ...current, phase: "cancelled" });
+      indicatorTimer = window.setTimeout(() => {
+        indicatorTimer = null;
+        setHistorySwipeIndicator((current) => ({ ...current, phase: "idle" }));
+      }, 100);
+    }
+
     function completeSwipe() {
       completionTimer = null;
       const { backStack: currentBackStack, forwardStack: currentForwardStack } = navigationStateRef.current;
-      const completed = completeHistorySwipe(swipe, performance.now(), {
+      const availability = {
         back: currentBackStack.length > 0,
         forward: currentForwardStack.length > 0,
-      });
+      };
+      const completed = completeHistorySwipe(swipe, performance.now(), availability);
       swipe = completed.state;
 
-      if (completed.direction === "back") window.history.back();
-      if (completed.direction === "forward") window.history.forward();
+      if (completed.direction) {
+        clearIndicatorTimer();
+        setHistorySwipeIndicator({ direction: completed.direction, phase: "committed" });
+        indicatorTimer = window.setTimeout(() => {
+          indicatorTimer = null;
+          setHistorySwipeIndicator((current) => ({ ...current, phase: "idle" }));
+        }, 100);
+        if (completed.direction === "back") window.history.back();
+        if (completed.direction === "forward") window.history.forward();
+      } else {
+        cancelIndicator();
+      }
     }
 
     function handleHistorySwipe(event: WheelEvent) {
       if (event.ctrlKey || event.shiftKey || shouldIgnoreHistorySwipeTarget(historySwipeTargetTraits(event.target))) {
         swipe = cancelHistorySwipe(swipe);
         clearCompletionTimer();
+        cancelIndicator();
         return;
       }
 
       swipe = recordHistorySwipe(swipe, event.deltaX, event.deltaY, performance.now());
+      const { backStack: currentBackStack, forwardStack: currentForwardStack } = navigationStateRef.current;
+      const armedDirection = armedHistorySwipeDirection(swipe, {
+        back: currentBackStack.length > 0,
+        forward: currentForwardStack.length > 0,
+      });
+      if (armedDirection) {
+        clearIndicatorTimer();
+        setHistorySwipeIndicator({ direction: armedDirection, phase: "armed" });
+      } else {
+        cancelIndicator();
+      }
       clearCompletionTimer();
       if (swipe.active) completionTimer = window.setTimeout(completeSwipe, HISTORY_SWIPE_IDLE_MS);
     }
@@ -2299,6 +2348,7 @@ export function App() {
     window.addEventListener("wheel", handleHistorySwipe, { passive: true });
     return () => {
       clearCompletionTimer();
+      clearIndicatorTimer();
       window.removeEventListener("wheel", handleHistorySwipe);
     };
   }, []);
@@ -4762,6 +4812,13 @@ export function App() {
       onContextMenu={openLibraryContextMenu}
     >
       {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
+      <div
+        className={`history-swipe-indicator history-swipe-indicator-${historySwipeIndicator.direction}`}
+        data-phase={historySwipeIndicator.phase}
+        aria-hidden="true"
+      >
+        {historySwipeIndicator.direction === "back" ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+      </div>
       {!sidebarCollapsed ? <aside className="sidebar" aria-label="Primary navigation">
         <div className="brand">
           <PrismMark className="brand-mark" />

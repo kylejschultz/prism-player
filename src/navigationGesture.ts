@@ -1,4 +1,4 @@
-export const HISTORY_SWIPE_IDLE_MS = 140;
+export const HISTORY_SWIPE_IDLE_MS = 100;
 const HISTORY_SWIPE_THRESHOLD = 120;
 const HISTORY_SWIPE_DOMINANCE = 1.35;
 const HISTORY_SWIPE_COOLDOWN_MS = 600;
@@ -60,17 +60,32 @@ export function completeHistorySwipe(
 ): { state: HistorySwipeState; direction: HistorySwipeDirection | null } {
   if (!state.active) return { state, direction: null };
 
-  const deliberate = !state.blocked
-    && Math.abs(state.deltaX) >= HISTORY_SWIPE_THRESHOLD
-    && Math.abs(state.deltaX) >= Math.abs(state.deltaY) * HISTORY_SWIPE_DOMINANCE;
-  const direction: HistorySwipeDirection | null = deliberate ? (state.deltaX < 0 ? "back" : "forward") : null;
-  const availableDirection = direction && availability[direction] ? direction : null;
+  const deliberateDirection = historySwipeDirection(state);
+  const deliberate = deliberateDirection !== null;
+  const availableDirection = armedHistorySwipeDirection(state, availability);
   const cooldownUntil = deliberate ? completedAt + HISTORY_SWIPE_COOLDOWN_MS : state.cooldownUntil;
 
   return {
     state: { ...createHistorySwipeState(), cooldownUntil },
     direction: availableDirection,
   };
+}
+
+function historySwipeDirection(state: HistorySwipeState): HistorySwipeDirection | null {
+  const deliberate = state.active
+    && !state.blocked
+    && Math.abs(state.deltaX) >= HISTORY_SWIPE_THRESHOLD
+    && Math.abs(state.deltaX) >= Math.abs(state.deltaY) * HISTORY_SWIPE_DOMINANCE;
+
+  return deliberate ? (state.deltaX < 0 ? "back" : "forward") : null;
+}
+
+export function armedHistorySwipeDirection(
+  state: HistorySwipeState,
+  availability: HistoryAvailability,
+): HistorySwipeDirection | null {
+  const direction = historySwipeDirection(state);
+  return direction && availability[direction] ? direction : null;
 }
 
 export function shouldIgnoreHistorySwipeTarget({
