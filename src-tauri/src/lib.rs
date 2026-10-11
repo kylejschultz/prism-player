@@ -234,10 +234,9 @@ pub fn run() {
                     .expect("main Prism webview should exist during setup");
                 main_webview.with_webview(|webview| unsafe {
                     let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
-                    // Let macOS own the trackpad history gesture. Prism's
-                    // browser state is kept in the WebView history stack, so
-                    // WebKit will dispatch the matching popstate event.
-                    view.setAllowsBackForwardNavigationGestures(true);
+                    // Prism provides explicit navigation controls; keep WebKit
+                    // from dragging the page aside for history navigation.
+                    view.setAllowsBackForwardNavigationGestures(false);
                 })?;
             }
 

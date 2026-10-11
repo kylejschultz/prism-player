@@ -4818,7 +4818,7 @@ export function App() {
           />
         </header>
 
-        <div className={`workspace-viewport ${activeView === "settings" ? "settings-workspace" : ""}`}>
+        <div className={`workspace-viewport ${activeView === "settings" ? "settings-workspace" : ""} ${activeView === "radio" ? "radio-workspace" : ""}`}>
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
           ) : null}
