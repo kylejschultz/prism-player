@@ -4621,7 +4621,7 @@ button.similar-chip:focus-visible {
   overflow: hidden;
 }
 
-.player-now-playing-trigger svg {
+.player-now-playing-trigger > svg {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -4633,8 +4633,8 @@ button.similar-chip:focus-visible {
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
-.player-now-playing-trigger:hover svg,
-.player-now-playing-trigger:focus-visible svg {
+.player-now-playing-trigger:hover > svg,
+.player-now-playing-trigger:focus-visible > svg {
   opacity: 1;
   transform: translate(-50%, -50%);
 }

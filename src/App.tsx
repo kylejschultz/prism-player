@@ -5104,13 +5104,17 @@ export function App() {
 
         <div className={`now-playing ${footerTrack || isRadioPresentation ? "" : "empty"}`}>
           {isRadioPresentation ? (
-            radioCoverUrl ? (
+            <button className="player-now-playing-trigger" type="button" onClick={() => selectView("radio")} aria-label="Open Radio">
               <CoverArt src={isRadioTuning ? null : radioCoverUrl} label={isRadioTuning ? "Tuning In" : radioNowPlaying?.title ?? "Radio"} className="player-cover" fallbackIcon={<RadioTower size={20} />} />
-            ) : (
-              <CoverArt src={null} label="Radio" className="player-cover" fallbackIcon={<RadioTower size={20} />} />
-            )
+              <Maximize2 size={14} aria-hidden="true" />
+            </button>
           ) : footerTrack ? (
-            <button className="player-now-playing-trigger" type="button" onClick={() => selectView("nowPlaying")} aria-label={`Open Now Playing for ${footerTrack.title}`}>
+            <button
+              className="player-now-playing-trigger"
+              type="button"
+              onClick={() => footerTrack.albumId ? void openAlbumById(footerTrack.albumId, footerTrack.album ?? footerTrack.title) : selectView("nowPlaying")}
+              aria-label={footerTrack.albumId ? `Open album for ${footerTrack.title}` : `Open Now Playing for ${footerTrack.title}`}
+            >
               <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
               <Maximize2 size={14} aria-hidden="true" />
             </button>
