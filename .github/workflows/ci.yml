@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev, release]
+    branches: [dev, release, perf/artwork-and-macos-swipe]
   push:
     branches: [dev, release]
 
@@ -36,6 +36,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
 
       - name: Build
         run: npm run build
