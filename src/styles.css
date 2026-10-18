@@ -4174,6 +4174,44 @@ button.similar-chip:focus-visible {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.artist-grid-cover.cover-fallback,
+.artist-list-cover.cover-fallback,
+.artist-cover.cover-fallback {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #20242a;
+}
+
+.artist-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse at 15% 10%, hsl(var(--artist-hue) 36% 37% / 0.7), transparent 72%),
+    radial-gradient(ellipse at 90% 95%, hsl(calc(var(--artist-hue) + 55) 30% 28% / 0.8), transparent 75%),
+    hsl(var(--artist-hue) 20% 16%);
+  color: #fff;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.artist-grid-cover .artist-initials {
+  font-size: clamp(28px, 4vw, 64px);
+}
+
+.artist-list-cover .artist-initials {
+  font-size: 14px;
+}
+
+.artist-cover .artist-initials {
+  font-size: clamp(48px, 8vw, 96px);
+}
+
 .empty-panel,
 .empty-view {
   display: grid;

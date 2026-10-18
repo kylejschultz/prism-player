@@ -5,6 +5,7 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys } from "./data/navidrome";
+import { artistPlaceholder } from "./artistArtwork";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -262,6 +263,7 @@ export type Album = {
 export type Artist = {
   id: string;
   name: string;
+  coverArt?: string;
   albumCount?: number;
   musicBrainzId?: string;
 };
@@ -8775,6 +8777,7 @@ function AlbumList({
 
 function PlayableCover({
   src,
+  fallbackSrc,
   label,
   className,
   rounded = false,
@@ -8784,6 +8787,7 @@ function PlayableCover({
   onPlay,
 }: {
   src: string | null;
+  fallbackSrc?: string | null;
   label: string;
   className: string;
   rounded?: boolean;
@@ -8792,7 +8796,7 @@ function PlayableCover({
   onOpen?: () => void;
   onPlay: () => void;
 }) {
-  const cover = <CoverArt src={src} label={label} className={className} fallbackIcon={fallbackIcon} />;
+  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} />;
 
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
@@ -8812,22 +8816,25 @@ function PlayableCover({
 
 function CoverArt({
   src,
+  fallbackSrc,
   label,
   className,
   fallbackIcon = <Disc3 size={28} />,
 }: {
   src: string | null;
+  fallbackSrc?: string | null;
   label: string;
   className: string;
   fallbackIcon?: ReactNode;
 }) {
-  const [imageFailed, setImageFailed] = useState(false);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
+  const imageSrc = [src, fallbackSrc].find((url) => url && !failedSources.includes(url));
 
   useEffect(() => {
-    setImageFailed(false);
-  }, [src]);
+    setFailedSources([]);
+  }, [src, fallbackSrc]);
 
-  if (!src || imageFailed) {
+  if (!imageSrc) {
     return (
       <div className={`${className} cover-fallback`} aria-hidden="true">
         {fallbackIcon}
@@ -8835,7 +8842,12 @@ function CoverArt({
     );
   }
 
-  return <img className={className} src={src} alt={`${label} cover`} loading="lazy" onError={() => setImageFailed(true)} />;
+  return <img className={className} src={imageSrc} alt={`${label} cover`} loading="lazy" onError={() => setFailedSources((current) => [...current, imageSrc])} />;
+}
+
+function ArtistInitials({ name }: { name: string }) {
+  const { initials, hue } = artistPlaceholder(name);
+  return <span className="artist-initials" style={{ "--artist-hue": hue } as CSSProperties}>{initials}</span>;
 }
 
 function useArtistImageUrls(
@@ -8990,7 +9002,8 @@ function ArtistGrid({
                       src={coverUrl}
                       label={artist.name}
                       className="artist-grid-cover"
-                      fallbackIcon={<Disc3 size={30} />}
+                      fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null}
+                      fallbackIcon={<ArtistInitials name={artist.name} />}
                       onOpen={() => onOpenArtist(artist)}
                       onPlay={() => onPlayArtist(artist)}
                     />
@@ -9053,7 +9066,7 @@ function ArtistList({
 
     return (
       <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
-        <CoverArt src={coverUrl} label={artist.name} className="artist-list-cover" fallbackIcon={<Disc3 size={16} />} />
+        <CoverArt src={coverUrl} fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null} label={artist.name} className="artist-list-cover" fallbackIcon={<ArtistInitials name={artist.name} />} />
         <span>{artist.name}</span>
         <small>{albumCount} {albumCount === 1 ? "album" : "albums"}</small>
       </button>
@@ -9744,7 +9757,7 @@ function DetailPanel({
     const artistAlbums = sortAlbumsNewestFirst(artist.album ?? []);
     const artistInfo = artist.info;
     const artistImage = getArtistImageUrl(artistInfo);
-    const firstCover = artistImage || (config ? buildCoverArtUrl(config, artistAlbums.find((album) => album.coverArt)?.coverArt, "420") : null);
+    const serverArtistCover = config ? buildCoverArtUrl(config, artist.coverArt, "420") : null;
     const biography = cleanBiography(artistInfo?.biography);
     const similarArtists = artistInfo?.similarArtist?.slice(0, 8) ?? [];
     const topSongs = getArtistTopSongs(artist, librarySongs, listeningHistory);
@@ -9761,7 +9774,7 @@ function DetailPanel({
       <section className="detail-panel detail-page artist-detail-page">
         <div className="album-hero detail-page-hero artist-hero">
           <div className="detail-artwork-stage">
-            <PlayableCover src={firstCover} label={artist.name} className="detail-cover artist-cover" onPlay={() => onPlayArtist(artist)} />
+            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
           </div>
           <div className="detail-hero-copy">
             <p className="detail-type-label">Artist</p>
