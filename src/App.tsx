@@ -4601,6 +4601,8 @@ export function App() {
       }
 
       if (event.key === " ") {
+        // Let the artwork button's native Space activation open its destination.
+        if (event.target instanceof Element && event.target.closest(".player-now-playing-trigger")) return;
         event.preventDefault();
         togglePlayback();
         return;
