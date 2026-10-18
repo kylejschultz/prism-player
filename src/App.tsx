@@ -8728,13 +8728,13 @@ function useArtistImageUrls(
 
         if (cachedImages[artist.id]) continue;
 
-        const detail = await queryClient.fetchQuery({
-          queryKey: navidromeKeys.artist(currentConfig, artist.id),
-          queryFn: () => navidromeClient.artist(currentConfig, artist.id),
+        const artistInfo = await queryClient.fetchQuery({
+          queryKey: navidromeKeys.artistInfo(currentConfig, artist.id),
+          queryFn: () => navidromeClient.artistInfo(currentConfig, artist.id),
           staleTime: 5 * 60_000,
         }).catch(() => null);
 
-        const imageUrl = getArtistImageUrl(detail?.info);
+        const imageUrl = getArtistImageUrl(artistInfo);
         if (!cancelled && imageUrl) {
           setImageUrls((current) => ({ ...current, [artist.id]: imageUrl }));
           onImageResolved(artist.id, imageUrl);
