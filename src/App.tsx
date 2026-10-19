@@ -13,7 +13,7 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { deleteLibraryCatalog, readLibraryCatalog, writeLibraryCatalog } from "./libraryCatalog";
 import { compareVersions, getCurrentReleaseNotes, getUnreadReleaseNotes, WHATS_NEW_RELEASES, type WhatsNewRelease } from "./whatsNew";
-import { advancePlaybackQueue, nextRepeatMode, toggleShuffleTraversal, type RepeatMode } from "./playbackQueue";
+import { advancePlaybackQueue, nextRepeatMode, removeSourceQueueOccurrence, toggleShuffleTraversal, type RepeatMode } from "./playbackQueue";
 import {
   armedHistorySwipeDirection,
   cancelHistorySwipe,
@@ -2982,17 +2982,15 @@ export function App() {
 
     try {
       const resolvedConfig = await navidromeClient.resolveConfig(nextConfig);
-      const [scanStatus, nextLibrary, nextListenerName] = await Promise.all([
+      const [scanStatus, nextLibrary] = await Promise.all([
         navidromeClient.scanStatus(resolvedConfig).catch(() => null),
         loadLibraryData(resolvedConfig),
-        navidromeClient.profileName(resolvedConfig).catch(() => ""),
       ]);
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
       await storeNativePassword(resolvedConfig.password);
       writeStoredConfig(resolvedConfig);
       setLibraryData(nextLibrary);
       libraryDataRef.current = nextLibrary;
-      setListenerName(nextListenerName);
       setConfig(resolvedConfig);
       setForm(resolvedConfig);
       setStatus("connected");
@@ -3847,7 +3845,7 @@ export function App() {
 
     const removingCurrentTrack = index === currentIndex;
     setQueue((currentQueue) => currentQueue.filter((_, queueIndex) => queueIndex !== index));
-    setSourceQueue((currentSourceQueue) => currentSourceQueue.filter((song) => song !== queue[index]));
+    setSourceQueue((currentSourceQueue) => removeSourceQueueOccurrence(currentSourceQueue, queue[index], (song) => song.id));
 
     if (queue.length <= 1) {
       getActiveAudio()?.pause();
@@ -4094,6 +4092,18 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setListenerName("");
+    if (!config) return;
+    const controller = new AbortController();
+    void navidromeClient.profileName(config, controller.signal)
+      .then((name) => {
+        if (!controller.signal.aborted) setListenerName(name);
+      })
+      .catch(() => { /* The greeting is optional; the library remains usable. */ });
+    return () => controller.abort();
+  }, [config?.serverUrl, config?.username, config?.password]);
 
   useEffect(() => {
     if (!config) return;

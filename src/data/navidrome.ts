@@ -92,10 +92,20 @@ export const navidromeClient = {
     }
     throw lastError instanceof Error ? lastError : new Error("Could not reach Navidrome.");
   },
-  async profileName(config: NavidromeConfig) {
-    const response = await fetch(`${normalizeServerUrl(config.serverUrl)}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: config.username, password: config.password }) });
-    if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
-    return ((await response.json()) as { name?: string }).name?.trim() ?? "";
+  async profileName(config: NavidromeConfig, signal?: AbortSignal) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    const timeout = window.setTimeout(abort, 10_000);
+    try {
+      const response = await fetch(`${normalizeServerUrl(config.serverUrl)}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: config.username, password: config.password }), signal: controller.signal });
+      if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
+      return ((await response.json()) as { name?: string }).name?.trim() ?? "";
+    } finally {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
+    }
   },
   async scanStatus(config: NavidromeConfig) {
     return (await request<{ scanStatus?: { scanning?: boolean; lastScan?: string | number } }>(config, "getScanStatus")).scanStatus ?? null;

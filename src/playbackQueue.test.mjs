@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { advancePlaybackQueue, nextRepeatMode, toggleShuffleTraversal } from "./playbackQueue.ts";
+import { advancePlaybackQueue, nextRepeatMode, removeSourceQueueOccurrence, toggleShuffleTraversal } from "./playbackQueue.ts";
 
 const album = ["a", "b", "c", "d"].map((id) => ({ id }));
 const reverse = (items) => [...items].reverse();
@@ -84,4 +84,25 @@ test("repeat toggle transitions remain deterministic", () => {
   assert.equal(nextRepeatMode("off"), "all");
   assert.equal(nextRepeatMode("all"), "one");
   assert.equal(nextRepeatMode("one"), "off");
+});
+
+
+test("removed restored tracks stay removed through shuffle restoration and repeat-all", () => {
+  const restored = JSON.parse(JSON.stringify(state({ currentIndex: 1, shuffleEnabled: true })));
+  const sourceQueue = removeSourceQueueOccurrence(restored.sourceQueue, restored.queue[0], (song) => song.id);
+  const queue = restored.queue.slice(1);
+  assert.deepEqual(ids(sourceQueue), ["b", "c", "d"]);
+  const unshuffled = toggleShuffleTraversal({ ...restored, queue, sourceQueue, currentIndex: 0 }, reverse, (song) => song.id);
+  assert.deepEqual(ids(unshuffled.queue), ["b", "c", "d"]);
+  const repeated = advancePlaybackQueue({ ...restored, queue, sourceQueue, currentIndex: 2, repeatMode: "all", shuffleEnabled: false }, true, reverse);
+  assert.deepEqual(ids(repeated.queue), ["b", "c", "d"]);
+});
+
+test("source removal preserves duplicate occurrences, order, and unmatched queues", () => {
+  const queue = [{ id: "a" }, { id: "b" }, { id: "a" }, { id: "c" }];
+  const once = removeSourceQueueOccurrence(queue, { id: "a" }, (song) => song.id);
+  assert.deepEqual(ids(once), ["b", "a", "c"]);
+  assert.deepEqual(ids(queue), ["a", "b", "a", "c"]);
+  assert.strictEqual(removeSourceQueueOccurrence(queue, { id: "missing" }, (song) => song.id), queue);
+  assert.deepEqual(removeSourceQueueOccurrence([{ id: "a" }], { id: "a" }, (song) => song.id), []);
 });
