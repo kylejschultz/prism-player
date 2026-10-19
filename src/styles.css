@@ -7800,4 +7800,17 @@ button.similar-chip:focus-visible {
     gap: 12px;
   }
 
-  .search-primary-art {
+}
+
+/* Keep the current track visible without requiring a hover. */
+.track-row.active .track-index .track-number { opacity: 0; }
+.track-row.active .track-index .track-play {
+  opacity: 1;
+  color: var(--prism-accent-strong);
+  background: rgba(var(--prism-accent-rgb), 0.2);
+}
+.album-detail-page .disc-group > .album-track-row.active,
+.artist-album-group .disc-group > .album-track-row.active {
+  background: linear-gradient(90deg, rgba(var(--prism-accent-rgb), 0.24), rgba(var(--prism-accent-rgb), 0.07));
+  box-shadow: inset 3px 0 0 var(--prism-accent-strong);
+}

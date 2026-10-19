@@ -5,6 +5,7 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys } from "./data/navidrome";
+import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
 import { artistPlaceholder } from "./artistArtwork";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -253,6 +254,9 @@ export type Album = {
   name: string;
   artist: string;
   artistId?: string;
+  artists?: ArtistCredit[];
+  albumArtists?: ArtistCredit[];
+  albumArtist?: string;
   coverArt?: string;
   songCount?: number;
   year?: number;
@@ -304,6 +308,9 @@ export type Song = {
   title: string;
   albumId?: string;
   artistId?: string;
+  artists?: ArtistCredit[];
+  albumArtists?: ArtistCredit[];
+  albumArtist?: string;
   artist?: string;
   album?: string;
   coverArt?: string;
@@ -693,9 +700,8 @@ function getArtistTopSongs(artist: ArtistDetail, librarySongs: Song[], listening
   const navidromeTopSongs = [...new Map((artist.topSong ?? []).map((song) => [song.id, song])).values()];
   const navidromeTopSongIds = new Set(navidromeTopSongs.map((song) => song.id));
   const libraryCandidates = librarySongs.filter((song) =>
-    song.artistId === artist.id ||
-    albumIds.has(song.albumId ?? "") ||
-    (!song.artistId && song.artist?.localeCompare(artist.name, undefined, { sensitivity: "accent" }) === 0),
+    matchesArtist(song, artist) ||
+    (!song.artist && !song.artists?.length && albumIds.has(song.albumId ?? "")),
   );
   const fallbackSongs = [...new Map(libraryCandidates
     .filter((song) => !navidromeTopSongIds.has(song.id))
@@ -2970,7 +2976,7 @@ export function App() {
     }
   }
 
-  async function refreshLibrary(nextConfig = config) {
+  async function refreshLibrary(nextConfig = config, savePassword = false) {
     if (!nextConfig || libraryRefreshInFlightRef.current) return false;
 
     const refreshGeneration = libraryRefreshGenerationRef.current;
@@ -2987,7 +2993,9 @@ export function App() {
         loadLibraryData(resolvedConfig),
       ]);
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
-      await storeNativePassword(resolvedConfig.password);
+      // Background/startup refreshes already have the password in memory.
+      // Only an explicit connection save should write to the credential store.
+      if (savePassword) await storeNativePassword(resolvedConfig.password);
       writeStoredConfig(resolvedConfig);
       setLibraryData(nextLibrary);
       libraryDataRef.current = nextLibrary;
@@ -3035,7 +3043,7 @@ export function App() {
       return;
     }
 
-    const connected = await refreshLibrary(nextConfig);
+    const connected = await refreshLibrary(nextConfig, true);
 
     if (connected) {
       setSetupOpen(false);
@@ -3146,9 +3154,11 @@ export function App() {
 
     try {
       const artistDetail = "album" in artist ? artist : await loadArtistDetail(config, artist.id);
-      const albums = artistDetail.album ?? [];
+      const albums = getArtistAlbums(artistDetail, libraryData.albums, songLibrary);
       const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => loadAlbumDetail(config, album.id)));
-      const songs = albumDetails.flatMap((album) => album.song ?? []);
+      const songs = albumDetails.flatMap((album) => (album.song ?? []).filter((song) =>
+        matchesArtist(song, artistDetail) || matchesArtist(album, artistDetail),
+      ));
       replaceQueue(shuffleTracks ? shuffled(songs) : songs);
     } catch (error) {
       setDetailStatus("error");
@@ -5126,8 +5136,8 @@ export function App() {
             <button
               className="player-now-playing-trigger"
               type="button"
-              onClick={() => footerTrack.albumId ? void openAlbumById(footerTrack.albumId, footerTrack.album ?? footerTrack.title) : selectView("nowPlaying")}
-              aria-label={footerTrack.albumId ? `Open album for ${footerTrack.title}` : `Open Now Playing for ${footerTrack.title}`}
+              onClick={() => selectView("nowPlaying")}
+              aria-label={`Open Now Playing for ${footerTrack.title}`}
             >
               <CoverArt src={footerTrackCoverUrl} label={footerTrack.title} className="player-cover" fallbackIcon={<Music2 size={20} />} />
               <Maximize2 size={14} aria-hidden="true" />
@@ -7270,6 +7280,7 @@ function LibraryView({
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
           config={config}
+          albums={albums}
           songs={songs}
           listeningHistory={listeningHistory}
           detailSelection={detailSelection}
@@ -9695,6 +9706,7 @@ function ArtistOptions({
 
 function DetailPanel({
   config,
+  albums,
   songs: librarySongs,
   listeningHistory,
   detailSelection,
@@ -9721,6 +9733,7 @@ function DetailPanel({
   onSongContextMenu,
 }: {
   config: NavidromeConfig | null;
+  albums: Album[];
   songs: Song[];
   listeningHistory: ListeningHistoryEntry[];
   detailSelection: DetailSelection;
@@ -9764,7 +9777,7 @@ function DetailPanel({
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
-    const artistAlbums = sortAlbumsNewestFirst(artist.album ?? []);
+    const artistAlbums = sortAlbumsNewestFirst(getArtistAlbums(artist, albums, librarySongs));
     const artistInfo = artist.info;
     const artistImage = getArtistImageUrl(artistInfo);
     const serverArtistCover = config ? buildCoverArtUrl(config, artist.coverArt, "420") : null;
@@ -9792,7 +9805,7 @@ function DetailPanel({
               <h3>{artist.name}</h3>
             </div>
             <div className="detail-stats">
-              <span>{artist.albumCount ?? artistAlbums.length} albums</span>
+              <span>{artistAlbums.length} albums</span>
               <span>{yearRange}</span>
             </div>
             <div className="detail-actions">
@@ -10184,6 +10197,7 @@ function TrackList({
             <div
               className={`track-row album-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
+              aria-current={currentTrack?.id === song.id ? "true" : undefined}
               onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
               onClick={(event) => selectTrack(event, songIndex)}
               onDoubleClick={() => onPlaySong(song)}
@@ -10200,7 +10214,7 @@ function TrackList({
                   }}
                   onDoubleClick={(event) => event.stopPropagation()}
                 >
-                  <Play size={15} strokeWidth={1.6} />
+                  <Play size={15} strokeWidth={1.6} fill={currentTrack?.id === song.id ? "currentColor" : "none"} />
                 </button>
               </span>
               <div className="track-title-stack">
