@@ -6,7 +6,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys } from "./data/navidrome";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
-import { artistPlaceholder } from "./artistArtwork";
+import { artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -2096,9 +2096,9 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState("Add a Navidrome server to start syncing.");
   const [libraryStatus, setLibraryStatus] = useState<LibraryStatus>(() => (loadStoredConfig() ? "loading" : "idle"));
   const [libraryData, setLibraryData] = useState<LibraryData>(emptyLibraryData);
-  const [artistImageCache, setArtistImageCache] = useState<Record<string, string>>({});
-  const onArtistImageResolved = useCallback((artistId: string, imageUrl: string) => {
-    setArtistImageCache((current) => current[artistId] === imageUrl ? current : { ...current, [artistId]: imageUrl });
+  const [artistImageCache, setArtistImageCache] = useState<ArtistImageCache>({});
+  const onArtistImageResolved = useCallback((artistId: string, entry: ArtistImageEntry) => {
+    setArtistImageCache((current) => ({ ...current, [artistId]: entry }));
   }, []);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>(() => (loadStoredConfig() ? "hydrating" : "idle"));
   const [catalogProgress, setCatalogProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -4130,7 +4130,7 @@ export function App() {
           setLibraryData(snapshot.library);
           libraryDataRef.current = snapshot.library;
           setSongLibrary(snapshot.songs);
-          setArtistImageCache(snapshot.artistImages ?? {});
+          setArtistImageCache(normalizeArtistImageCache(snapshot.artistImages));
           setSongLibraryStatus(snapshot.songs.length ? "ready" : "idle");
           catalogSongsCompleteRef.current = snapshot.songsComplete;
           setLibraryStatus("ready");
@@ -7189,8 +7189,8 @@ function LibraryView({
   artistViewMode: ArtistViewMode;
   setArtistViewMode: (mode: ArtistViewMode) => void;
   artists: Artist[];
-  artistImageCache: Record<string, string>;
-  onArtistImageResolved: (artistId: string, imageUrl: string) => void;
+  artistImageCache: ArtistImageCache;
+  onArtistImageResolved: (artistId: string, entry: ArtistImageEntry) => void;
   searchQuery: string;
   searchResults: SearchResults;
   searchStatus: "idle" | "searching" | "error";
@@ -8804,6 +8804,7 @@ function PlayableCover({
   rounded = false,
   disabled = false,
   fallbackIcon,
+  onSourceError,
   onOpen,
   onPlay,
 }: {
@@ -8814,10 +8815,11 @@ function PlayableCover({
   rounded?: boolean;
   disabled?: boolean;
   fallbackIcon?: ReactNode;
+  onSourceError?: (url: string) => void;
   onOpen?: () => void;
   onPlay: () => void;
 }) {
-  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} />;
+  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} />;
 
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
@@ -8841,12 +8843,14 @@ function CoverArt({
   label,
   className,
   fallbackIcon = <Disc3 size={28} />,
+  onSourceError,
 }: {
   src: string | null;
   fallbackSrc?: string | null;
   label: string;
   className: string;
   fallbackIcon?: ReactNode;
+  onSourceError?: (url: string) => void;
 }) {
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const imageSrc = [src, fallbackSrc].find((url) => url && !failedSources.includes(url));
@@ -8863,7 +8867,10 @@ function CoverArt({
     );
   }
 
-  return <img className={className} src={imageSrc} alt={`${label} cover`} loading="lazy" onError={() => setFailedSources((current) => [...current, imageSrc])} />;
+  return <img className={className} src={imageSrc} alt={`${label} cover`} loading="lazy" onError={() => {
+    setFailedSources((current) => [...current, imageSrc]);
+    onSourceError?.(imageSrc);
+  }} />;
 }
 
 function ArtistInitials({ name }: { name: string }) {
@@ -8871,56 +8878,124 @@ function ArtistInitials({ name }: { name: string }) {
   return <span className="artist-initials" style={{ "--artist-hue": hue } as CSSProperties}>{initials}</span>;
 }
 
+const emptyArtistImageCache: ArtistImageCache = {};
+const ignoreArtistImage = () => undefined;
+
 function useArtistImageUrls(
   config: NavidromeConfig | null,
   artists: Artist[],
-  cachedImages: Record<string, string>,
-  onImageResolved: (artistId: string, imageUrl: string) => void,
+  cachedImages: ArtistImageCache,
+  onImageResolved: (artistId: string, entry: ArtistImageEntry) => void,
 ) {
   const queryClient = useQueryClient();
-  const [imageUrls, setImageUrls] = useState<Record<string, string | null>>(cachedImages);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cacheRef = useRef(cachedImages);
+  cacheRef.current = cachedImages;
+  const resolvedRef = useRef<ArtistImageCache>({});
+  const forceRefreshRef = useRef(new Set<string>());
+  const visibleIdsRef = useRef(new Set<string>());
+  const refreshRef = useRef<() => void>(() => undefined);
+  const [imageUrls, setImageUrls] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
-    setImageUrls((current) => ({ ...current, ...cachedImages }));
+    resolvedRef.current = {};
+    forceRefreshRef.current.clear();
+    setImageUrls({});
+  }, [config?.serverUrl, config?.username]);
+
+  useEffect(() => {
+    setImageUrls((current) => ({ ...current, ...Object.fromEntries(
+      Object.entries(cachedImages).map(([id, entry]) => [id, entry.url]),
+    ) }));
   }, [cachedImages]);
 
   useEffect(() => {
-    let cancelled = false;
-    let nextArtistIndex = 0;
+    const visible = new Set<string>();
+    visibleIdsRef.current = visible;
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.contextId!;
+        if (entry.isIntersecting) visible.add(id);
+        else visible.delete(id);
+      }
+      refreshRef.current();
+    }, { rootMargin: "160px" });
+    containerRef.current?.querySelectorAll('[data-context-kind="artist"][data-context-id]').forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [artists]);
 
-    if (!config || !artists.length) return undefined;
+  useEffect(() => {
+    if (!config) return;
+    let cancelled = false;
+    let running = false;
+    let refreshAgain = false;
     const currentConfig = config;
 
-    async function loadNextArtist() {
-      while (!cancelled && nextArtistIndex < artists.length) {
-        const artist = artists[nextArtistIndex];
-        nextArtistIndex += 1;
-
-        if (cachedImages[artist.id]) continue;
-
-        const artistInfo = await queryClient.fetchQuery({
-          queryKey: navidromeKeys.artistInfo(currentConfig, artist.id),
-          queryFn: () => navidromeClient.artistInfo(currentConfig, artist.id),
-          staleTime: 5 * 60_000,
-        }).catch(() => null);
-
-        const imageUrl = getArtistImageUrl(artistInfo);
-        if (!cancelled && imageUrl) {
-          setImageUrls((current) => ({ ...current, [artist.id]: imageUrl }));
-          onImageResolved(artist.id, imageUrl);
+    async function refreshVisible() {
+      if (cancelled || document.visibilityState === "hidden") return;
+      if (running) { refreshAgain = true; return; }
+      running = true;
+      refreshAgain = false;
+      const visible = artists.filter((artist) => visibleIdsRef.current.has(artist.id));
+      let nextIndex = 0;
+      async function loadNext() {
+        while (!cancelled && nextIndex < visible.length) {
+          const artist = visible[nextIndex++];
+          if (!visibleIdsRef.current.has(artist.id)) continue;
+          const previous = resolvedRef.current[artist.id] ?? cacheRef.current[artist.id];
+          const force = forceRefreshRef.current.delete(artist.id);
+          if (!force && !artistImageNeedsRefresh(previous, Date.now())) continue;
+          let url = previous?.url ?? null;
+          try {
+            const info = await queryClient.fetchQuery({
+              queryKey: navidromeKeys.artistInfo(currentConfig, artist.id),
+              queryFn: () => navidromeClient.artistInfo(currentConfig, artist.id),
+              staleTime: force ? 0 : ARTIST_IMAGE_REFRESH_MS,
+              retry: false,
+            });
+            url = getArtistImageUrl(info);
+          } catch { /* Retain cached art and cool down failed metadata requests too. */ }
+          if (cancelled) return;
+          const now = Date.now();
+          const lastErrorCheck = resolvedRef.current[artist.id]?.errorCheckedAt ?? previous?.errorCheckedAt;
+          // A regular refresh of an already failed URL also satisfies its recheck
+          // cooldown, including after navigating away or restarting the app.
+          const errorCheckedAt = lastErrorCheck != null && url === previous?.url ? now : lastErrorCheck;
+          const entry = { url, checkedAt: now, errorCheckedAt };
+          resolvedRef.current[artist.id] = entry;
+          setImageUrls((current) => ({ ...current, [artist.id]: url }));
+          onImageResolved(artist.id, entry);
         }
       }
+      await Promise.all(Array.from({ length: Math.min(4, visible.length) }, loadNext));
+      running = false;
+      if (refreshAgain && !cancelled) void refreshVisible();
     }
-
-    const workers = Array.from({ length: Math.min(4, artists.length) }, () => loadNextArtist());
-    void Promise.all(workers);
-
+    refreshRef.current = () => void refreshVisible();
+    void refreshVisible();
+    const interval = window.setInterval(() => void refreshVisible(), 60_000);
+    document.addEventListener("visibilitychange", refreshRef.current);
+    const refresh = refreshRef.current;
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refresh);
     };
-  }, [artists, cachedImages, config, onImageResolved, queryClient]);
+  }, [artists, config, onImageResolved, queryClient]);
 
-  return imageUrls;
+  function onImageError(artistId: string, failedUrl: string) {
+    if (!config || failedUrl !== imageUrls[artistId]) return;
+    const now = Date.now();
+    const previous = resolvedRef.current[artistId] ?? cacheRef.current[artistId];
+    if (!canRecheckFailedArtistImage(previous?.errorCheckedAt, now)) return;
+    const entry = { url: failedUrl, checkedAt: previous?.checkedAt ?? 0, errorCheckedAt: now };
+    resolvedRef.current[artistId] = entry;
+    onImageResolved(artistId, entry);
+    forceRefreshRef.current.add(artistId);
+    refreshRef.current();
+  }
+
+  return { imageUrls, containerRef, onImageError };
 }
 
 function ArtistBrowser({
@@ -8938,8 +9013,8 @@ function ArtistBrowser({
   viewMode: ArtistViewMode;
   config: NavidromeConfig | null;
   artists: Artist[];
-  artistImageCache: Record<string, string>;
-  onArtistImageResolved: (artistId: string, imageUrl: string) => void;
+  artistImageCache: ArtistImageCache;
+  onArtistImageResolved: (artistId: string, entry: ArtistImageEntry) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -8990,15 +9065,15 @@ function ArtistGrid({
 }: {
   config: NavidromeConfig | null;
   artists: Artist[];
-  artistImageCache: Record<string, string>;
-  onArtistImageResolved: (artistId: string, imageUrl: string) => void;
+  artistImageCache: ArtistImageCache;
+  onArtistImageResolved: (artistId: string, entry: ArtistImageEntry) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayArtist: (artist: Artist) => void;
 }) {
-  const artistImageUrls = useArtistImageUrls(config, artists, artistImageCache, onArtistImageResolved);
+  const { imageUrls: artistImageUrls, containerRef, onImageError } = useArtistImageUrls(config, artists, artistImageCache, onArtistImageResolved);
 
   if (!artists.length) {
     return <EmptyPanel icon={<UserRound size={20} />} text="No artists loaded yet." />;
@@ -9007,7 +9082,7 @@ function ArtistGrid({
   const groups = groupByAlpha(artists, (artist) => artist.name);
 
   return (
-    <div className="alpha-layout">
+    <div className="alpha-layout" ref={containerRef}>
       <div className="alpha-sections">
         {groups.map((group) => (
           <section className="alpha-section" id={alphaSectionId("artists-art", group.letter)} key={group.letter}>
@@ -9023,6 +9098,7 @@ function ArtistGrid({
                       src={coverUrl}
                       label={artist.name}
                       className="artist-grid-cover"
+                      onSourceError={(url) => onImageError(artist.id, url)}
                       fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null}
                       fallbackIcon={<ArtistInitials name={artist.name} />}
                       onOpen={() => onOpenArtist(artist)}
@@ -9066,8 +9142,8 @@ function ArtistList({
 }: {
   config: NavidromeConfig | null;
   artists: Artist[];
-  artistImageCache?: Record<string, string>;
-  onArtistImageResolved?: (artistId: string, imageUrl: string) => void;
+  artistImageCache?: ArtistImageCache;
+  onArtistImageResolved?: (artistId: string, entry: ArtistImageEntry) => void;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
   onToggleFavorite: (kind: FavoriteKind, id: string, favorite: boolean) => void;
@@ -9075,7 +9151,7 @@ function ArtistList({
   onPlayArtist: (artist: Artist) => void;
   withAlphabetRail?: boolean;
 }) {
-  const artistImageUrls = useArtistImageUrls(config, artists, artistImageCache ?? {}, onArtistImageResolved ?? (() => undefined));
+  const { imageUrls: artistImageUrls, containerRef, onImageError } = useArtistImageUrls(config, artists, artistImageCache ?? emptyArtistImageCache, onArtistImageResolved ?? ignoreArtistImage);
 
   if (!artists.length) {
     return <EmptyPanel icon={<UserRound size={20} />} text="No artists loaded yet." />;
@@ -9087,7 +9163,7 @@ function ArtistList({
 
     return (
       <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
-        <CoverArt src={coverUrl} fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null} label={artist.name} className="artist-list-cover" fallbackIcon={<ArtistInitials name={artist.name} />} />
+        <CoverArt src={coverUrl} fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null} label={artist.name} className="artist-list-cover" onSourceError={(url) => onImageError(artist.id, url)} fallbackIcon={<ArtistInitials name={artist.name} />} />
         <span>{artist.name}</span>
         <small>{albumCount} {albumCount === 1 ? "album" : "albums"}</small>
       </button>
@@ -9096,7 +9172,7 @@ function ArtistList({
 
   if (!withAlphabetRail) {
     return (
-      <div className="artist-list">
+      <div className="artist-list" ref={containerRef}>
         {artists.map((artist) => (
           <div className="artist-row" key={artist.id} data-context-kind="artist" data-context-id={artist.id}>
             {artistMain(artist)}
@@ -9118,7 +9194,7 @@ function ArtistList({
   const groups = groupByAlpha(artists, (artist) => artist.name);
 
   return (
-    <div className="alpha-layout">
+    <div className="alpha-layout" ref={containerRef}>
       <div className="alpha-sections">
         {groups.map((group) => (
           <section className="alpha-section" id={alphaSectionId("artists-list", group.letter)} key={group.letter}>
