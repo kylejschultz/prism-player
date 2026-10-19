@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { artistPlaceholder, normalizeArtistImageCache, artistImageNeedsRefresh, canRecheckFailedArtistImage, ARTIST_IMAGE_REFRESH_MS } from "./artistArtwork.ts";
+import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, normalizeArtistImageCache, artistImageNeedsRefresh, canRecheckFailedArtistImage, ARTIST_IMAGE_REFRESH_MS } from "./artistArtwork.ts";
 
 test("artist initials handle bands, single names, numbers and Unicode", () => {
   for (const [name, initials] of [["Angels & Airwaves", "AA"], ["Anberlin", "AN"], ["+44", "44"], ["30 Seconds to Mars", "3M"], ["Björk", "BJ"], ["宇多田 ヒカル", "宇ヒ"], ["", "?"], ["🎵", "?"]]) {
@@ -37,4 +37,29 @@ test("failed portrait rechecks have a five minute cooldown, even across persiste
   const cache = normalizeArtistImageCache({ a: { url: null, checkedAt: 1000, errorCheckedAt: 1000 } });
   assert.equal(canRecheckFailedArtistImage(cache.a.errorCheckedAt, 1001), false);
   assert.equal(canRecheckFailedArtistImage(cache.a.errorCheckedAt, 1000 + ARTIST_IMAGE_REFRESH_MS), true);
+});
+
+
+test("recognizes the known Last.fm placeholder filename without hiding real URLs", () => {
+  assert.equal(isKnownArtistPlaceholderUrl("https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png"), true);
+  assert.equal(isKnownArtistPlaceholderUrl("https://images.fixture.invalid/portrait.png"), false);
+  assert.equal(isKnownArtistPlaceholderUrl("not a URL"), false);
+});
+
+test("placeholder probe cancels images larger than the exact known asset", async (t) => {
+  let cancelled = false;
+  const body = new globalThis.ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(1024)); },
+    cancel() { cancelled = true; },
+  });
+  t.mock.method(globalThis, "fetch", async () => new globalThis.Response(body));
+  assert.equal(await isNavidromeArtistPlaceholder("https://fixture.invalid/real-photo"), false);
+  assert.equal(cancelled, true);
+});
+
+test("unknown image bytes and CORS/network failures preserve the existing image", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new globalThis.Response(new Uint8Array(546)));
+  assert.equal(await isNavidromeArtistPlaceholder("https://fixture.invalid/not-the-star"), false);
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("CORS blocked"); });
+  assert.equal(await isNavidromeArtistPlaceholder("https://fixture.invalid/restricted-photo"), false);
 });

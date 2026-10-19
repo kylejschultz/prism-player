@@ -6,7 +6,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys } from "./data/navidrome";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
-import { artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
+import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -668,7 +668,8 @@ function sortAlbumsNewestFirst(albums: Album[]) {
 }
 
 function getArtistImageUrl(info?: ArtistInfo | null) {
-  return info?.largeImageUrl || info?.mediumImageUrl || info?.smallImageUrl || null;
+  return [info?.largeImageUrl, info?.mediumImageUrl, info?.smallImageUrl]
+    .find((url) => url && !isKnownArtistPlaceholderUrl(url)) || null;
 }
 
 function cleanBiography(value?: string) {
@@ -8805,6 +8806,7 @@ function PlayableCover({
   disabled = false,
   fallbackIcon,
   onSourceError,
+  rejectArtistPlaceholder = false,
   onOpen,
   onPlay,
 }: {
@@ -8816,10 +8818,11 @@ function PlayableCover({
   disabled?: boolean;
   fallbackIcon?: ReactNode;
   onSourceError?: (url: string) => void;
+  rejectArtistPlaceholder?: boolean;
   onOpen?: () => void;
   onPlay: () => void;
 }) {
-  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} />;
+  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} rejectArtistPlaceholder={rejectArtistPlaceholder} />;
 
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
@@ -8844,6 +8847,7 @@ function CoverArt({
   className,
   fallbackIcon = <Disc3 size={28} />,
   onSourceError,
+  rejectArtistPlaceholder = false,
 }: {
   src: string | null;
   fallbackSrc?: string | null;
@@ -8851,9 +8855,22 @@ function CoverArt({
   className: string;
   fallbackIcon?: ReactNode;
   onSourceError?: (url: string) => void;
+  rejectArtistPlaceholder?: boolean;
 }) {
   const [failedSources, setFailedSources] = useState<string[]>([]);
-  const imageSrc = [src, fallbackSrc].find((url) => url && !failedSources.includes(url));
+  const imageSrc = [src, fallbackSrc].find((url) => url && !failedSources.includes(url)
+    && (!rejectArtistPlaceholder || !isKnownArtistPlaceholderUrl(url)));
+  const currentSource = useRef<string | null>(null);
+  const errorHandler = useRef(onSourceError);
+  currentSource.current = imageSrc ?? null;
+  errorHandler.current = onSourceError;
+  useEffect(() => () => { currentSource.current = null; }, []);
+
+  function rejectSource(url: string) {
+    if (currentSource.current !== url) return;
+    setFailedSources((current) => current.includes(url) ? current : [...current, url]);
+    errorHandler.current?.(url);
+  }
 
   useEffect(() => {
     setFailedSources([]);
@@ -8867,9 +8884,10 @@ function CoverArt({
     );
   }
 
-  return <img className={className} src={imageSrc} alt={`${label} cover`} loading="lazy" onError={() => {
-    setFailedSources((current) => [...current, imageSrc]);
-    onSourceError?.(imageSrc);
+  return <img className={className} src={imageSrc} alt={`${label} cover`} loading="lazy" onError={() => rejectSource(imageSrc)} onLoad={async (event) => {
+    const image = event.currentTarget;
+    if (rejectArtistPlaceholder && image.naturalWidth === 300 && image.naturalHeight === 300
+      && await isNavidromeArtistPlaceholder(imageSrc)) rejectSource(imageSrc);
   }} />;
 }
 
@@ -9098,6 +9116,7 @@ function ArtistGrid({
                       src={coverUrl}
                       label={artist.name}
                       className="artist-grid-cover"
+                      rejectArtistPlaceholder
                       onSourceError={(url) => onImageError(artist.id, url)}
                       fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null}
                       fallbackIcon={<ArtistInitials name={artist.name} />}
@@ -9163,7 +9182,7 @@ function ArtistList({
 
     return (
       <button className="artist-main" type="button" onClick={() => onOpenArtist(artist)}>
-        <CoverArt src={coverUrl} fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null} label={artist.name} className="artist-list-cover" onSourceError={(url) => onImageError(artist.id, url)} fallbackIcon={<ArtistInitials name={artist.name} />} />
+        <CoverArt src={coverUrl} fallbackSrc={config ? buildCoverArtUrl(config, artist.coverArt) : null} label={artist.name} className="artist-list-cover" rejectArtistPlaceholder onSourceError={(url) => onImageError(artist.id, url)} fallbackIcon={<ArtistInitials name={artist.name} />} />
         <span>{artist.name}</span>
         <small>{albumCount} {albumCount === 1 ? "album" : "albums"}</small>
       </button>
@@ -9678,6 +9697,7 @@ function PlaylistDetailPanel({
 function ArtistOptions({
   artist,
   artistImage,
+  artistFallbackImage,
   biography,
   lastFmUrl,
   musicBrainzUrl,
@@ -9686,6 +9706,7 @@ function ArtistOptions({
 }: {
   artist: Artist;
   artistImage: string | null;
+  artistFallbackImage: string | null;
   biography: string;
   lastFmUrl: string | null;
   musicBrainzUrl: string | null;
@@ -9735,8 +9756,8 @@ function ArtistOptions({
             </Dialog.Close>
           </div>
           <div className="artist-about-content">
-            <div className="artist-about-photo" aria-hidden={!artistImage}>
-              {artistImage ? <img src={artistImage} alt={`${artist.name} portrait`} /> : <UserRound size={42} aria-hidden="true" />}
+            <div className="artist-about-photo">
+              <CoverArt src={artistImage} fallbackSrc={artistFallbackImage} label={artist.name} className="artist-about-cover" rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} />
             </div>
             <div className="artist-about-copy">
               <Dialog.Description asChild>
@@ -9873,7 +9894,7 @@ function DetailPanel({
       <section className="detail-panel detail-page artist-detail-page">
         <div className="album-hero detail-page-hero artist-hero">
           <div className="detail-artwork-stage">
-            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
+            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
           </div>
           <div className="detail-hero-copy">
             <p className="detail-type-label">Artist</p>
@@ -9902,6 +9923,7 @@ function DetailPanel({
               <ArtistOptions
                 artist={artist}
                 artistImage={artistImage}
+                artistFallbackImage={serverArtistCover}
                 biography={biography}
                 lastFmUrl={lastFmUrl}
                 musicBrainzUrl={musicBrainzUrl}
