@@ -29,3 +29,12 @@ test("artist discography merges server albums with matching release/song credits
   ]);
   assert.deepEqual(result.map((album) => album.id), ["solo", "joint", "comp"]);
 });
+
+
+test("a structured combined artist credit still includes its primary artist", () => {
+  const combined = { id: "combined-credit", name: "Oliver Richman & Joy Woods" };
+  const album = { id: "ballad", name: "The Ballad of Phil and Phyllis", artist: combined.name, artistId: combined.id, artists: [combined], albumArtists: [combined] };
+  assert.equal(matchesArtist(album, oliver), true);
+  assert.deepEqual(getArtistAlbums({ ...oliver, album: [] }, [album], []).map(a => a.id), ["ballad"]);
+  assert.equal(matchesArtist({ artists: [{ id: "other", name: "Oliver Richman Jr. & Joy Woods" }] }, oliver), false);
+});

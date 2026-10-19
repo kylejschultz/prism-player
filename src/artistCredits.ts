@@ -5,24 +5,26 @@ type Credit = Pick<Song, "artistId" | "artist" | "artists" | "albumArtists" | "a
 
 const normalize = (name: string) => name.trim().toLocaleLowerCase();
 
+function isPrimaryCombinedCredit(label: string, name: string): boolean {
+  const normalized = normalize(label);
+  return normalized.startsWith(name)
+    && /^(?:\s+&\s+|\s+(?:feat\.?|ft\.?|featuring)\s+)/i.test(normalized.slice(name.length));
+}
+
 export function matchesArtist(credit: Credit, artist: Pick<Artist, "id" | "name">): boolean {
   if (credit.artistId === artist.id) return true;
-  const artists = [...(credit.artists ?? []), ...(credit.albumArtists ?? [])];
-  // Prefer explicit OpenSubsonic credits; a display name can be ambiguous.
-  if (artists.length) return artists.some((entry) => entry.id
-    ? entry.id === artist.id
-    : normalize(entry.name) === normalize(artist.name));
-
   const name = normalize(artist.name);
-  return [credit.artist, credit.albumArtist].some((value) => {
-    if (!value) return false;
-    const label = normalize(value);
-    if (label === name) return true;
-    // Legacy servers may expose only a combined credit. Match the leading
-    // artist at a credit boundary, never a substring or arbitrary band member.
-    if (!label.startsWith(name)) return false;
-    return /^(?:\s+&\s+|\s+(?:feat\.?|ft\.?|featuring)\s+)/i.test(label.slice(name.length));
-  });
+  const artists = [...(credit.artists ?? []), ...(credit.albumArtists ?? [])];
+  // Some servers expose a combined tag as a single structured credit too.
+  // Preserve ID matching for individual artists while recognizing its lead credit.
+  if (artists.length) return artists.some((entry) =>
+    (entry.id ? entry.id === artist.id : normalize(entry.name) === name)
+    || isPrimaryCombinedCredit(entry.name, name),
+  );
+
+  return [credit.artist, credit.albumArtist].some((value) => value
+    && (normalize(value) === name || isPrimaryCombinedCredit(value, name)),
+  );
 }
 
 export function getArtistAlbums(artist: Artist & { album?: Album[] }, albums: Album[], songs: Song[]): Album[] {
