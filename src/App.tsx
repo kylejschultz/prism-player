@@ -3,11 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys } from "./data/navidrome";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
-import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { ComponentProps, CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -8893,7 +8893,7 @@ function CoverArt({
 
 function ArtistInitials({ name }: { name: string }) {
   const { initials, hue } = artistPlaceholder(name);
-  return <span className="artist-initials" style={{ "--artist-hue": hue } as CSSProperties}>{initials}</span>;
+  return <span className="artist-initials" style={{ "--artist-hue": hue, "--initials-scale": Math.min(1, 2.6 / Array.from(initials).length) } as CSSProperties}>{initials}</span>;
 }
 
 const emptyArtistImageCache: ArtistImageCache = {};
@@ -9801,6 +9801,88 @@ function ArtistOptions({
   );
 }
 
+// Album tracks must not depend on completion of the optional full-library sync.
+function ArtistDiscographyAlbum({
+  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue,
+  currentTrack, favoriteIds, favoriteBusyKey, onToggleFavorite, onOpenArtist, onSongContextMenu,
+}: Pick<ComponentProps<typeof TrackList>, "currentTrack" | "favoriteIds" | "favoriteBusyKey" | "onToggleFavorite" | "onOpenArtist" | "onSongContextMenu"> & {
+  album: Album;
+  artist: Artist;
+  config: NavidromeConfig | null;
+  librarySongs: Song[];
+  onOpenAlbum: (album: Album) => void;
+  onPlayAlbum: (album: Album) => void;
+  onReplaceQueue: (songs: Song[], startIndex?: number) => void;
+}) {
+  const groupRef = useRef<HTMLElement>(null);
+  const [nearViewport, setNearViewport] = useState(false);
+  useEffect(() => {
+    const node = groupRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "200px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const tracks = useQuery({
+    queryKey: config ? navidromeKeys.album(config, album.id) : ["disconnected-album", album.id],
+    queryFn: () => navidromeClient.album(config!, album.id),
+    enabled: Boolean(config) && nearViewport,
+  });
+  const albumSongs = sortAlbumSongs(tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
+    song.albumId === album.id ||
+    (!song.albumId && song.album === album.name && (song.artistId === artist.id || song.artist === artist.name)),
+  ));
+  const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+  return (
+    <section className="artist-album-group" ref={groupRef} data-context-kind="album" data-context-id={album.id}>
+      <div className="artist-album-heading">
+        <button className="artist-album-main" type="button" onClick={() => onOpenAlbum(album)}>
+          <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
+          <span>
+            <strong>{album.name}</strong>
+            <small>{[album.year, albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
+          </span>
+        </button>
+        <button
+          className="track-play"
+          type="button"
+          onClick={() => albumSongs.length ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
+          aria-label={"Play " + album.name}
+        >
+          <Play size={15} strokeWidth={1.6} />
+        </button>
+        <FavoriteButton
+          active={favoriteIds.albums.has(album.id)}
+          busy={favoriteBusyKey === "album:" + album.id}
+          label={album.name}
+          onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
+        />
+      </div>
+      {tracks.isError ? <p className="artist-album-empty" role="status">Could not load tracks. <button type="button" onClick={() => void tracks.refetch()}>Retry</button></p> : null}
+      {albumSongs.length ? (
+        <TrackList
+          songs={albumSongs}
+          albumName={album.name}
+          currentTrack={currentTrack}
+          favoriteIds={favoriteIds}
+          favoriteBusyKey={favoriteBusyKey}
+          onToggleFavorite={onToggleFavorite}
+          onOpenArtist={onOpenArtist}
+          onPlaySong={(song) => onReplaceQueue(albumSongs, Math.max(0, albumSongs.findIndex((albumSong) => albumSong.id === song.id)))}
+          onSongContextMenu={onSongContextMenu}
+        />
+      ) : !tracks.isError ? (
+        <p className="artist-album-empty">{tracks.isSuccess ? "No tracks available." : "Loading tracks…"}</p>
+      ) : null}
+    </section>
+  );
+}
+
 function DetailPanel({
   config,
   albums,
@@ -10011,56 +10093,24 @@ function DetailPanel({
           />
         ) : (
           <div className="artist-discography-list">
-            {artistAlbums.map((album) => {
-              const albumSongs = sortAlbumSongs(librarySongs.filter((song) =>
-                song.albumId === album.id ||
-                (!song.albumId && song.album === album.name && (song.artistId === artist.id || song.artist === artist.name)),
-              ));
-              const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
-
-              return (
-                <section className="artist-album-group" key={album.id} data-context-kind="album" data-context-id={album.id}>
-                  <div className="artist-album-heading">
-                    <button className="artist-album-main" type="button" onClick={() => onOpenAlbum(album)}>
-                      <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
-                      <span>
-                        <strong>{album.name}</strong>
-                        <small>{[album.year, albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
-                      </span>
-                    </button>
-                    <button
-                      className="track-play"
-                      type="button"
-                      onClick={() => albumSongs.length ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
-                      aria-label={"Play " + album.name}
-                    >
-                      <Play size={15} strokeWidth={1.6} />
-                    </button>
-                    <FavoriteButton
-                      active={favoriteIds.albums.has(album.id)}
-                      busy={favoriteBusyKey === "album:" + album.id}
-                      label={album.name}
-                      onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
-                    />
-                  </div>
-                  {albumSongs.length ? (
-                    <TrackList
-                      songs={albumSongs}
-                      albumName={album.name}
-                      currentTrack={currentTrack}
-                      favoriteIds={favoriteIds}
-                      favoriteBusyKey={favoriteBusyKey}
-                      onToggleFavorite={onToggleFavorite}
-                      onOpenArtist={onOpenArtist}
-                      onPlaySong={(song) => onReplaceQueue(albumSongs, Math.max(0, albumSongs.findIndex((albumSong) => albumSong.id === song.id)))}
-                      onSongContextMenu={onSongContextMenu}
-                    />
-                  ) : (
-                    <p className="artist-album-empty">Tracks are still loading.</p>
-                  )}
-                </section>
-              );
-            })}
+            {artistAlbums.map((album) => (
+              <ArtistDiscographyAlbum
+                key={album.id}
+                album={album}
+                artist={artist}
+                config={config}
+                librarySongs={librarySongs}
+                currentTrack={currentTrack}
+                favoriteIds={favoriteIds}
+                favoriteBusyKey={favoriteBusyKey}
+                onToggleFavorite={onToggleFavorite}
+                onOpenArtist={onOpenArtist}
+                onOpenAlbum={onOpenAlbum}
+                onPlayAlbum={onPlayAlbum}
+                onReplaceQueue={onReplaceQueue}
+                onSongContextMenu={onSongContextMenu}
+              />
+            ))}
           </div>
         )}
       </section>

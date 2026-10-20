@@ -3,7 +3,7 @@ import test from "node:test";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, normalizeArtistImageCache, artistImageNeedsRefresh, canRecheckFailedArtistImage, ARTIST_IMAGE_REFRESH_MS } from "./artistArtwork.ts";
 
 test("artist initials handle bands, single names, numbers and Unicode", () => {
-  for (const [name, initials] of [["Angels & Airwaves", "AA"], ["Anberlin", "AN"], ["+44", "44"], ["30 Seconds to Mars", "3M"], ["Björk", "BJ"], ["宇多田 ヒカル", "宇ヒ"], ["", "?"], ["🎵", "?"]]) {
+  for (const [name, initials] of [["Angels & Airwaves", "AA"], ["Anberlin", "AN"], ["+44", "44"], ["30 Seconds to Mars", "30StM"], ["Brigham Young University Vocal Point", "BYUVP"], ["123 Artist Name", "123AN"], ["Björk", "BJ"], ["宇多田 ヒカル", "宇ヒ"], ["", "?"], ["🎵", "?"]]) {
     assert.equal(artistPlaceholder(name).initials, initials);
   }
 });

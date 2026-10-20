@@ -4201,15 +4201,15 @@ button.similar-chip:focus-visible {
 }
 
 .artist-grid-cover .artist-initials {
-  font-size: clamp(28px, 4vw, 64px);
+  font-size: calc(clamp(28px, 4vw, 64px) * var(--initials-scale, 1));
 }
 
 .artist-list-cover .artist-initials {
-  font-size: 14px;
+  font-size: calc(14px * var(--initials-scale, 1));
 }
 
 .artist-cover .artist-initials {
-  font-size: clamp(48px, 8vw, 96px);
+  font-size: calc(clamp(48px, 8vw, 96px) * var(--initials-scale, 1));
 }
 
 .empty-panel,
@@ -7821,5 +7821,5 @@ button.similar-chip:focus-visible {
 }
 
 .artist-about-cover .artist-initials {
-  font-size: clamp(28px, 6vw, 64px);
+  font-size: calc(clamp(28px, 6vw, 64px) * var(--initials-scale, 1));
 }
