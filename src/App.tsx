@@ -84,7 +84,7 @@ type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "err
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type HomeShelfViewMode = "art" | "list";
-type RightPanelTab = "queue" | "lyrics";
+type RightPanelTab = "queue" | "lyrics" | "schedule" | "request" | "booth";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
@@ -2166,7 +2166,6 @@ export function App() {
   const [radioVolume, setRadioVolume] = useState(appSettings.lastVolume);
   const [isMuted, setIsMuted] = useState(false);
   const [radioClockNow, setRadioClockNow] = useState(() => Date.now());
-  const [radioPopover, setRadioPopover] = useState<"schedule" | "request" | "booth" | null>(null);
   const [radioLikeStatus, setRadioLikeStatus] = useState<RadioLikeStatus | null>(null);
   const [radioLikeBusy, setRadioLikeBusy] = useState(false);
   const [suppressLocalFooter, setSuppressLocalFooter] = useState(false);
@@ -4812,8 +4811,8 @@ export function App() {
   const radioIsLiked = Boolean(radioLikeStatus?.liked && (!radioLikeStatus.songId || radioLikeStatus.songId === radioNowPlayingSongId));
 
   useEffect(() => {
-    if (!isRadioPlaying) setRadioPopover(null);
-  }, [isRadioPlaying]);
+    if (!isRadioPlaying && rightPanelTab !== "queue" && rightPanelTab !== "lyrics") setRightPanelState(false);
+  }, [isRadioPlaying, rightPanelTab]);
 
   return (
     <ContextMenu.Root
@@ -4830,7 +4829,7 @@ export function App() {
     >
       <ContextMenu.Trigger asChild>
     <main
-      className={`app-shell theme-${appSettings.colorTheme} right-panel-collapsed ${
+      className={`app-shell theme-${appSettings.colorTheme} ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${workspaceWashUrl ? "with-cover-wash" : ""}`}
       style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
@@ -5195,21 +5194,23 @@ export function App() {
             {isRadioPlaying ? (
               <>
                 <button
-                  className={radioPopover === "schedule" ? "active" : ""}
+                  className={rightPanelOpen && rightPanelTab === "schedule" ? "active" : ""}
                   type="button"
                   aria-label="Show radio schedule"
-                  aria-expanded={radioPopover === "schedule"}
-                  onClick={() => setRadioPopover((open) => (open === "schedule" ? null : "schedule"))}
+                  aria-expanded={rightPanelOpen && rightPanelTab === "schedule"}
+                  aria-controls="playback-sidebar"
+                  onClick={() => selectRightPanelTab("schedule")}
                   title="Schedule"
                 >
                   <CalendarDays size={15} />
                 </button>
                 <button
-                  className={radioPopover === "request" ? "active" : ""}
+                  className={rightPanelOpen && rightPanelTab === "request" ? "active" : ""}
                   type="button"
                   aria-label="Request a song"
-                  aria-expanded={radioPopover === "request"}
-                  onClick={() => setRadioPopover((open) => (open === "request" ? null : "request"))}
+                  aria-expanded={rightPanelOpen && rightPanelTab === "request"}
+                  aria-controls="playback-sidebar"
+                  onClick={() => selectRightPanelTab("request")}
                   title="Request"
                 >
                   <Send size={15} />
@@ -5229,11 +5230,12 @@ export function App() {
                   {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
                 </button>
                 <button
-                  className={radioPopover === "booth" ? "active" : ""}
+                  className={rightPanelOpen && rightPanelTab === "booth" ? "active" : ""}
                   type="button"
                   aria-label="Show booth feed"
-                  aria-expanded={radioPopover === "booth"}
-                  onClick={() => setRadioPopover((open) => (open === "booth" ? null : "booth"))}
+                  aria-expanded={rightPanelOpen && rightPanelTab === "booth"}
+                  aria-controls="playback-sidebar"
+                  onClick={() => selectRightPanelTab("booth")}
                   title="Booth feed"
                 >
                   <Mic2 size={15} />
@@ -5280,57 +5282,6 @@ export function App() {
                 </button>
               </>
             )}
-            {isRadioPlaying && radioPopover ? (
-              <div className={`radio-control-popover ${radioPopover === "schedule" ? "schedule-popover" : ""}`} role="menu">
-                <div className="radio-control-popover-title">
-                  <span>{radioPopover === "schedule" ? "Schedule" : radioPopover === "request" ? "Request" : "Booth Feed"}</span>
-                  <button type="button" aria-label="Close" onClick={() => setRadioPopover(null)}>
-                    <X size={14} />
-                  </button>
-                </div>
-                {radioPopover === "schedule" ? (
-                  radioScheduleMenuItems.length ? (
-                    <div className="radio-popover-list radio-schedule-popover-list">
-                      {radioScheduleMenuItems.map((item) => (
-                        <div className={`radio-schedule-popover-row ${item.isCurrent ? "current" : ""}`} key={item.key}>
-                          <span>{item.time}</span>
-                          <div>
-                            <strong>{item.showName}</strong>
-                            {item.djName ? <small>with {item.djName}</small> : null}
-                            {item.detail ? <p>{item.detail}</p> : null}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="radio-popover-empty">Schedule unavailable.</p>
-                  )
-                ) : radioPopover === "request" ? (
-                  <RadioRequestPopover
-                    stationUrl={radioStationUrl}
-                    onClose={() => setRadioPopover(null)}
-                    onResolved={() => {
-                      if (!radioStationUrl) return;
-                      const requestGeneration = radioGenerationRef.current;
-                      void fetchRadioState(radioStationUrl)
-                        .then((nextState) => applyRadioStationState(nextState, requestGeneration))
-                        .catch(() => undefined);
-                    }}
-                  />
-                ) : radioBoothLines.length ? (
-                  <div className="radio-popover-list">
-                    {radioBoothLines.map((line, index) => (
-                      <div className="radio-booth-popover-row" key={`${line.t ?? "line"}-${index}`}>
-                        <span>{relativeRadioTurnTime(line)}</span>
-                        <p>{line.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="radio-popover-empty">Quiet in the booth.</p>
-                )}
-              </div>
-            ) : null}
           </div>
           <div className="seek-row">
             <span>{formatDuration(isRadioPlaying ? radioElapsed : position)}</span>
@@ -5357,7 +5308,7 @@ export function App() {
               type="button"
               aria-label={`${rightPanelOpen && rightPanelTab === "queue" ? "Close" : "Open"} ${isRadioPlaying || radioStatus === "checking" ? "timeline" : "queue"}`}
               aria-expanded={rightPanelOpen && rightPanelTab === "queue"}
-              aria-controls="player-queue-flyout"
+              aria-controls="playback-sidebar"
               onClick={() => selectRightPanelTab("queue")}
             >
               <ListMusic size={16} />
@@ -5367,7 +5318,7 @@ export function App() {
               type="button"
               aria-label={`${rightPanelOpen && rightPanelTab === "lyrics" ? "Close" : "Open"} lyrics`}
               aria-expanded={rightPanelOpen && rightPanelTab === "lyrics"}
-              aria-controls="player-queue-flyout"
+              aria-controls="playback-sidebar"
               onClick={() => selectRightPanelTab("lyrics")}
             >
               <Music2 size={16} />
@@ -5395,6 +5346,51 @@ export function App() {
       {rightPanelOpen ? (
         <RightSidebar
           tab={rightPanelTab}
+          radioContent={isRadioPlaying ? (
+            <>
+              {rightPanelTab === "schedule" ? (
+                radioScheduleMenuItems.length ? (
+                  <div className="radio-popover-list radio-schedule-popover-list">
+                    {radioScheduleMenuItems.map((item) => (
+                      <div className={`radio-schedule-popover-row ${item.isCurrent ? "current" : ""}`} key={item.key}>
+                        <span>{item.time}</span>
+                        <div>
+                          <strong>{item.showName}</strong>
+                          {item.djName ? <small>with {item.djName}</small> : null}
+                          {item.detail ? <p>{item.detail}</p> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="radio-popover-empty">Schedule unavailable.</p>
+                )
+              ) : rightPanelTab === "request" ? (
+                <RadioRequestPopover
+                  stationUrl={radioStationUrl}
+                  onClose={() => setRightPanelState(false)}
+                  onResolved={() => {
+                    if (!radioStationUrl) return;
+                    const requestGeneration = radioGenerationRef.current;
+                    void fetchRadioState(radioStationUrl)
+                      .then((nextState) => applyRadioStationState(nextState, requestGeneration))
+                      .catch(() => undefined);
+                  }}
+                />
+              ) : radioBoothLines.length ? (
+                <div className="radio-popover-list">
+                  {radioBoothLines.map((line, index) => (
+                    <div className="radio-booth-popover-row" key={`${line.t ?? "line"}-${index}`}>
+                      <span>{relativeRadioTurnTime(line)}</span>
+                      <p>{line.text}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="radio-popover-empty">Quiet in the booth.</p>
+              )}
+            </>
+          ) : null}
           queue={queue}
           displayedQueue={displayedQueue}
           currentIndex={currentIndex}
@@ -5604,6 +5600,7 @@ export function App() {
 
 function RightSidebar({
   tab,
+  radioContent,
   queue,
   displayedQueue,
   currentIndex,
@@ -5631,6 +5628,7 @@ function RightSidebar({
   onClose,
 }: {
   tab: RightPanelTab;
+  radioContent: ReactNode;
   queue: Song[];
   displayedQueue: Array<{ song: Song; index: number }>;
   currentIndex: number;
@@ -5698,7 +5696,9 @@ function RightSidebar({
     latestDragOverQueueIndexRef.current = dragOverQueueIndex;
   }, [dragOverQueueIndex]);
 
-  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue") : "Lyrics";
+  const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue")
+    : tab === "lyrics" ? "Lyrics"
+    : { schedule: "Schedule", request: "Request", booth: "Booth Feed" }[tab];
     const queueIndexFromPointer = (event: PointerEvent) => {
       const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
         .map((row) => ({ row, index: Number(row.dataset.queueIndex) }))
@@ -5766,8 +5766,8 @@ function RightSidebar({
 
   return (
     <aside
-      id="player-queue-flyout"
-      className="right-sidebar player-queue-flyout"
+      id="playback-sidebar"
+      className="right-sidebar"
       aria-label={headingLabel}
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
@@ -5784,7 +5784,7 @@ function RightSidebar({
       </div>
 
       {tab === "queue" ? (
-        <div className="right-panel-section queue-panel-section">
+        <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}`}>
           {!isRadioSession ? (
             <div className="queue-heading">
               <p className="eyebrow">Now + Next</p>
@@ -5876,7 +5876,7 @@ function RightSidebar({
             </p>
           ) : null}
         </div>
-      ) : (
+      ) : tab === "lyrics" ? (
         <div className="right-panel-section lyrics-panel">
           {isRadioSession ? (
             <EmptyPanel icon={<RadioTower size={20} />} text="No lyrics available for radio yet." />
@@ -5908,6 +5908,8 @@ function RightSidebar({
             <EmptyPanel icon={<Music2 size={20} />} text="No active playback." />
           )}
         </div>
+      ) : (
+        <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
       )}
       {queueDragGhost ? (
         <div
