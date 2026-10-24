@@ -48,6 +48,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return route.fulfill({ contentType: 'audio/wav', body: wav });
     }
     if (url.hostname === 'radio.fixture.invalid') {
+      if (route.request().resourceType() === 'image') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#304745"/></svg>' });
       if (url.pathname === '/api/lyrics/current') {
         requests.push(`radio-lyrics:${url.searchParams.get('songId')}`);
         await holdLyrics;
@@ -148,7 +149,8 @@ test('artist list has readable initials and a compact two-line discography', asy
   await expect(row).toBeVisible();
   const title = await row.locator('.track-name').boundingBox(), credit = await row.locator('.track-artist').boundingBox();
   expect(credit.y).toBeGreaterThanOrEqual(title.y + title.height);
-  await page.locator('.workspace-viewport').evaluate(el => { el.scrollTop = 0; });
+  await page.locator('.workspace').evaluate(el => { for (const node of el.querySelectorAll('*')) node.scrollTop = 0; });
+  await expect(page.locator('.artist-hero h3')).toBeInViewport();
   expect((await row.boundingBox()).y).toBeLessThan(600);
   await page.screenshot({ path: test.info().outputPath('artist-list.png') });
 });

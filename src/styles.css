@@ -7794,6 +7794,13 @@ button.similar-chip:focus-visible {
   font-size: 18px;
 }
 
+.radio-broadcast-details strong,
+.radio-broadcast-details small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+}
+
 /* React to the workspace left after either sidebar, rather than window width. */
 .workspace-viewport.radio-workspace {
   container-type: inline-size;
@@ -7821,13 +7828,6 @@ button.similar-chip:focus-visible {
 
   .radio-broadcast-details div {
     padding: 10px 12px;
-  }
-
-  .radio-broadcast-details strong,
-  .radio-broadcast-details small {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    overflow: visible;
   }
 
   .radio-copy h3 {
