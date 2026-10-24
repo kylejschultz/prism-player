@@ -15,7 +15,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:app": "tauri build --bundles app",
-    "tauri:build:installer": "tauri build --bundles dmg"
+    "tauri:build:installer": "tauri build --bundles dmg",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.23",
