@@ -5,6 +5,7 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys } from "./data/navidrome";
+import { fetchRadioLyrics } from "./data/radioLyrics";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
 import type { ComponentProps, CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -447,6 +448,7 @@ export type RadioLikeStatus = {
 };
 
 export type RadioStationState = {
+  lyrics?: { enabled?: boolean };
   nowPlaying?: RadioTrack | null;
   now_playing?: RadioTrack;
   current?: RadioTrack;
@@ -2153,6 +2155,7 @@ export function App() {
   const [lyricsStatus, setLyricsStatus] = useState<LyricsStatus>("idle");
   const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
   const [lyricsMessage, setLyricsMessage] = useState("");
+  const [radioLyricsOffsetMs, setRadioLyricsOffsetMs] = useState(0);
   const [playerError, setPlayerError] = useState("");
   const [shuffleEnabled, setShuffleEnabled] = useState(() => initialPlaybackSnapshot?.shuffleEnabled ?? false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>(() => initialPlaybackSnapshot?.repeatMode ?? "off");
@@ -4279,11 +4282,49 @@ export function App() {
     if (!rightPanelOpen || rightPanelTab !== "lyrics") return;
     const isRadioLyricsSession = radioStatus === "playing" || radioStatus === "checking";
 
+    setRadioLyricsOffsetMs(0);
     if (isRadioLyricsSession) {
-      setLyricsStatus("idle");
       setLyricsLines([]);
-      setLyricsMessage("No lyrics available for radio yet.");
-      return;
+      setLyricsStatus("empty");
+      if (radioStationState?.lyrics?.enabled !== true) {
+        setLyricsMessage(radioStationState?.lyrics?.enabled === false
+          ? "Lyrics are switched off on this station."
+          : "This station does not advertise lyrics support yet.");
+        return;
+      }
+      if (radioStatus !== "playing" || !radioNowPlayingSongId) {
+        setLyricsMessage("Waiting for track information.");
+        return;
+      }
+      const controller = new AbortController();
+      let retryTimer: number | undefined;
+      let attempts = 0;
+      setLyricsStatus("loading");
+      setLyricsMessage("");
+      async function load() {
+        const result = await fetchRadioLyrics(radioStationUrl, radioNowPlayingSongId, controller.signal);
+        if (controller.signal.aborted) return;
+        if (result.state === "ready") {
+          setLyricsLines(result.lines);
+          setRadioLyricsOffsetMs(result.offsetMs);
+          setLyricsStatus(result.lines.length ? "ready" : "empty");
+          setLyricsMessage(result.lines.length ? "" : "No lyrics for this radio track.");
+        } else if (result.state === "unavailable" && result.retryAfterMs != null && attempts++ < 3) {
+          // Only outages retry. Respect the station's window and cap the attempts.
+          retryTimer = window.setTimeout(() => void load(), Math.min(2_147_483_647, Math.max(result.retryAfterMs!, 5_000 * 2 ** attempts)));
+        } else {
+          setLyricsStatus("empty");
+          setLyricsMessage({
+            unsupported: "This station does not support lyrics yet.",
+            disabled: "Lyrics are switched off on this station.",
+            locked: "This station requires listener authentication for lyrics.",
+            stale: "Lyrics are not available for this radio track anymore.",
+            unavailable: "Radio lyrics are temporarily unavailable.",
+          }[result.state]);
+        }
+      }
+      void load();
+      return () => { controller.abort(); window.clearTimeout(retryTimer); };
     }
 
     if (!config || !currentTrack) {
@@ -4315,7 +4356,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [config, currentTrack, radioStatus, rightPanelOpen, rightPanelTab]);
+  }, [config, currentTrack, radioStatus, rightPanelOpen, rightPanelTab, radioStationUrl, radioNowPlayingSongId, radioStationState?.lyrics?.enabled]);
 
   useEffect(() => {
     [primaryAudioRef.current, secondaryAudioRef.current].forEach((audio) => {
@@ -5426,7 +5467,7 @@ export function App() {
           radioHistory={radioHistory}
           radioStatus={radioStatus}
           isRadioPlaying={isRadioPlaying}
-          position={position}
+          position={isRadioPlaying ? radioElapsed + radioLyricsOffsetMs / 1000 : position}
           lyricsStatus={lyricsStatus}
           lyricsLines={lyricsLines}
           lyricsMessage={lyricsMessage}
@@ -5700,7 +5741,7 @@ function RightSidebar({
     offsetY: number;
   } | null>(null);
   const activeLyricIndex = useMemo(() => {
-    const elapsedMs = Math.max(0, position * 1000);
+    const elapsedMs = position * 1000;
     let active = -1;
 
     for (let index = 0; index < lyricsLines.length; index += 1) {
@@ -5904,13 +5945,11 @@ function RightSidebar({
         </div>
       ) : tab === "lyrics" ? (
         <div className="right-panel-section lyrics-panel">
-          {isRadioSession ? (
-            <EmptyPanel icon={<RadioTower size={20} />} text="No lyrics available for radio yet." />
-          ) : currentTrack ? (
+          {isRadioSession || currentTrack ? (
             <>
               <div className="lyrics-track">
-                <p className="eyebrow">{currentTrack.artist ?? "Unknown artist"}</p>
-                <h3>{currentTrack.title}</h3>
+                <p className="eyebrow">{isRadioSession ? radioNowPlaying?.artist ?? "Radio" : currentTrack?.artist ?? "Unknown artist"}</p>
+                <h3>{isRadioSession ? radioNowPlaying?.title ?? "Radio lyrics" : currentTrack?.title}</h3>
               </div>
               {lyricsStatus === "loading" ? (
                 <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />

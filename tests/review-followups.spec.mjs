@@ -1,12 +1,13 @@
 /* global window, localStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
 import { test, expect } from '@playwright/test';
+import { Buffer } from 'node:buffer';
 
 const artist = { id: 'artist', name: 'Brigham Young University Vocal Point', albumCount: 2 };
 const albums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, artist: artist.name, artistId: artist.id, songCount: 4, year: 2026 - index }));
 const songs = albums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...songs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics } = {}) {
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -41,8 +42,18 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false } =
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
+    if (route.request().resourceType() === 'media') {
+      const wav = Buffer.alloc(16044);
+      wav.write('RIFF', 0); wav.writeUInt32LE(16036, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(16000, 40);
+      return route.fulfill({ contentType: 'audio/wav', body: wav });
+    }
     if (url.hostname === 'radio.fixture.invalid') {
-      return route.fulfill({ json: url.pathname === '/api/state' || url.pathname === '/api/now-playing' ? { station: { name: 'A station with a meaningful long name' }, nowPlaying: { title: 'On air', artist: 'Radio Artist' }, upcoming: [{ title: 'Up next' }], history: [{ title: 'Previously played' }], streamOnline: true, listeners: 1 } : {} });
+      if (url.pathname === '/api/lyrics/current') {
+        requests.push(`radio-lyrics:${url.searchParams.get('songId')}`);
+        await holdLyrics;
+        return route.fulfill({ status: lyricsStatus, headers: lyricsStatus === 503 ? { 'Retry-After': '10' } : {}, json: lyricsResponse || {} });
+      }
+      return route.fulfill({ json: url.pathname === '/api/state' || url.pathname === '/api/now-playing' ? { lyrics: lyricsEnabled === undefined ? undefined : { enabled: lyricsEnabled }, station: { name: 'A station with a meaningful long name' }, nowPlaying: { title: 'On air', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 }, upcoming: [{ title: 'Up next' }], history: [{ title: 'Previously played' }], streamOnline: true, listeners: 1 } : {} });
     }
     if (url.hostname !== 'music.fixture.invalid') return route.fulfill({ json: {} });
     const endpoint = url.pathname.split('/').at(-1).replace('.view', ''), id = url.searchParams.get('id');
@@ -157,5 +168,83 @@ test('narrow radio workspace wraps summaries beside the timeline', async ({ page
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: test.info().outputPath('radio-narrow.png') });
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+});
+
+async function radioLyrics(page) {
+  await page.locator('.sidebar').getByRole('button', { name: 'Radio', exact: true }).click();
+  await page.getByRole('button', { name: 'Tune In', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  return page.locator('#playback-sidebar');
+}
+
+for (const enabled of [undefined, false]) {
+  test(`radio lyrics do not request older/disabled stations (${enabled})`, async ({ page }) => {
+    const { requests } = await fixture(page, { lyricsEnabled: enabled });
+    const sidebar = await radioLyrics(page);
+    await expect(sidebar).toContainText(enabled === false ? 'switched off' : 'does not advertise');
+    expect(requests.filter(request => request.startsWith('radio-lyrics:'))).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  });
+}
+
+test('radio lyrics use the heard track, played clock and station offset', async ({ page }) => {
+  const { requests } = await fixture(page, { lyricsEnabled: true, lyricsResponse: { songId: 'heard', synced: true, offsetMs: 1500, lines: [{ text: 'Opening line', startMs: 0 }, { text: 'Current line', startMs: 6000 }, { text: 'Later line', startMs: 60000 }] } });
+  const sidebar = await radioLyrics(page);
+  await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(3);
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Current line');
+  expect(requests).toContain('radio-lyrics:heard');
+  await page.screenshot({ path: test.info().outputPath('radio-lyrics.png') });
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+});
+
+for (const status of [401, 403, 404, 409, 501]) {
+  test(`radio lyrics status ${status} stays optional without retries`, async ({ page }) => {
+    const { requests } = await fixture(page, { lyricsEnabled: true, lyricsStatus: status });
+    const sidebar = await radioLyrics(page);
+    await expect(sidebar.locator('.empty-panel')).toBeVisible();
+    await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(0);
+    expect(requests.filter(request => request.startsWith('radio-lyrics:'))).toHaveLength(1);
+    await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  });
+}
+
+test('radio lyric responses cannot overwrite local lyrics after playback switches', async ({ page }) => {
+  let finish;
+  const holdLyrics = new Promise(resolve => { finish = resolve; });
+  await fixture(page, { lyricsEnabled: true, holdLyrics, lyricsResponse: { songId: 'heard', synced: false, offsetMs: 0, lines: [{ text: 'Stale radio response', startMs: null }] } });
+  const sidebar = await radioLyrics(page);
+  await expect(sidebar).toContainText('Loading lyrics');
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  finish();
+  await expect(sidebar).not.toContainText('Stale radio response');
+});
+
+test('radio outages respect Retry-After and stop retrying after four requests', async ({ page }) => {
+  await page.clock.install();
+  const { requests } = await fixture(page, { lyricsEnabled: true, lyricsStatus: 503 });
+  const sidebar = await radioLyrics(page);
+  await expect.poll(() => requests.filter(request => request.startsWith('radio-lyrics:')).length).toBe(1);
+  for (const [milliseconds, count] of [[11_000, 2], [21_000, 3], [41_000, 4]]) {
+    await page.clock.runFor(milliseconds);
+    await expect.poll(() => requests.filter(request => request.startsWith('radio-lyrics:')).length).toBe(count);
+  }
+  await expect(sidebar).toContainText('temporarily unavailable');
+  await page.clock.runFor(120_000);
+  expect(requests.filter(request => request.startsWith('radio-lyrics:'))).toHaveLength(4);
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+});
+
+test('closing radio lyrics cancels a scheduled outage retry', async ({ page }) => {
+  await page.clock.install();
+  const { requests } = await fixture(page, { lyricsEnabled: true, lyricsStatus: 503 });
+  const sidebar = await radioLyrics(page);
+  await expect.poll(() => requests.filter(request => request.startsWith('radio-lyrics:')).length).toBe(1);
+  await sidebar.getByRole('button', { name: 'Close lyrics', exact: true }).click();
+  await page.clock.runFor(60_000);
+  expect(requests.filter(request => request.startsWith('radio-lyrics:'))).toHaveLength(1);
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
 });
