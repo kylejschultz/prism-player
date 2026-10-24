@@ -2219,7 +2219,11 @@ export function App() {
   const lastBackgroundTrackRef = useRef<string | null>(null);
   const libraryDataRef = useRef<LibraryData>(emptyLibraryData);
   const catalogSongsCompleteRef = useRef(false);
-  const catalogSongSyncInFlightRef = useRef(false);
+  const catalogSongSyncRef = useRef<Promise<void> | null>(null);
+  const catalogSongSyncGenerationRef = useRef(0);
+  const catalogHydrationRef = useRef<Promise<void> | null>(null);
+  const songLibraryRef = useRef(songLibrary);
+  songLibraryRef.current = songLibrary;
   const catalogHydratedKeyRef = useRef("");
   const [discordPresenceSyncNonce, setDiscordPresenceSyncNonce] = useState(0);
   const [discordPresenceStatus, setDiscordPresenceStatus] = useState<DiscordPresenceStatus>("idle");
@@ -2934,46 +2938,59 @@ export function App() {
     await queryClient.invalidateQueries({ queryKey: navidromeKeys.root(nextConfig) });
   }
 
-  async function syncFullSongCatalog(syncConfig: NavidromeConfig, albums: Album[]) {
-    if (catalogSongsCompleteRef.current || catalogSongSyncInFlightRef.current) return;
-    catalogSongSyncInFlightRef.current = true;
-    setCatalogStatus("syncing");
-    setCatalogProgress({ completed: 0, total: albums.length });
-    setSongLibraryStatus("loading");
+  async function syncFullSongCatalog(syncConfig: NavidromeConfig, albums: Album[], refresh = false) {
+    if (!refresh && catalogSongsCompleteRef.current) return;
+    if (!refresh && catalogSongSyncRef.current) return catalogSongSyncRef.current;
 
-    try {
-      if (!albums.length) {
-        setSongLibrary([]);
+    const generation = ++catalogSongSyncGenerationRef.current;
+    const connectionGeneration = libraryRefreshGenerationRef.current;
+    const previousSync = catalogSongSyncRef.current;
+    const isCurrent = () => generation === catalogSongSyncGenerationRef.current
+      && connectionGeneration === libraryRefreshGenerationRef.current;
+    catalogSongsCompleteRef.current = false;
+
+    // Serialize refreshes; a superseded run stops at the next batch boundary.
+    const sync = (async () => {
+      await previousSync;
+      if (!isCurrent()) return;
+      const hasCachedSongs = songLibraryRef.current.length > 0;
+      setCatalogStatus("syncing");
+      setCatalogProgress({ completed: 0, total: albums.length });
+      setSongLibraryStatus(hasCachedSongs ? "ready" : "loading");
+
+      try {
+        const songs = await fetchSongLibrary(
+          syncConfig,
+          albums,
+          (completed, total) => {
+            if (!isCurrent()) throw new Error("Catalog refresh superseded.");
+            setCatalogProgress({ completed, total });
+          },
+          (nextSongs) => {
+            if (!isCurrent() || hasCachedSongs) return;
+            songLibraryRef.current = nextSongs;
+            setSongLibrary(nextSongs);
+            setSongLibraryStatus("ready");
+          },
+        );
+        if (!isCurrent()) return;
+        songLibraryRef.current = songs;
+        setSongLibrary(songs);
         setSongLibraryStatus("ready");
         catalogSongsCompleteRef.current = true;
         setCatalogStatus("ready");
-        return;
+      } catch {
+        if (!isCurrent()) return;
+        // Preserve usable songs; a later refresh or Songs visit retries.
+        setSongLibraryStatus(songLibraryRef.current.length ? "ready" : "error");
+        setCatalogStatus("error");
+      } finally {
+        if (isCurrent()) setCatalogProgress(null);
       }
-
-      let songsAreUsable = false;
-      const songs = await fetchSongLibrary(
-        syncConfig,
-        albums,
-        (completed, total) => setCatalogProgress({ completed, total }),
-        (nextSongs) => {
-          setSongLibrary(nextSongs);
-          if (!songsAreUsable) {
-            songsAreUsable = true;
-            setSongLibraryStatus("ready");
-          }
-        },
-      );
-      setSongLibrary(songs);
-      setSongLibraryStatus("ready");
-      catalogSongsCompleteRef.current = true;
-      setCatalogStatus("ready");
-    } catch {
-      // The base catalog remains usable. A later launch or Songs visit retries this optional sync.
-      setCatalogStatus("error");
-    } finally {
-      setCatalogProgress(null);
-      catalogSongSyncInFlightRef.current = false;
-    }
+    })();
+    catalogSongSyncRef.current = sync;
+    await sync;
+    if (catalogSongSyncRef.current === sync) catalogSongSyncRef.current = null;
   }
 
   async function refreshLibrary(nextConfig = config, savePassword = false) {
@@ -2992,6 +3009,7 @@ export function App() {
         navidromeClient.scanStatus(resolvedConfig).catch(() => null),
         loadLibraryData(resolvedConfig),
       ]);
+      await catalogHydrationRef.current;
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
       // Background/startup refreshes already have the password in memory.
       // Only an explicit connection save should write to the credential store.
@@ -3007,7 +3025,7 @@ export function App() {
       libraryScanWasInProgressRef.current = Boolean(scanStatus?.scanning);
       const lastScan = scanTimestamp(scanStatus?.lastScan);
       if (lastScan) lastLibraryScanRef.current = lastScan;
-      void syncFullSongCatalog(resolvedConfig, nextLibrary.albums);
+      void syncFullSongCatalog(resolvedConfig, nextLibrary.albums, true);
       return true;
     } catch (error) {
       if (refreshGeneration !== libraryRefreshGenerationRef.current) return false;
@@ -3476,7 +3494,7 @@ export function App() {
     pushBrowserHistory(nextSnapshot);
     clearDetail();
     setActiveView(view);
-    if (view === "songs" && config && songLibraryStatus !== "ready" && songLibraryStatus !== "loading") void loadSongLibrary();
+    if (view === "songs" && config && !catalogSongsCompleteRef.current && songLibraryStatus !== "loading") void loadSongLibrary();
   }
 
   async function loadSongLibrary() {
@@ -3984,6 +4002,8 @@ export function App() {
     }
 
     libraryRefreshGenerationRef.current += 1;
+    catalogSongSyncGenerationRef.current += 1;
+    songLibraryRef.current = [];
     lastLibraryScanRef.current = null;
     libraryScanWasInProgressRef.current = false;
     const catalogKey = config ? libraryCatalogKey(config) : null;
@@ -4121,14 +4141,16 @@ export function App() {
     let cancelled = false;
     catalogHydratedKeyRef.current = "";
     catalogSongsCompleteRef.current = false;
+    catalogSongSyncGenerationRef.current += 1;
     setCatalogStatus("hydrating");
 
-    void readLibraryCatalog<LibraryData, Song>(catalogKey)
+    catalogHydrationRef.current = readLibraryCatalog<LibraryData, Song>(catalogKey)
       .then((snapshot) => {
         if (cancelled) return;
         if (snapshot?.version === 1) {
           setLibraryData(snapshot.library);
           libraryDataRef.current = snapshot.library;
+          songLibraryRef.current = snapshot.songs;
           setSongLibrary(snapshot.songs);
           setArtistImageCache(normalizeArtistImageCache(snapshot.artistImages));
           setSongLibraryStatus(snapshot.songs.length ? "ready" : "idle");
@@ -4147,13 +4169,13 @@ export function App() {
         if (!cancelled) catalogHydratedKeyRef.current = catalogKey;
       });
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; catalogSongSyncGenerationRef.current += 1; };
   }, [config?.serverUrl, config?.username]);
 
   useEffect(() => {
     if (!config) return;
     const catalogKey = libraryCatalogKey(config);
-    if (catalogHydratedKeyRef.current !== catalogKey || libraryData.albums.length === 0) return;
+    if (catalogHydratedKeyRef.current !== catalogKey) return;
 
     const timer = window.setTimeout(() => {
       void writeLibraryCatalog<LibraryData, Song>({
@@ -4600,6 +4622,7 @@ export function App() {
     }
 
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (isTextInputTarget(target)) return;
@@ -4622,9 +4645,12 @@ export function App() {
         return;
       }
 
+      // Native controls keep Space/arrow activation; shortcuts apply to the workspace.
+      if (event.target instanceof Element && event.target.closest(
+        "button, a[href], input, textarea, select, summary, [role='button'], [role='slider'], [role='separator'], [role='menuitem'], [role='tab']",
+      )) return;
+
       if (event.key === " ") {
-        // Let the artwork button's native Space activation open its destination.
-        if (event.target instanceof Element && event.target.closest(".player-now-playing-trigger")) return;
         event.preventDefault();
         togglePlayback();
         return;
