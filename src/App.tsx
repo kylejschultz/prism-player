@@ -10001,7 +10001,7 @@ function DetailPanel({
       : "Years unavailable";
 
     return (
-      <section className="detail-panel detail-page artist-detail-page">
+      <section className={`detail-panel detail-page artist-detail-page ${albumViewMode === "list" ? "artist-list-mode" : ""}`}>
         <div className="album-hero detail-page-hero artist-hero">
           <div className="detail-artwork-stage">
             <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
@@ -10043,7 +10043,7 @@ function DetailPanel({
             </div>
           </div>
         </div>
-        {topSongs.length ? (
+        {topSongs.length && albumViewMode === "art" ? (
           <section className="artist-top-songs" aria-labelledby={`artist-top-songs-${artist.id}`}>
             <div className="section-label">
               <div>

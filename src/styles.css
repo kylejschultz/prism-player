@@ -4160,7 +4160,7 @@ button.similar-chip:focus-visible {
 
 .artist-main {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 92px;
+  grid-template-columns: 56px minmax(0, 1fr) 92px;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -4172,8 +4172,8 @@ button.similar-chip:focus-visible {
 
 .artist-list-cover {
   display: block;
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   border-radius: 6px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.06);
@@ -4210,7 +4210,11 @@ button.similar-chip:focus-visible {
 }
 
 .artist-list-cover .artist-initials {
-  font-size: calc(14px * var(--initials-scale, 1));
+  padding: 4px;
+  font-size: max(11px, calc(20px * var(--initials-scale, 1)));
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
 }
 
 .artist-cover .artist-initials {
@@ -6845,7 +6849,7 @@ button.similar-chip:focus-visible {
 
 .cover-wash-backdrop {
   inset: -12%;
-  opacity: 0.62;
+  opacity: 0.52;
   mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.72) 10%, #000 24%, #000 78%, transparent 100%);
 }
 
@@ -6926,6 +6930,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-page .track-title-stack,
+.artist-album-group .track-title-stack,
 .playlist-track-row .track-title-stack {
   display: grid;
   align-content: center;
@@ -6934,6 +6939,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-page .track-title-stack .track-name,
+.artist-album-group .track-title-stack .track-name,
 .playlist-track-row .track-title-stack .track-name {
   overflow: hidden;
   font-weight: 500;
@@ -6942,6 +6948,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-page .track-title-stack .track-artist,
+.artist-album-group .track-title-stack .track-artist,
 .playlist-track-row .track-title-stack .track-artist {
   font-size: 11px;
   line-height: 1.15;
@@ -7719,4 +7726,111 @@ button.similar-chip:focus-visible {
 
 .artist-about-cover .artist-initials {
   font-size: calc(clamp(28px, 6vw, 64px) * var(--initials-scale, 1));
+}
+
+/* Keep secondary text readable over artwork without changing the theme. */
+.brand-wordmark p,
+.seek-row,
+.queue-row small,
+.radio-queue-section > p,
+.radio-queue-meta small,
+.radio-schedule-popover-row > span,
+.radio-booth-popover-row > span,
+.radio-dj-callout small,
+.radio-copy > .eyebrow,
+.player-bar .track-meta,
+.player-bar .track-album {
+  font-size: 11px;
+  color: rgba(244, 241, 236, 0.74);
+}
+
+.artist-row {
+  min-height: 64px;
+}
+
+.artist-list-mode .artist-hero {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 24px;
+  min-height: 0;
+  margin-bottom: 24px;
+  align-items: center;
+}
+
+.artist-list-mode .artist-hero h3 {
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.1;
+}
+
+.artist-list-mode .detail-artwork-stage {
+  align-self: center;
+}
+
+.artist-list-mode .detail-actions {
+  margin-top: 12px;
+}
+
+.artist-list-mode .artist-cover .artist-initials {
+  font-size: calc(40px * var(--initials-scale, 1));
+}
+
+.artist-list-mode .artist-latest-release {
+  margin-bottom: 20px;
+}
+
+.artist-list-mode .latest-release-card {
+  padding: 10px 14px;
+}
+
+.artist-list-mode .latest-release-cover {
+  width: 48px;
+  height: 48px;
+}
+
+.artist-list-mode .latest-release-main {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.artist-list-mode .latest-release-main strong {
+  font-size: 18px;
+}
+
+/* React to the workspace left after either sidebar, rather than window width. */
+.workspace-viewport.radio-workspace {
+  container-type: inline-size;
+  container-name: radio-workspace;
+}
+
+@container radio-workspace (max-width: 700px) {
+  .radio-view.radio-hero {
+    grid-template-columns: minmax(112px, 0.6fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(16px, 1fr) auto;
+    gap: 18px;
+    overflow-y: auto;
+  }
+
+  .radio-cover-card {
+    width: min(100%, 180px);
+    align-self: center;
+  }
+
+  .radio-broadcast-details {
+    grid-row: 3;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .radio-broadcast-details div {
+    padding: 10px 12px;
+  }
+
+  .radio-broadcast-details strong,
+  .radio-broadcast-details small {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+
+  .radio-copy h3 {
+    font-size: clamp(22px, 5cqw, 32px);
+  }
 }
