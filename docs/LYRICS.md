@@ -4,7 +4,7 @@ Open Lyrics from the player footer to show lyrics in the right sidebar.
 
 ## Library playback
 
-Prism first requests OpenSubsonic `getLyricsBySongId` for the exact library song ID. When the server provides timed lyrics, the current line highlights and scrolls into view using the local audio playback position. Pause holds the current line; seeking in either direction updates it immediately. Empty timed lines clear the previous highlight during instrumental gaps.
+Prism first requests OpenSubsonic `getLyricsBySongId` for the exact library song ID. When the server provides timed lyrics, the current line uses larger bold type and scrolls into view using the local audio playback position. The lyrics viewport fills the sidebar height, with compact spacing between surrounding lines. Pause holds the current line; seeking in either direction updates it immediately. Empty timed lines clear the previous highlight during instrumental gaps.
 
 The adapter prefers the first usable synced variant over untimed variants. Start times are milliseconds. The entry offset is subtracted from each start time, clamped at zero: positive means earlier, negative means later. This matches the line-level timing used by Subwave. No radio cue trimming or station offset is applied to local files.
 

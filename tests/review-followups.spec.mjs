@@ -330,3 +330,48 @@ test('late local lyrics cannot overwrite radio lyrics after switching playback m
   await expect(sidebar).not.toContainText('Stale local verse');
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
 });
+
+
+test('lyrics fill the sidebar at every window size and emphasize the current verse', async ({ page }) => {
+  await page.addInitScript(() => {
+    const times = new WeakMap();
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', { get() { return 120; } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { get() { return times.get(this) || 0; }, set(time) { times.set(this, time); } });
+  });
+  const verses = ['Leave the porch light on', 'Let the evening settle in', 'We have time enough to listen', 'To the streets beneath the rain', 'Keep the melody beside you', 'Let the quiet find its way'];
+  const { errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 48 }, (_, index) => ({ start: index * 3000, value: verses[index % verses.length] })) }] });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  const sidebar = page.locator('#playback-sidebar'), lines = sidebar.locator('.lyrics-lines');
+  await expect(lines.locator('p')).toHaveCount(48);
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await expect(seek).toHaveAttribute('max', '120');
+  await seek.fill('42');
+  await expect(lines.locator('p.active')).toHaveText('We have time enough to listen');
+  for (const [width, height] of [[1440, 720], [1440, 1200], [900, 900]]) {
+    await page.setViewportSize({ width, height });
+    await expect.poll(async () => lines.evaluate(el => {
+      const sidebar = el.closest('.right-sidebar');
+      return Math.abs(sidebar.getBoundingClientRect().bottom - parseFloat(getComputedStyle(sidebar).paddingBottom) - el.getBoundingClientRect().bottom);
+    })).toBeLessThan(2);
+    const metrics = await lines.evaluate(el => {
+      const active = el.querySelector('p.active'), context = el.querySelector('p:not(.active)');
+      const activeStyle = getComputedStyle(active), contextStyle = getComputedStyle(context);
+      return { activeSize: parseFloat(activeStyle.fontSize), activeWeight: Number(activeStyle.fontWeight), contextSize: parseFloat(contextStyle.fontSize), gap: parseFloat(getComputedStyle(el).rowGap), fitsWidth: [...el.querySelectorAll('p')].every(p => p.scrollWidth <= p.clientWidth), height: el.clientHeight };
+    });
+    expect(metrics.activeSize).toBeGreaterThanOrEqual(metrics.contextSize * 1.4);
+    expect(metrics.activeWeight).toBeGreaterThanOrEqual(700);
+    expect(metrics.contextSize).toBeGreaterThanOrEqual(18);
+    expect(metrics.gap).toBeLessThanOrEqual(4);
+    expect(metrics.fitsWidth).toBe(true);
+    expect(metrics.height).toBeGreaterThan(height - 240);
+    await expect(lines.locator('p.active')).toHaveAttribute('aria-current', 'true');
+    await expect(lines.locator('p.active')).toBeInViewport();
+    const listBox = await lines.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
+    expect(listBox.y + listBox.height).toBeLessThanOrEqual(footer.y);
+    await page.screenshot({ path: test.info().outputPath(`lyrics-${width}-${height}.png`) });
+  }
+  await seek.fill('117');
+  await expect(lines.locator('p.active')).toHaveText('To the streets beneath the rain');
+  await expect(lines.locator('p.active')).toBeInViewport();
+  expect(errors).toEqual([]);
+});
