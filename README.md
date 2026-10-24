@@ -76,6 +76,7 @@ Click any screenshot to open it full size.
 - Playlist editing and favorites.
 - Subwave radio with now-playing, schedules, requests, likes, and booth updates.
 - Queue, now-playing details, and lyrics in the sidebar.
+- Synced library lyrics follow playback and seeking when your server supplies timestamps, with plain lyrics as a fallback. See [lyrics support](docs/LYRICS.md).
 
 
 ## Privacy

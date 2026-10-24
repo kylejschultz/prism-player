@@ -7,7 +7,7 @@ const albums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, artist:
 const songs = albums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...songs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric" } = {}) {
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -61,6 +61,10 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     requests.push(endpoint);
     if (endpoint === 'getCoverArt' || endpoint === 'stream') return route.abort();
     if (url.pathname === '/auth/login') return route.fulfill({ json: { name: 'Fixture' } });
+    if (endpoint === 'getLyricsBySongId') {
+      await holdLocalLyrics;
+      return route.fulfill({ status: localLyricsStatus, json: { 'subsonic-response': { status: 'ok', lyricsList: { structuredLyrics: localLyrics || [] } } } });
+    }
     if (endpoint === 'getAlbum') {
       await holdAlbums;
       if (failAlbums) return route.fulfill({ status: 503, body: 'Fixture failure' });
@@ -74,7 +78,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       getTopSongs: { topSongs: { song: [] } },
       getStarred2: { starred2: {} }, getPlaylists: { playlists: { playlist: [] } },
       getScanStatus: { scanStatus: { scanning: false, lastScan: 2 } },
-      getLyrics: { lyrics: { value: 'First lyric\nSecond lyric' } },
+      getLyrics: { lyrics: { value: legacyLyrics } },
     }[endpoint] || {};
     return route.fulfill({ json: { 'subsonic-response': { status: 'ok', ...payload } } });
   });
@@ -248,5 +252,81 @@ test('closing radio lyrics cancels a scheduled outage retry', async ({ page }) =
   await sidebar.getByRole('button', { name: 'Close lyrics', exact: true }).click();
   await page.clock.runFor(60_000);
   expect(requests.filter(request => request.startsWith('radio-lyrics:'))).toHaveLength(1);
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+});
+
+
+test('local synced lyrics follow playback, pause, seeking and instrumental gaps', async ({ page }) => {
+  // Match the fixture song duration; the tiny WAV only supplies a valid media response.
+  await page.addInitScript(() => {
+    const times = new WeakMap();
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', { get() { return 120; } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { get() { return times.get(this) || 0; }, set(time) { times.set(this, time); } });
+  });
+  const lines = Array.from({ length: 30 }, (_, index) => ({ start: index * 3000 + 500, value: `Library line ${index + 1}` }));
+  lines.splice(12, 0, { start: 35000, value: '' });
+  const { requests, errors } = await fixture(page, { localLyrics: [{ synced: true, offset: 500, line: lines }] });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  const sidebar = page.locator('#playback-sidebar');
+  await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(31);
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await expect(seek).toHaveAttribute('max', '120');
+  await seek.fill('18');
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Library line 7');
+  await expect(sidebar.locator('.lyrics-lines p.active')).toBeInViewport();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  // Deliver an actual media timeupdate to the playing audio slot.
+  await page.locator('audio').evaluateAll(elements => {
+    const audio = elements.find(audio => !audio.paused);
+    audio.currentTime = 60;
+    audio.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Library line 21');
+  await expect(sidebar.locator('.lyrics-lines p.active')).toBeInViewport();
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Library line 21');
+  await seek.fill('3');
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Library line 2');
+  await seek.fill('35');
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('');
+  await seek.fill('60');
+  await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Library line 21');
+  await page.screenshot({ path: test.info().outputPath('local-synced-lyrics.png') });
+  expect(requests.filter(request => request === 'getLyricsBySongId')).toHaveLength(1);
+  expect(requests).not.toContain('getLyrics');
+  expect(errors).toEqual([]);
+});
+
+for (const mode of ['structured plain', 'older server', 'no lyrics']) {
+  test(`local lyrics handle ${mode} without disrupting playback`, async ({ page }) => {
+    const { errors } = await fixture(page, {
+      localLyricsStatus: mode === 'older server' ? 404 : 200,
+      localLyrics: mode === 'structured plain' ? [{ synced: false, line: [{ start: 0, value: 'Untimed verse' }] }] : [],
+      legacyLyrics: mode === 'no lyrics' ? '' : 'First lyric\nSecond lyric',
+    });
+    await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+    const sidebar = page.locator('#playback-sidebar');
+    if (mode === 'no lyrics') await expect(sidebar).toContainText('No lyrics found');
+    else await expect(sidebar.locator('.lyrics-lines p.plain')).toHaveCount(mode === 'structured plain' ? 1 : 2);
+    await expect(sidebar.locator('.lyrics-lines p.active')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
+
+test('late local lyrics cannot overwrite radio lyrics after switching playback modes', async ({ page }) => {
+  let finish;
+  const holdLocalLyrics = new Promise(resolve => { finish = resolve; });
+  await fixture(page, { holdLocalLyrics, localLyrics: [{ synced: true, line: [{ start: 0, value: 'Stale local verse' }] }], lyricsEnabled: true, lyricsResponse: { songId: 'heard', synced: true, offsetMs: 0, lines: [{ startMs: 0, text: 'Radio verse' }] } });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  const sidebar = page.locator('#playback-sidebar');
+  await expect(sidebar).toContainText('Loading lyrics');
+  await page.locator('.sidebar').getByRole('button', { name: 'Radio', exact: true }).click();
+  await page.getByRole('button', { name: 'Tune In', exact: true }).click();
+  await expect(sidebar).toContainText('Radio verse');
+  finish();
+  await expect(sidebar).not.toContainText('Stale local verse');
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
 });

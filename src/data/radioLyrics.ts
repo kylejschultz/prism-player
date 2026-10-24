@@ -1,6 +1,6 @@
-export type RadioLyricLine = { text: string; startMs: number | null };
+import type { LyricLine } from "./navidrome";
 export type RadioLyricsResult =
-  | { state: "ready"; lines: RadioLyricLine[]; offsetMs: number }
+  | { state: "ready"; lines: LyricLine[]; offsetMs: number }
   | { state: "unsupported" | "disabled" | "locked" | "stale" }
   | { state: "unavailable"; retryAfterMs?: number };
 
@@ -34,7 +34,7 @@ export async function fetchRadioLyrics(stationUrl: string, songId: string, signa
       || !Number.isFinite(payload.offsetMs) || Math.abs(payload.offsetMs) > 30_000 || !Array.isArray(payload.lines)) {
       return { state: "unavailable" };
     }
-    const lines: RadioLyricLine[] = [];
+    const lines: LyricLine[] = [];
     for (const line of payload.lines) {
       if (!line || typeof line.text !== "string" || (line.startMs !== null
         && (typeof line.startMs !== "number" || !Number.isFinite(line.startMs)))) return { state: "unavailable" };

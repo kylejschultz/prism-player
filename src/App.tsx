@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { navidromeClient, navidromeKeys } from "./data/navidrome";
+import { navidromeClient, navidromeKeys, type LyricLine } from "./data/navidrome";
 import { fetchRadioLyrics } from "./data/radioLyrics";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
@@ -398,19 +398,6 @@ export type PlaylistDetailsUpdate = {
   name: string;
   comment: string;
   public: boolean;
-};
-
-export type LyricsPayload = {
-  lyrics?: {
-    value?: string;
-    synced?: boolean;
-    line?: Array<{ value?: string; start?: number | string; startMs?: number | string } | string>;
-  } | string;
-};
-
-type LyricLine = {
-  text: string;
-  startMs: number | null;
 };
 
 type PlaybackSnapshot = {
@@ -909,43 +896,6 @@ async function sendAnalyticsPing(libraryData?: LibraryData) {
       ...getLibraryStats(libraryData),
     }),
   });
-}
-
-function lyricTextLines(value: string): LyricLine[] {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((text) => ({ text, startMs: null }));
-}
-
-function parseLyricStartMs(value: number | string | undefined) {
-  if (value == null || value === "") return null;
-  const raw = String(value).trim();
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return null;
-  return raw.includes(".") && numeric < 1000 ? Math.round(numeric * 1000) : Math.round(numeric);
-}
-
-function normalizeLyrics(response: LyricsPayload): LyricLine[] {
-  const lyrics = response.lyrics;
-
-  if (!lyrics) return [];
-  if (typeof lyrics === "string") return lyricTextLines(lyrics);
-  if (typeof lyrics.value === "string") return lyricTextLines(lyrics.value);
-  if (Array.isArray(lyrics.line)) {
-    return lyrics.line
-      .map((line) => {
-        if (typeof line === "string") return { text: line.trim(), startMs: null };
-        return {
-          text: (line.value ?? "").trim(),
-          startMs: parseLyricStartMs(line.startMs ?? line.start),
-        };
-      })
-      .filter((line) => line.text);
-  }
-
-  return [];
 }
 
 function loadLastPlayedTrack() {
@@ -1895,15 +1845,6 @@ async function fetchArtistDetail(config: NavidromeConfig, artistId: string): Pro
 async function fetchPlaylistDetail(config: NavidromeConfig, playlistId: string): Promise<PlaylistDetail> {
   const response = await navidromeRequest<{ playlist: PlaylistDetail }>(config, "getPlaylist", { id: playlistId });
   return response.playlist;
-}
-
-async function fetchLyrics(config: NavidromeConfig, song: Song) {
-  const response = await navidromeRequest<LyricsPayload>(config, "getLyrics", {
-    artist: song.artist ?? "",
-    title: song.title,
-  });
-
-  return normalizeLyrics(response);
 }
 
 async function createPlaylist(config: NavidromeConfig, name: string, songs: Song[] = []) {
@@ -4334,27 +4275,27 @@ export function App() {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setLyricsStatus("loading");
     setLyricsLines([]);
     setLyricsMessage("");
 
-    void navidromeClient.lyrics(config, currentTrack).then(normalizeLyrics)
+    void navidromeClient.lyrics(config, currentTrack, controller.signal)
       .then((lines) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setLyricsLines(lines);
         setLyricsStatus(lines.length ? "ready" : "empty");
         setLyricsMessage(lines.length ? "" : "No lyrics found for this track.");
       })
       .catch(() => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setLyricsLines([]);
         setLyricsStatus("error");
         setLyricsMessage("Lyrics are unavailable for this track.");
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [config, currentTrack, radioStatus, rightPanelOpen, rightPanelTab, radioStationUrl, radioNowPlayingSongId, radioStationState?.lyrics?.enabled]);
 
