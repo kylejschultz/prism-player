@@ -356,10 +356,11 @@ test('lyrics fill the sidebar at every window size and emphasize the current ver
     const metrics = await lines.evaluate(el => {
       const active = el.querySelector('p.active'), context = el.querySelector('p:not(.active)');
       const activeStyle = getComputedStyle(active), contextStyle = getComputedStyle(context);
-      return { activeSize: parseFloat(activeStyle.fontSize), activeWeight: Number(activeStyle.fontWeight), contextSize: parseFloat(contextStyle.fontSize), gap: parseFloat(getComputedStyle(el).rowGap), fitsWidth: [...el.querySelectorAll('p')].every(p => p.scrollWidth <= p.clientWidth), height: el.clientHeight };
+      return { activeSize: parseFloat(activeStyle.fontSize), activeWeight: Number(activeStyle.fontWeight), contextSize: parseFloat(contextStyle.fontSize), contextWeight: Number(contextStyle.fontWeight), gap: parseFloat(getComputedStyle(el).rowGap), fitsWidth: [...el.querySelectorAll('p')].every(p => p.scrollWidth <= p.clientWidth), height: el.clientHeight };
     });
     expect(metrics.activeSize).toBeGreaterThanOrEqual(metrics.contextSize * 1.4);
-    expect(metrics.activeWeight).toBeGreaterThanOrEqual(700);
+    expect(metrics.activeWeight).toBeGreaterThanOrEqual(600);
+    expect(metrics.activeWeight).toBeGreaterThan(metrics.contextWeight);
     expect(metrics.contextSize).toBeGreaterThanOrEqual(18);
     expect(metrics.gap).toBeLessThanOrEqual(4);
     expect(metrics.fitsWidth).toBe(true);
@@ -374,4 +375,108 @@ test('lyrics fill the sidebar at every window size and emphasize the current ver
   await expect(lines.locator('p.active')).toHaveText('To the streets beneath the rain');
   await expect(lines.locator('p.active')).toBeInViewport();
   expect(errors).toEqual([]);
+});
+
+
+async function installTimingFixture(page, duration) {
+  await page.addInitScript(duration => {
+    window.timingFixture = { duration };
+    const times = new WeakMap();
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', { get() { return window.timingFixture.duration; } });
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', { get() { return times.get(this) || 0; }, set(time) { times.set(this, time); } });
+  }, duration);
+}
+
+test('library progress reaches fractional endpoints and follows the active media duration', async ({ page }) => {
+  await installTimingFixture(page, 183.75);
+  const { errors } = await fixture(page);
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await expect(seek).toHaveAttribute('max', '183.75');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('audio').evaluateAll(elements => {
+    const audio = elements.find(audio => !audio.paused);
+    audio.currentTime = 183.25; audio.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(seek).toHaveValue('183.25');
+  await expect(page.locator('.seek-row span')).toHaveText(['3:03', '3:04']);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await seek.press('End');
+  await expect(seek).toHaveValue('183.75');
+  await page.locator('audio').evaluateAll(elements => {
+    window.timingFixture.duration = 200.5;
+    const audio = elements.find(audio => !audio.paused);
+    audio.currentTime = 190.25; audio.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(seek).toHaveAttribute('max', '200.5');
+  await expect(seek).toHaveValue('190.25');
+  await expect(page.locator('.seek-row span')).toHaveText(['3:10', '3:21']);
+  // Standby events must not overwrite the active track's timing.
+  await page.locator('audio').evaluateAll(elements => {
+    const standby = elements.slice(0, 2).find(audio => audio.paused);
+    Object.defineProperty(standby, 'duration', { configurable: true, value: 999 });
+    standby.dispatchEvent(new Event('durationchange'));
+    standby.currentTime = 900; standby.dispatchEvent(new Event('timeupdate'));
+    delete standby.duration;
+  });
+  await expect(seek).toHaveAttribute('max', '200.5');
+  await expect(seek).toHaveValue('190.25');
+  await page.screenshot({ path: test.info().outputPath('media-duration-after.png') });
+  // Changing tracks replaces the preceding duration instead of retaining its endpoint.
+  await page.evaluate(() => { window.timingFixture.duration = 61.4; });
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('.player-bar .now-playing-copy .track-title')).toHaveText('Album a track 2');
+  await page.locator('audio').evaluateAll(elements => {
+    const audio = elements.find(audio => !audio.paused); audio.dispatchEvent(new Event('loadedmetadata'));
+  });
+  await expect(seek).toHaveAttribute('max', '61.4');
+  await expect(page.locator('.seek-row span').last()).toHaveText('1:02');
+  expect(errors).toEqual([]);
+});
+
+test('library progress uses a finite catalog fallback until media duration is available', async ({ page }) => {
+  await installTimingFixture(page, null);
+  // Infinity represents media metadata whose duration is not yet known.
+  await page.addInitScript(() => { window.timingFixture.duration = Infinity; });
+  await fixture(page);
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await expect(seek).toHaveAttribute('max', '120');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('audio').evaluateAll(elements => {
+    window.timingFixture.duration = 125.5;
+    const audio = elements.find(audio => !audio.paused); audio.currentTime = 124.5; audio.dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(seek).toHaveAttribute('max', '125.5');
+  await expect(seek).toHaveValue('124.5');
+  await expect(page.locator('.seek-row span')).toHaveText(['2:04', '2:06']);
+});
+
+test('Instrument Sans loads locally across the app and its full license is readable', async ({ page }) => {
+  const requests = [];
+  page.on('request', request => { if (/\.woff2/.test(request.url())) requests.push(request.url()); });
+  await fixture(page, { localLyrics: [{ synced: true, line: [{ start: 0, value: 'Leave the porch light on' }] }] });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  const active = page.locator('.lyrics-lines p.active');
+  await expect(active).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('DOM.enable');
+  await cdp.send('CSS.enable');
+  const { root } = await cdp.send('DOM.getDocument');
+  const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.lyrics-lines p.active' });
+  const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+  expect(fonts.some(font => font.isCustomFont && font.familyName === 'Instrument Sans' && font.glyphCount > 0)).toBe(true);
+  expect(requests.length).toBeGreaterThan(0);
+  expect(requests.every(url => new URL(url).origin === 'http://127.0.0.1:1421')).toBe(true);
+  const family = await page.locator('.sidebar').getByRole('button', { name: 'Artists', exact: true }).evaluate(el => getComputedStyle(el).fontFamily);
+  expect(family).toContain('Instrument Sans');
+  await expect(active).toHaveCSS('font-weight', '600');
+  await page.screenshot({ path: test.info().outputPath('instrument-sans-app.png') });
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByText('Typography & licenses', { exact: true }).click();
+  const license = page.locator('.about-font-license pre');
+  await expect(license).toBeVisible();
+  await expect(license).toContainText('Copyright 2022 The Instrument Sans Project Authors');
+  await expect(license).toContainText('SIL OPEN FONT LICENSE Version 1.1');
+  expect((await license.textContent()).length).toBeGreaterThan(4000);
+  await page.screenshot({ path: test.info().outputPath('font-license.png') });
 });

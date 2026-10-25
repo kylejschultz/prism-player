@@ -75,6 +75,7 @@ import {
   X,
 } from "lucide-react";
 import packageJson from "../package.json";
+import instrumentSansLicense from "./assets/fonts/OFL.txt?raw";
 
 type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
 type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
@@ -3656,7 +3657,8 @@ export function App() {
     if (audio !== getActiveAudio()) return;
     setPosition(audio.currentTime);
 
-    const duration = audio.duration || currentTrack?.duration || 0;
+    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : currentTrack?.duration || 0;
+    if (Number.isFinite(audio.duration) && audio.duration > 0) setPlayerDuration(audio.duration);
     if (
       !transitionInProgressRef.current
       && appSettings.trackTransitionSeconds > 0
@@ -3702,8 +3704,8 @@ export function App() {
 
   function handleLoadedMetadata(audio: HTMLAudioElement) {
     if (audio !== getActiveAudio()) return;
-    const duration = audio.duration;
-    setPlayerDuration(duration || currentTrack?.duration || 0);
+    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : currentTrack?.duration || 0;
+    setPlayerDuration(duration);
 
     const resumePosition = pendingResumePositionRef.current;
     pendingResumePositionRef.current = 0;
@@ -5298,13 +5300,13 @@ export function App() {
               type="range"
               min="0"
               max={Math.max(seekDuration, 1)}
-              step="1"
+              step="any"
               value={Math.min(seekPosition, Math.max(seekDuration, 1))}
               onChange={(event) => seekTo(Number(event.target.value))}
               disabled={isRadioPlaying || !currentTrack}
               aria-label="Seek"
             />
-            <span>{isRadioPlaying ? (radioHasTimedTrack ? formatDuration(radioDuration) : "") : formatDuration(playerDuration || currentTrack?.duration)}</span>
+            <span>{isRadioPlaying ? (radioHasTimedTrack ? formatDuration(radioDuration) : "") : formatDuration(Math.ceil(seekDuration))}</span>
           </div>
           {radioStatus === "error" ? <p className="player-error">{radioMessage}</p> : playerError ? <p className="player-error">{playerError}</p> : null}
         </div>
@@ -6348,6 +6350,11 @@ function SettingsView({
             </div>
           </details>
         </div>
+        <details className="about-changelog about-font-license">
+          <summary>Typography &amp; licenses</summary>
+          <p>Instrument Sans · SIL Open Font License 1.1</p>
+          <pre>{instrumentSansLicense}</pre>
+        </details>
         <div className="about-links" aria-label="Prism links">
           <a href={PRISM_REPOSITORY_URL} target="_blank" rel="noreferrer"><Code2 size={16} /> GitHub <ExternalLink size={13} /></a>
           <a href={PRISM_RELEASES_URL} target="_blank" rel="noreferrer"><Download size={16} /> Releases <ExternalLink size={13} /></a>

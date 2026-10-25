@@ -55,6 +55,9 @@
           "y": 315
         }
       }
+    },
+    "resources": {
+      "../src/assets/fonts/OFL.txt": "licenses/instrument-sans-OFL.txt"
     }
   }
 }
