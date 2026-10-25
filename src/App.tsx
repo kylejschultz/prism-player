@@ -6,6 +6,8 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys, type LyricLine } from "./data/navidrome";
 import { canPlayOriginal } from "./localPlayback";
+import { isFlac } from "./flacCompatibility";
+import { useFlacCompatibility } from "./useFlacCompatibility";
 import { PlaybackDiagnostics, PLAYBACK_DIAGNOSTIC_EVENTS, type PlaybackDiagnosticEvent, type PlaybackDiagnosticState } from "./playbackDiagnostics";
 import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
@@ -246,6 +248,7 @@ type AppSettings = {
   radioStationUrls: string[];
   radioStationNames: Record<string, string>;
   trackTransitionSeconds: number;
+  flacCompatibility: boolean;
 };
 
 const colorThemes: Array<{ id: ColorTheme; label: string; description: string; swatches: [string, string, string] }> = [
@@ -594,6 +597,7 @@ const defaultSettings: AppSettings = {
   radioStationUrls: [],
   radioStationNames: {},
   trackTransitionSeconds: 0,
+  flacCompatibility: false,
 };
 
 const ALPHABET = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
@@ -838,6 +842,7 @@ function loadStoredSettings(): AppSettings {
       radioStationUrls,
       radioStationNames: normalizeRadioStationNames(parsed.radioStationNames, radioStationUrls),
       trackTransitionSeconds: clampNumber(Number(parsed.trackTransitionSeconds ?? defaultSettings.trackTransitionSeconds), 0, 12),
+      flacCompatibility: parsed.flacCompatibility === true,
     };
   } catch {
     return defaultSettings;
@@ -2402,11 +2407,28 @@ export function App() {
       cancelled = true;
     };
   }, [isRadioPlaying, radioNowPlayingSongId, radioStationUrl]);
-  const currentStreamUrl = config && currentTrack ? navidromeClient.buildStreamUrl(config, currentTrack.id,
-    !serverStreamFallbacks.has(currentTrack.id) && canPlayOriginal(currentTrack, type => mediaSupport.canPlayType(type))) : null;
+  const flacModeEnabled = isMacOSDesktopApp() && appSettings.flacCompatibility;
+  const currentRawStreamUrl = config && currentTrack ? navidromeClient.buildStreamUrl(config, currentTrack.id,
+    !serverStreamFallbacks.has(currentTrack.id) && ((flacModeEnabled && isFlac(currentTrack)) || canPlayOriginal(currentTrack, type => mediaSupport.canPlayType(type)))) : null;
   const nextTrack = currentIndex < queue.length - 1 ? queue[currentIndex + 1] : null;
-  const nextStreamUrl = config && nextTrack ? navidromeClient.buildStreamUrl(config, nextTrack.id,
-    !serverStreamFallbacks.has(nextTrack.id) && canPlayOriginal(nextTrack, type => mediaSupport.canPlayType(type))) : null;
+  const nextRawStreamUrl = config && nextTrack ? navidromeClient.buildStreamUrl(config, nextTrack.id,
+    !serverStreamFallbacks.has(nextTrack.id) && ((flacModeEnabled && isFlac(nextTrack)) || canPlayOriginal(nextTrack, type => mediaSupport.canPlayType(type)))) : null;
+
+  const currentFlacSource = flacModeEnabled && currentTrack && isFlac(currentTrack) && currentRawStreamUrl && !serverStreamFallbacks.has(currentTrack.id) ? currentRawStreamUrl : null;
+  const nextFlacSource = flacModeEnabled && nextTrack && isFlac(nextTrack) && nextRawStreamUrl && !serverStreamFallbacks.has(nextTrack.id) ? nextRawStreamUrl : null;
+  const compatibility = useFlacCompatibility(currentFlacSource, transitionInProgressRef.current || activePlaybackSource !== "local" ? null : nextFlacSource,
+    transitionInProgressRef.current ? getStandbyAudio()?.src ?? null : null);
+  const currentStreamUrl = currentFlacSource ? compatibility.current.url : currentRawStreamUrl;
+  const nextStreamUrl = nextFlacSource ? compatibility.next.url : nextRawStreamUrl;
+  const preparingFlac = Boolean(currentFlacSource && compatibility.current.preparing);
+  const flacFallback = Boolean(currentFlacSource && compatibility.current.fallback);
+
+  function setFlacCompatibility(enabled: boolean) {
+    const audio = getActiveAudio();
+    stopTrackTransition();
+    pendingResumePositionRef.current = audio?.currentTime || position;
+    updateAppSettings({ ...appSettings, flacCompatibility: enabled });
+  }
 
   // Read only numeric/boolean media state; no URLs or track objects enter the recorder.
   diagnosticRecorderRef.current = (event, audio, requestedTime) => {
@@ -2419,10 +2441,10 @@ export function App() {
       serverFallback: Boolean(track && serverStreamFallbacks.has(track.id)),
     };
     const source = audio.getAttribute("src");
-    const mode = !source ? "none" : new URL(source, window.location.href).searchParams.get("format") === "raw" ? "raw" : "server-selected";
+    const mode = !source ? "none" : source.startsWith("blob:") || new URL(source, window.location.href).searchParams.get("format") === "raw" ? "raw" : "server-selected";
     playbackDiagnostics.record(event, audio, {
       ...diagnosticSourcesRef.current[slot], slot, active,
-      localPlayback: activePlaybackSource === "local", requestedStreamMode: mode,
+      localPlayback: activePlaybackSource === "local", requestedStreamMode: mode, preparedPcm: Boolean(source?.startsWith("blob:")),
       playIntent: isPlaying, transitioning: transitionInProgressRef.current,
       displayedPosition: position, displayedDuration: playerDuration, repeatMode,
       crossfadeSeconds: appSettings.trackTransitionSeconds,
@@ -3799,6 +3821,11 @@ export function App() {
     const audio = getActiveAudio();
     if (!audio || !Number.isFinite(nextPosition)) return;
     diagnosticRecorderRef.current("seek-request", audio, nextPosition);
+    if (preparingFlac) {
+      pendingResumePositionRef.current = Math.max(0, Math.min(nextPosition, currentTrack?.duration || nextPosition));
+      setPosition(pendingResumePositionRef.current);
+      return;
+    }
     audio.currentTime = Math.max(0, Math.min(nextPosition, playerDuration || currentTrack?.duration || nextPosition));
     // The engine may clamp or reject a seek. Publish its confirmed position on seeked.
     if (!audio.seeking) setPosition(audio.currentTime);
@@ -3836,6 +3863,11 @@ export function App() {
   function retryServerStream(audio: HTMLAudioElement) {
     const active = audio === getActiveAudio();
     const track = active ? currentTrack : nextTrack;
+    const rawSource = active ? currentFlacSource : nextFlacSource;
+    if (rawSource && audio.src.startsWith("blob:") && compatibility.reject(rawSource, audio.src)) {
+      if (active) pendingResumePositionRef.current = audio.currentTime || pendingResumePositionRef.current;
+      return true;
+    }
     if (!track || !audio.src || audio.src !== (active ? currentStreamUrl : nextStreamUrl) || new URL(audio.src).searchParams.get("format") !== "raw") return false;
     diagnosticRecorderRef.current("server-fallback", audio);
     if (active) pendingResumePositionRef.current = audio.currentTime || pendingResumePositionRef.current;
@@ -4587,6 +4619,14 @@ export function App() {
     const audio = getActiveAudio();
     if (!audio) return;
 
+    if (preparingFlac) {
+      audio.pause(); audio.removeAttribute("src"); audio.load();
+      setLocalBuffering(isPlaying);
+      setPosition(pendingResumePositionRef.current || 0);
+      setPlayerDuration(currentTrack?.duration || 0);
+      setPlayerError("");
+      return;
+    }
     if (!currentStreamUrl) {
       audio.removeAttribute("src");
       resetPlaybackPosition();
@@ -4612,7 +4652,7 @@ export function App() {
         setPlayerError("Playback was blocked by the browser.");
       });
     }
-  }, [activeAudioSlot, currentStreamUrl]);
+  }, [activeAudioSlot, currentStreamUrl, currentRawStreamUrl, preparingFlac]);
 
   useEffect(() => {
     const standbyAudio = getStandbyAudio();
@@ -4726,7 +4766,10 @@ export function App() {
 
   useEffect(() => {
     const audio = getActiveAudio();
-    if (!audio || !currentStreamUrl) return;
+    if (!audio || !currentStreamUrl) {
+      if (audio && preparingFlac) { audio.pause(); setLocalBuffering(isPlaying); }
+      return;
+    }
 
     if (isPlaying) {
       const requestedSource = audio.src;
@@ -4739,7 +4782,7 @@ export function App() {
     } else {
       audio.pause();
     }
-  }, [activeAudioSlot, isPlaying, currentStreamUrl]);
+  }, [activeAudioSlot, isPlaying, currentStreamUrl, preparingFlac]);
 
   useEffect(() => {
     function isTextInputTarget(target: EventTarget | null) {
@@ -5149,6 +5192,13 @@ export function App() {
               status={status}
               statusMessage={statusMessage}
               appSettings={appSettings}
+              playbackCompatibilityPanel={isMacOSDesktopApp() ? <section className="settings-panel settings-section" aria-labelledby="flac-compatibility-title">
+                <div className="panel-heading"><div><p className="eyebrow">Playback</p><h3 id="flac-compatibility-title">FLAC compatibility</h3></div><Music2 size={18} /></div>
+                <label className="settings-checkbox"><input type="checkbox" checked={appSettings.flacCompatibility} onChange={event => setFlacCompatibility(event.target.checked)} /><span>Prepare FLAC tracks for accurate seeking</span></label>
+                <p className="settings-note">Work around macOS FLAC seek timing errors. Downloads and prepares the current and next track in memory before playback, preserving audio quality. Adds initial buffering and memory use; no permanent files are saved.</p>
+                <p className="settings-note">For tracks that are too large or can’t be prepared, Prism uses original streaming and shows a notice.</p>
+                {preparingFlac ? <p className="settings-note" role="status">Preparing lossless audio…</p> : flacFallback ? <p className="settings-note" role="status">Compatibility unavailable for this track; using original streaming.</p> : null}
+              </section> : null}
               playbackDiagnosticsPanel={<PlaybackDiagnosticsPanel state={diagnosticState} onStart={startPlaybackDiagnostics} onStop={stopPlaybackDiagnostics} onClear={clearPlaybackDiagnostics} getReport={() => playbackDiagnostics.exportJSON()} />}
               discordPresenceStatus={discordPresenceStatus}
               updateAppSettings={updateAppSettings}
@@ -5328,7 +5378,7 @@ export function App() {
                     {footerTrack.artist ?? "Unknown artist"}
                   </button>
                 </p>
-                {localBuffering && isPlaying ? <p className="player-loading" role="status">Loading…</p> : footerTrack.album ? (
+                {preparingFlac && isPlaying ? <p className="player-loading" role="status">Preparing lossless audio…</p> : flacFallback ? <p className="player-loading" role="status">Compatibility unavailable · original stream</p> : localBuffering && isPlaying ? <p className="player-loading" role="status">Loading…</p> : footerTrack.album ? (
                   <p className="track-album">
                     <button
                       className="track-link"
@@ -5449,7 +5499,7 @@ export function App() {
               step="any"
               value={Math.min(seekPosition, Math.max(seekDuration, 1))}
               onChange={(event) => seekTo(Number(event.target.value))}
-              disabled={isRadioPlaying || !currentTrack}
+              disabled={isRadioPlaying || !currentTrack || preparingFlac}
               aria-label="Seek"
             />
             <span>{isRadioPlaying ? (radioHasTimedTrack ? formatDuration(radioDuration) : "") : formatDuration(Math.ceil(seekDuration))}</span>
@@ -6389,6 +6439,7 @@ function SettingsView({
   appSettings,
   discordPresenceStatus,
   playbackDiagnosticsPanel,
+  playbackCompatibilityPanel,
   updateAppSettings,
   onSelectRadioStation,
   onRemoveRadioStation,
@@ -6409,6 +6460,7 @@ function SettingsView({
   appSettings: AppSettings;
   discordPresenceStatus: DiscordPresenceStatus;
   playbackDiagnosticsPanel: ReactNode;
+  playbackCompatibilityPanel: ReactNode;
   updateAppSettings: (settings: AppSettings) => void;
   onSelectRadioStation: (stationUrl: string) => void;
   onRemoveRadioStation: (stationUrl: string) => void;
@@ -6684,6 +6736,7 @@ function SettingsView({
         </p>
       </section>
 
+      {playbackCompatibilityPanel}
       {playbackDiagnosticsPanel}
 
       <section className="settings-panel settings-section" id="settings-panel-appearance" aria-labelledby="settings-appearance-title">

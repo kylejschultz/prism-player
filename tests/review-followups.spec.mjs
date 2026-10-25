@@ -1,6 +1,7 @@
 /* global window, localStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
+import process from 'node:process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const artist = { id: 'artist', name: 'Brigham Young University Vocal Point', albumCount: 2 };
@@ -842,4 +843,175 @@ test('diagnostics observe a real media seek and handoff without changing playbac
   expect(report.events.some(event => event.event === 'ended' && event.ended)).toBe(true);
   expect(report.events.some(event => event.event === 'selection-changed' && event.active && event.queuePosition === 2)).toBe(true);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
+});
+
+
+async function flacFixture(page, { holdFirst, failPreparation = false, samplePath } = {}) {
+  await page.addInitScript(() => {
+    Object.defineProperty(window.navigator, 'platform', { configurable: true, get: () => 'MacIntel' });
+    const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+    window.flacCreated = []; window.flacRevoked = [];
+    URL.createObjectURL = blob => { const url = create(blob); window.flacCreated.push(url); return url; };
+    URL.revokeObjectURL = url => { window.flacRevoked.push(url); revoke(url); };
+  });
+  const { errors } = await fixture(page, { realMedia: true, mediaType: 'audio/flac' });
+  const bytes = readFileSync(samplePath || new URL('./fixtures/clock-24bit.flac', import.meta.url));
+  const preparationRequests = [];
+  await page.route('**/rest/stream*', async route => {
+    const request = route.request(), id = new URL(request.url()).searchParams.get('id');
+    if (request.resourceType() === 'fetch') {
+      preparationRequests.push(id);
+      if (id === 'a-0') await holdFirst;
+      if (failPreparation) return route.fulfill({ status: 503, body: 'Fixture preparation unavailable' });
+    }
+    const range = /bytes=(\d+)-(\d*)/.exec(request.headers().range || '');
+    const start = range ? Number(range[1]) : 0;
+    const end = range?.[2] ? Math.min(Number(range[2]), bytes.length - 1) : bytes.length - 1;
+    try {
+      await route.fulfill({ status: range ? 206 : 200, contentType: 'audio/flac', headers: { 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', ...(range ? { 'Content-Range': `bytes ${start}-${end}/${bytes.length}` } : {}) }, body: bytes.subarray(start, end + 1) });
+    } catch { /* A cancelled preparation can finish after its request was aborted. */ }
+  });
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  const toggle = page.getByRole('checkbox', { name: 'Prepare FLAC tracks for accurate seeking', exact: true });
+  await expect(toggle).not.toBeChecked();
+  expect(preparationRequests).toEqual([]);
+  return { toggle, errors, preparationRequests };
+}
+
+test('FLAC compatibility is opt-in and real prepared audio seeks, advances and releases old data', async ({ page }) => {
+  const { toggle, errors, preparationRequests } = await flacFixture(page);
+  await toggle.check();
+  await expect.poll(() => page.locator('audio').nth(1).evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  await expect(page.getByRole('slider', { name: 'Seek', exact: true })).toHaveAttribute('max', '6');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('5');
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2', { timeout: 5000 });
+  await expect.poll(() => page.evaluate(() => window.flacRevoked.length)).toBeGreaterThan(0);
+  expect(preparationRequests.slice(0, 2)).toEqual(['a-0', 'a-1']);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  expect(errors).toEqual([]);
+  await page.getByRole('region', { name: 'FLAC compatibility', exact: true }).screenshot({ path: test.info().outputPath('flac-compatibility.png') });
+});
+
+test('Pause during FLAC preparation stays paused and disabling the mode resumes the same position', async ({ page }) => {
+  let finish; const holdFirst = new Promise(resolve => { finish = resolve; });
+  const { toggle, errors } = await flacFixture(page, { holdFirst });
+  await toggle.check(); await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(page.locator('.player-loading')).toHaveText('Preparing lossless audio…');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click(); finish();
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  expect(await page.locator('audio').first().evaluate(a => a.paused)).toBe(true);
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('1');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.currentTime)).toBeGreaterThan(1.2);
+  await toggle.uncheck();
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.src.startsWith('blob:') && !a.paused && a.currentTime >= 1)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.flacRevoked.length)).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
+});
+
+test('Next during FLAC preparation ignores the cancelled result and fallback stays playable', async ({ page }) => {
+  let finish; const holdFirst = new Promise(resolve => { finish = resolve; });
+  const { toggle, errors, preparationRequests } = await flacFixture(page, { holdFirst });
+  await toggle.check(); await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(() => preparationRequests.includes('a-0')).toBe(true);
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.src.startsWith('blob:') && !a.paused)).toBe(true);
+  finish(); await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await page.locator('audio').first().dispatchEvent('error');
+  await expect(page.locator('.player-loading')).toHaveText('Compatibility unavailable · original stream');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.src.startsWith('blob:') && !a.paused)).toBe(true);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
+});
+
+test('failed FLAC preparation reports original-stream fallback without an automatic retry loop', async ({ page }) => {
+  const { toggle, errors, preparationRequests } = await flacFixture(page, { failPreparation: true });
+  await toggle.check();
+  await expect(page.locator('.player-loading')).toHaveText('Compatibility unavailable · original stream');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.readyState >= 3)).toBe(true);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.paused && !a.src.startsWith('blob:'))).toBe(true);
+  expect(preparationRequests.filter(id => id === 'a-0')).toHaveLength(1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
+});
+
+test('prepared FLAC rejection preserves play intent through the original-stream retry', async ({ page }) => {
+  const { toggle, errors } = await flacFixture(page);
+  await toggle.check(); await expect.poll(() => page.locator('audio').first().evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  await page.evaluate(() => {
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      if (this.src.startsWith('blob:') && !window.failedPreparedPlay) {
+        window.failedPreparedPlay = true;
+        Object.defineProperty(this, 'error', { configurable: true, value: { code: 3 } });
+        this.dispatchEvent(new Event('error'));
+        return Promise.reject(new Error('Fixture prepared decode failure'));
+      }
+      return play.call(this);
+    };
+  });
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.src.startsWith('blob:') && !a.paused)).toBe(true);
+  await expect(page.locator('.player-loading')).toHaveText('Compatibility unavailable · original stream');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
+});
+
+test('prepared FLAC repeat one restarts and crossfade retains outgoing audio until Pause', async ({ page }) => {
+  const { toggle, errors } = await flacFixture(page);
+  await toggle.check(); await expect.poll(() => page.locator('audio').nth(1).evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await seek.fill('0');
+  await page.getByRole('button', { name: 'Enable repeat all', exact: true }).click();
+  await page.getByRole('button', { name: 'Enable repeat one', exact: true }).click();
+  await page.getByRole('button', { name: 'Play', exact: true }).click(); await seek.fill('6');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.paused && a.currentTime < 2)).toBe(true);
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 1');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn repeat off', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Enable crossfade', exact: true }).check(); await seek.fill('0');
+  const outgoing = await page.locator('audio').first().evaluate(a => a.src);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2', { timeout: 4000 });
+  expect(await page.evaluate(url => window.flacRevoked.includes(url), outgoing)).toBe(false);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.locator('audio').evaluateAll(audios => audios.slice(0, 2).every(a => a.paused))).toBe(true);
+  await expect.poll(() => page.evaluate(url => window.flacRevoked.includes(url), outgoing)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('Radio keeps prepared local audio cached and paused, and the FLAC setting is stored', async ({ page }) => {
+  const { toggle, errors } = await flacFixture(page);
+  await toggle.check(); await expect.poll(() => page.locator('audio').first().evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('prism-player.settings')).flacCompatibility)).toBe(true);
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('1');
+  const source = await page.locator('audio').first().evaluate(a => a.src);
+  await page.locator('.sidebar').getByRole('button', { name: 'Radio', exact: true }).click();
+  await page.getByRole('button', { name: 'Tune In', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
+  expect(await page.locator('audio').first().evaluate(a => ({ src: a.src, paused: a.paused, time: a.currentTime }))).toEqual({ src: source, paused: true, time: 0 });
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click(); expect(errors).toEqual([]);
+});
+
+test.describe('optional supplied FLAC in WebKit', () => {
+  test('prepared original FLAC reaches its real endpoint and hands off without the captured overrun', async ({ playwright }) => {
+    test.skip(!process.env.PRISM_FLAC_SAMPLE, 'Provide a local sample path to run this private-media check.');
+    test.setTimeout(45000);
+    const browser = await playwright.webkit.launch({ channel: undefined });
+    try {
+    const context = await browser.newContext({ baseURL: 'http://127.0.0.1:1421' });
+    const page = await context.newPage();
+    const { toggle, errors } = await flacFixture(page, { samplePath: process.env.PRISM_FLAC_SAMPLE });
+    await toggle.check();
+    await expect.poll(() => page.locator('audio').nth(1).evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3), { timeout: 15000 }).toBe(true);
+    await expect(page.getByRole('slider', { name: 'Seek', exact: true })).toHaveAttribute('max', '112.92');
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    const started = Date.now();
+    await page.getByRole('slider', { name: 'Seek', exact: true }).fill('105.759');
+    await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2', { timeout: 11000 });
+    expect(Date.now() - started).toBeLessThan(11000);
+    expect(await page.locator('audio').nth(1).evaluate(a => a.duration)).toBe(112.92);
+    await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
+    } finally { await browser.close(); }
+  });
 });

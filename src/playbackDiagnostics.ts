@@ -16,6 +16,7 @@ export type PlaybackDiagnosticContext = {
   sourceFormat?: string;
   requestedStreamMode: "raw" | "server-selected" | "none";
   serverFallback: boolean;
+  preparedPcm?: boolean;
   playIntent: boolean;
   transitioning: boolean;
   displayedPosition: number;
@@ -59,7 +60,7 @@ export class PlaybackDiagnostics {
       queuePosition: finite(context.queuePosition), catalogDuration: finite(context.catalogDuration),
       sourceFormat: format && FORMATS.includes(format) ? format : "unknown",
       requestedStreamMode: context.requestedStreamMode === "raw" ? "raw" : context.requestedStreamMode === "server-selected" ? "server-selected" : "none",
-      serverFallback: Boolean(context.serverFallback), playIntent: Boolean(context.playIntent), transitioning: Boolean(context.transitioning),
+      serverFallback: Boolean(context.serverFallback), preparedPcm: Boolean(context.preparedPcm), playIntent: Boolean(context.playIntent), transitioning: Boolean(context.transitioning),
       displayedPosition: finite(context.displayedPosition), displayedDuration: finite(context.displayedDuration),
       repeatMode: context.repeatMode === "one" ? "one" : context.repeatMode === "all" ? "all" : "off",
       crossfadeSeconds: finite(context.crossfadeSeconds),
