@@ -765,3 +765,81 @@ test('seeking to the end while paused stays paused with crossfade enabled', asyn
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   expect(await page.locator('audio').evaluateAll(elements => elements.slice(0, 2).every(a => a.paused))).toBe(true);
 });
+
+
+test('playback diagnostics are opt-in, survive navigation and copy only safe media state', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  await fixture(page, { mediaType: 'audio/flac' });
+  await page.evaluate(() => { Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedDiagnostics = text; } } }); });
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Playback diagnostics', exact: true });
+  await expect(panel).toContainText('Recording is off.');
+  await expect(panel.getByRole('button', { name: 'Copy diagnostics', exact: true })).toBeDisabled();
+  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
+  await expect(panel).toContainText('Recording playback timing…');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('112');
+  await page.locator('audio').first().dispatchEvent('error');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => new URL(a.src).searchParams.has('format'))).toBe(false);
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(panel).toContainText('Recording playback timing…');
+  await panel.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await panel.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
+  await expect(panel).toContainText('Diagnostics copied.');
+  const text = await page.evaluate(() => window.copiedDiagnostics);
+  const report = JSON.parse(text);
+  expect(report.state).toBe('stopped');
+  expect(report.events.some(event => event.event === 'seek-request' && event.requestedTime === 112)).toBe(true);
+  expect(report.events.some(event => event.event === 'capture-start' && event.requestedStreamMode === 'raw' && event.sourceFormat === 'audio/flac')).toBe(true);
+  expect(report.events.some(event => event.event === 'server-fallback')).toBe(true);
+  expect(report.events.some(event => event.event === 'source-selected' && event.requestedStreamMode === 'server-selected' && event.serverFallback)).toBe(true);
+  for (const secret of ['music.fixture.invalid', 'fixture-only', 'Brigham', 'Album a', 'artistId', 'serverUrl']) expect(text).not.toContain(secret);
+  await panel.scrollIntoViewIfNeeded();
+  await panel.screenshot({ path: test.info().outputPath('playback-diagnostics.png') });
+  const frozen = await panel.getByLabel('Playback diagnostic report').inputValue();
+  await panel.getByRole('button', { name: 'Clear diagnostics', exact: true }).click();
+  await expect(panel).toContainText('Recording is off.');
+  await expect(panel.getByLabel('Playback diagnostic report')).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
+  await page.reload();
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(panel).toContainText('Recording is off.');
+  expect(frozen.length).toBeGreaterThan(100);
+});
+
+test('diagnostic capture stops at five minutes and clipboard failure leaves a selectable report', async ({ page }) => {
+  await fixture(page);
+  await page.clock.install();
+  await page.evaluate(() => { Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Clipboard blocked'); } } }); });
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Playback diagnostics', exact: true });
+  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
+  await page.clock.fastForward(5 * 60 * 1000 + 1);
+  await expect(panel).toContainText('Recording stopped.');
+  await panel.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
+  await expect(panel).toContainText('Clipboard unavailable.');
+  const report = panel.getByLabel('Playback diagnostic report');
+  expect(JSON.parse(await report.inputValue()).state).toBe('stopped');
+  await report.focus();
+  expect(await report.evaluate(el => el.selectionEnd - el.selectionStart)).toBe((await report.inputValue()).length);
+});
+
+
+test('diagnostics observe a real media seek and handoff without changing playback', async ({ page }) => {
+  await fixture(page, { realMedia: true, mediaType: 'audio/wav' });
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Playback diagnostics', exact: true });
+  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('5');
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2', { timeout: 5000 });
+  await panel.getByRole('button', { name: 'Stop recording', exact: true }).click();
+  await panel.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
+  const report = JSON.parse(await panel.getByLabel('Playback diagnostic report').inputValue());
+  expect(report.events.some(event => event.event === 'seek-request' && event.requestedTime === 5)).toBe(true);
+  expect(report.events.some(event => event.event === 'seeked' && event.currentTime >= 5 && event.duration === 6)).toBe(true);
+  expect(report.events.some(event => event.event === 'ended' && event.ended)).toBe(true);
+  expect(report.events.some(event => event.event === 'selection-changed' && event.active && event.queuePosition === 2)).toBe(true);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+});

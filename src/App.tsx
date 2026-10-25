@@ -6,6 +6,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys, type LyricLine } from "./data/navidrome";
 import { canPlayOriginal } from "./localPlayback";
+import { PlaybackDiagnostics, PLAYBACK_DIAGNOSTIC_EVENTS, type PlaybackDiagnosticEvent, type PlaybackDiagnosticState } from "./playbackDiagnostics";
 import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
@@ -2094,6 +2095,10 @@ export function App() {
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
+  const [playbackDiagnostics] = useState(() => new PlaybackDiagnostics());
+  const [diagnosticState, setDiagnosticState] = useState<PlaybackDiagnosticState>("idle");
+  const diagnosticRecorderRef = useRef<(event: PlaybackDiagnosticEvent, audio: HTMLAudioElement, requestedTime?: number) => void>(() => undefined);
+  const diagnosticSourcesRef = useRef(Array.from({ length: 2 }, () => ({ queuePosition: 0, catalogDuration: 0, sourceFormat: undefined as string | undefined, serverFallback: false })));
   const [localBuffering, setLocalBuffering] = useState(false);
   const [position, setPosition] = useState(() => initialPlaybackSnapshot?.position ?? 0);
   const [mediaSupport] = useState(() => document.createElement("audio"));
@@ -2402,6 +2407,66 @@ export function App() {
   const nextTrack = currentIndex < queue.length - 1 ? queue[currentIndex + 1] : null;
   const nextStreamUrl = config && nextTrack ? navidromeClient.buildStreamUrl(config, nextTrack.id,
     !serverStreamFallbacks.has(nextTrack.id) && canPlayOriginal(nextTrack, type => mediaSupport.canPlayType(type))) : null;
+
+  // Read only numeric/boolean media state; no URLs or track objects enter the recorder.
+  diagnosticRecorderRef.current = (event, audio, requestedTime) => {
+    const active = audio === getActiveAudio();
+    const slot = audio === primaryAudioRef.current ? 0 : 1;
+    const track = active ? currentTrack : nextTrack;
+    if (event === "source-selected") diagnosticSourcesRef.current[slot] = {
+      queuePosition: (active ? currentIndex : currentIndex + 1) + 1,
+      catalogDuration: track?.duration ?? 0, sourceFormat: track?.contentType || track?.suffix,
+      serverFallback: Boolean(track && serverStreamFallbacks.has(track.id)),
+    };
+    const source = audio.getAttribute("src");
+    const mode = !source ? "none" : new URL(source, window.location.href).searchParams.get("format") === "raw" ? "raw" : "server-selected";
+    playbackDiagnostics.record(event, audio, {
+      ...diagnosticSourcesRef.current[slot], slot, active,
+      localPlayback: activePlaybackSource === "local", requestedStreamMode: mode,
+      playIntent: isPlaying, transitioning: transitionInProgressRef.current,
+      displayedPosition: position, displayedDuration: playerDuration, repeatMode,
+      crossfadeSeconds: appSettings.trackTransitionSeconds,
+    }, requestedTime);
+  };
+
+  useEffect(() => {
+    if (diagnosticState !== "recording") return;
+    const audios = [primaryAudioRef.current, secondaryAudioRef.current].filter((audio): audio is HTMLAudioElement => Boolean(audio));
+    const cleanups = audios.flatMap(audio => PLAYBACK_DIAGNOSTIC_EVENTS.map(event => {
+      const listener = () => diagnosticRecorderRef.current(event, audio);
+      audio.addEventListener(event, listener);
+      return () => audio.removeEventListener(event, listener);
+    }));
+    audios.forEach(audio => diagnosticRecorderRef.current("capture-start", audio));
+    const sample = window.setInterval(() => {
+      const audio = getActiveAudio();
+      if (audio) diagnosticRecorderRef.current("sample", audio);
+    }, 1000);
+    const timeout = window.setTimeout(() => stopPlaybackDiagnostics(), 5 * 60 * 1000);
+    return () => { cleanups.forEach(cleanup => cleanup()); window.clearInterval(sample); window.clearTimeout(timeout); };
+  }, [diagnosticState]);
+
+  useEffect(() => {
+    const audio = getActiveAudio();
+    if (audio) diagnosticRecorderRef.current("selection-changed", audio);
+  }, [activeAudioSlot, currentIndex, currentStreamUrl]);
+
+  function startPlaybackDiagnostics() {
+    playbackDiagnostics.start();
+    setDiagnosticState("recording");
+  }
+
+  function stopPlaybackDiagnostics() {
+    const audio = getActiveAudio();
+    if (audio) diagnosticRecorderRef.current("capture-stop", audio);
+    playbackDiagnostics.stop();
+    setDiagnosticState("stopped");
+  }
+
+  function clearPlaybackDiagnostics() {
+    playbackDiagnostics.clear();
+    setDiagnosticState("idle");
+  }
 
   function getActiveAudio() {
     return activeAudioSlotRef.current === 0 ? primaryAudioRef.current : secondaryAudioRef.current;
@@ -3733,6 +3798,7 @@ export function App() {
   function seekTo(nextPosition: number) {
     const audio = getActiveAudio();
     if (!audio || !Number.isFinite(nextPosition)) return;
+    diagnosticRecorderRef.current("seek-request", audio, nextPosition);
     audio.currentTime = Math.max(0, Math.min(nextPosition, playerDuration || currentTrack?.duration || nextPosition));
     // The engine may clamp or reject a seek. Publish its confirmed position on seeked.
     if (!audio.seeking) setPosition(audio.currentTime);
@@ -3771,6 +3837,7 @@ export function App() {
     const active = audio === getActiveAudio();
     const track = active ? currentTrack : nextTrack;
     if (!track || !audio.src || audio.src !== (active ? currentStreamUrl : nextStreamUrl) || new URL(audio.src).searchParams.get("format") !== "raw") return false;
+    diagnosticRecorderRef.current("server-fallback", audio);
     if (active) pendingResumePositionRef.current = audio.currentTime || pendingResumePositionRef.current;
     setServerStreamFallbacks(previous => previous.has(track.id) ? previous : new Set([...previous, track.id]));
     return true;
@@ -4529,6 +4596,7 @@ export function App() {
 
     if (audio.src === currentStreamUrl) return;
     audio.src = currentStreamUrl;
+    diagnosticRecorderRef.current("source-selected", audio);
     setLocalBuffering(isPlaying);
     audio.load();
     setPosition(pendingResumePositionRef.current || 0);
@@ -4562,6 +4630,7 @@ export function App() {
 
     if (standbyAudio.src !== nextStreamUrl) {
       standbyAudio.src = nextStreamUrl;
+      diagnosticRecorderRef.current("source-selected", standbyAudio);
       standbyAudio.load();
     }
   }, [activeAudioSlot, nextStreamUrl, transitionCompleteNonce, volume]);
@@ -5080,6 +5149,7 @@ export function App() {
               status={status}
               statusMessage={statusMessage}
               appSettings={appSettings}
+              playbackDiagnosticsPanel={<PlaybackDiagnosticsPanel state={diagnosticState} onStart={startPlaybackDiagnostics} onStop={stopPlaybackDiagnostics} onClear={clearPlaybackDiagnostics} getReport={() => playbackDiagnostics.exportJSON()} />}
               discordPresenceStatus={discordPresenceStatus}
               updateAppSettings={updateAppSettings}
               onSelectRadioStation={selectRadioStation}
@@ -6278,6 +6348,39 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
   );
 }
 
+function PlaybackDiagnosticsPanel({ state, onStart, onStop, onClear, getReport }: {
+  state: PlaybackDiagnosticState;
+  onStart: () => void;
+  onStop: () => void;
+  onClear: () => void;
+  getReport: () => string;
+}) {
+  const [report, setReport] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
+  async function copyReport() {
+    const text = getReport();
+    setReport(text);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus("Diagnostics copied. You can paste them into a file or this conversation.");
+    } catch {
+      setCopyStatus("Clipboard unavailable. Select and copy the report below.");
+    }
+  }
+  return <section className="settings-panel settings-section" aria-labelledby="settings-diagnostics-title">
+    <div className="panel-heading"><div><p className="eyebrow">Troubleshooting</p><h3 id="settings-diagnostics-title">Playback diagnostics</h3></div><Info size={18} /></div>
+    <p className="settings-note">Record library playback timing for up to five minutes. Recording stays in memory until you close Prism or clear it. Nothing is uploaded. Track names, account details and stream URLs are excluded.</p>
+    <p className="settings-note" role="status">{state === "recording" ? "Recording playback timing…" : state === "stopped" ? "Recording stopped. Copy the diagnostics to share them." : "Recording is off."}</p>
+    <div className="diagnostic-actions">
+      {state === "recording" ? <button className="secondary-button compact-button" type="button" onClick={onStop}>Stop recording</button> : <button className="secondary-button compact-button" type="button" onClick={() => { setReport(""); setCopyStatus(""); onStart(); }}>{state === "stopped" ? "Start new recording" : "Start recording"}</button>}
+      <button className="secondary-button compact-button" type="button" disabled={state === "idle"} onClick={() => void copyReport()}><Copy size={15} />Copy diagnostics</button>
+      <button className="secondary-button compact-button" type="button" disabled={state === "idle"} onClick={() => { onClear(); setReport(""); setCopyStatus(""); }}>Clear diagnostics</button>
+    </div>
+    {copyStatus ? <p className="settings-note" role="status">{copyStatus}</p> : null}
+    {report ? <label>Playback diagnostic report<textarea className="diagnostic-report" readOnly value={report} rows={8} onFocus={event => event.currentTarget.select()} /></label> : null}
+  </section>;
+}
+
 function SettingsView({
   form,
   setForm,
@@ -6285,6 +6388,7 @@ function SettingsView({
   statusMessage,
   appSettings,
   discordPresenceStatus,
+  playbackDiagnosticsPanel,
   updateAppSettings,
   onSelectRadioStation,
   onRemoveRadioStation,
@@ -6304,6 +6408,7 @@ function SettingsView({
   statusMessage: string;
   appSettings: AppSettings;
   discordPresenceStatus: DiscordPresenceStatus;
+  playbackDiagnosticsPanel: ReactNode;
   updateAppSettings: (settings: AppSettings) => void;
   onSelectRadioStation: (stationUrl: string) => void;
   onRemoveRadioStation: (stationUrl: string) => void;
@@ -6578,6 +6683,8 @@ function SettingsView({
           Gapless playback is on by default. Prism preloads the next queued local track; crossfade is optional. Radio is unchanged.
         </p>
       </section>
+
+      {playbackDiagnosticsPanel}
 
       <section className="settings-panel settings-section" id="settings-panel-appearance" aria-labelledby="settings-appearance-title">
         <div className="panel-heading">
