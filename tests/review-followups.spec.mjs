@@ -4,19 +4,23 @@ import { Buffer } from 'node:buffer';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const artist = { id: 'artist', name: 'Brigham Young University Vocal Point', albumCount: 2 };
-const albums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, artist: artist.name, artistId: artist.id, songCount: 4, year: 2026 - index }));
-const songs = albums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
-const cachedSong = { ...songs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
+const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, artist: artist.name, artistId: artist.id, songCount: 4, year: 2026 - index }));
+const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
+const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false } = {}) {
+  const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
+  const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
+  const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
+  const playlists = largeLibrary ? Array.from({ length: 40 }, (_, i) => ({ id: `playlist-${i}`, name: `Playlist ${i}`, songCount: 4 })) : [];
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ artist, albums, songs, cachedSong, realMedia }) => {
+  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists }) => {
     localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
     localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
     localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
-    const library = { albums: [albums[0]], recentAlbums: [], recentlyPlayedAlbums: [], frequentAlbums: [], artists: [artist], playlists: [], favorites: { artists: [], albums: [], songs: [] } };
+    const library = { albums: [albums[0]], recentAlbums: [], recentlyPlayedAlbums: [], frequentAlbums: [], artists, playlists, favorites: { artists: [], albums: [], songs: [] } };
     window.fixtureReady = new Promise(resolve => {
       const request = indexedDB.open('prism-player-library-catalog', 1);
       request.onupgradeneeded = () => request.result.createObjectStore('catalogs', { keyPath: 'key' });
@@ -29,7 +33,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     if (!realMedia) {
     const playing = new WeakSet();
     Object.defineProperty(HTMLMediaElement.prototype, 'paused', { get() { return !playing.has(this); } });
-    HTMLMediaElement.prototype.play = function () { playing.add(this); this.dispatchEvent(new Event('play')); return Promise.resolve(); };
+    HTMLMediaElement.prototype.play = function () { playing.add(this); this.dispatchEvent(new Event('play')); this.dispatchEvent(new Event('playing')); return Promise.resolve(); };
     HTMLMediaElement.prototype.pause = function () { playing.delete(this); this.dispatchEvent(new Event('pause')); };
     HTMLMediaElement.prototype.load = function () {};
     }
@@ -41,7 +45,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -84,11 +88,11 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     }
     const payload = {
       getAlbumList2: { albumList2: { album: empty ? [] : albums } },
-      getArtists: { artists: { index: [{ name: 'B', artist: [artist] }] } },
+      getArtists: { artists: { index: [{ name: 'A', artist: artists }] } },
       getArtist: { artist: { ...artist, album: empty ? [] : albums } },
       getArtistInfo2: { artistInfo2: {} },
       getTopSongs: { topSongs: { song: [] } },
-      getStarred2: { starred2: {} }, getPlaylists: { playlists: { playlist: [] } },
+      getStarred2: { starred2: {} }, getPlaylists: { playlists: { playlist: playlists } },
       getScanStatus: { scanStatus: { scanning: false, lastScan: 2 } },
       getLyrics: { lyrics: { value: legacyLyrics } },
     }[endpoint] || {};
@@ -590,4 +594,172 @@ test('Facet is the default with a vector brand, readable state colors and retain
   await expect(page.locator('.app-shell')).toHaveClass(/theme-ocean/);
   await facet.click();
   await expect(page.locator('.app-shell')).toHaveClass(/theme-prism/);
+});
+
+
+test('Library expands accessibly, remembers collapse, and Recently added replaces Discover', async ({ page }) => {
+  const { errors } = await fixture(page);
+  const nav = page.getByRole('complementary', { name: 'Primary navigation' });
+  const library = nav.getByRole('button', { name: 'Library', exact: true });
+  await expect(library).toHaveAttribute('aria-expanded', 'true');
+  await library.focus(); await page.keyboard.press('Space');
+  await expect(library).toHaveAttribute('aria-expanded', 'false');
+  await expect(nav.getByRole('button', { name: 'Artists', exact: true })).toBeHidden();
+  await page.reload();
+  await expect(library).toHaveAttribute('aria-expanded', 'false');
+  await library.click();
+  await nav.getByRole('button', { name: 'Albums', exact: true }).click();
+  await expect(page.locator('.library-view-switcher').getByRole('button', { name: 'Albums', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('button', { name: 'Discover', exact: true })).toHaveCount(0);
+  await nav.getByRole('button', { name: 'Recently added', exact: true }).click();
+  await expect(page.locator('.browser-heading h3')).toHaveText('Recently added');
+  expect(errors).toEqual([]);
+});
+
+test('Library title and section controls stay below Search while all four sections scroll', async ({ page }) => {
+  await fixture(page, { largeLibrary: true });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  for (const width of [1440, 980]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const section of ['Artists', 'Albums', 'Songs', 'Playlists']) {
+      await page.locator('.sidebar').getByRole('button', { name: section, exact: true }).click();
+      const panel = page.locator(`.view-${section.toLowerCase()}`), header = panel.locator('.library-browser-heading');
+      await expect(header).toBeVisible();
+      await expect.poll(() => panel.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+      const before = await header.boundingBox(), search = await page.locator('.topbar').boundingBox();
+      expect(before.y - search.y - search.height).toBeLessThan(20);
+      await panel.evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
+      await expect.poll(async () => Math.abs((await header.boundingBox()).y - before.y)).toBeLessThan(2);
+      await expect(header.getByRole('button', { name: section, exact: true })).toBeInViewport();
+      if (section === 'Artists' || section === 'Albums') {
+        await panel.getByRole('button', { name: 'Jump to Z', exact: true }).click();
+        const target = panel.locator('[id$="-Z"]');
+        await expect(target).toBeInViewport();
+        await expect.poll(async () => (await target.boundingBox()).y - (await header.boundingBox()).y - (await header.boundingBox()).height).toBeLessThan(24);
+        await expect.poll(async () => (await target.boundingBox()).y - (await header.boundingBox()).y - (await header.boundingBox()).height).toBeGreaterThanOrEqual(0);
+      }
+      if (section === 'Playlists') await page.screenshot({ path: test.info().outputPath(`library-sticky-${width}.png`) });
+    }
+  }
+});
+
+test('Home recently played See all opens albums instead of individual listening history', async ({ page }) => {
+  await fixture(page);
+  const shelf = page.locator('.home-album-shelf').filter({ has: page.getByRole('heading', { name: 'Keep It Going', exact: true }) });
+  await expect(shelf).toBeVisible();
+  await shelf.getByRole('button', { name: 'See all', exact: false }).click();
+  await expect(page.locator('.browser-heading h3')).toHaveText('Recently played albums');
+  await expect(page.locator('.album-list-row')).toHaveCount(2);
+  await expect(page.locator('.history-track-row')).toHaveCount(0);
+});
+
+for (const ready of [true, false]) {
+  test(`ended track selects the next song during a pending play (preloaded: ${ready})`, async ({ page }) => {
+    await installTimingFixture(page, 120);
+    const { errors } = await fixture(page);
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.evaluate(ready => {
+      const originalPlay = HTMLMediaElement.prototype.play;
+      let pending;
+      HTMLMediaElement.prototype.play = function () {
+        if (new URL(this.src).searchParams.get('id') === 'a-1') {
+          pending ||= new Promise(resolve => { window.finishNextPlay = () => originalPlay.call(this).then(resolve); });
+          return pending;
+        }
+        return originalPlay.call(this);
+      };
+      const [current, standby] = document.querySelectorAll('audio');
+      Object.defineProperty(standby, 'readyState', { configurable: true, value: ready ? 4 : 0 });
+      Object.defineProperty(current, 'ended', { configurable: true, value: true });
+      current.currentTime = 120; current.dispatchEvent(new Event('ended'));
+    }, ready);
+    await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+    await expect(page.locator('.player-loading')).toHaveText('Loading…');
+    await page.evaluate(() => window.finishNextPlay());
+    await expect(page.locator('.player-loading')).toHaveCount(0);
+    await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+    expect(errors).toEqual([]);
+  });
+}
+
+test('a completed endpoint seek advances immediately and repeat one restarts the same song', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  await fixture(page);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('audio').first().evaluate(audio => { audio.currentTime = 120; audio.dispatchEvent(new Event('seeked')); });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await page.getByRole('button', { name: 'Enable repeat all', exact: true }).click();
+  await page.getByRole('button', { name: 'Enable repeat one', exact: true }).click();
+  await page.locator('audio').evaluateAll(elements => {
+    const audio = elements.slice(0, 2).find(a => !a.paused);
+    audio.currentTime = 120; audio.dispatchEvent(new Event('seeked'));
+  });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await expect(page.getByRole('slider', { name: 'Seek', exact: true })).toHaveValue('0');
+});
+
+
+test('an old pending handoff cannot replace or pause a later Next selection', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  await fixture(page);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.evaluate(() => {
+    const originalPlay = HTMLMediaElement.prototype.play;
+    let pending;
+    HTMLMediaElement.prototype.play = function () {
+      if (new URL(this.src).searchParams.get('id') === 'a-1') {
+        pending ||= new Promise(resolve => { window.finishOldHandoff = () => originalPlay.call(this).then(resolve); });
+        return pending;
+      }
+      return originalPlay.call(this);
+    };
+    const [current, standby] = document.querySelectorAll('audio');
+    Object.defineProperty(standby, 'readyState', { configurable: true, value: 4 });
+    current.currentTime = 120; current.dispatchEvent(new Event('seeked'));
+  });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 3');
+  await page.evaluate(() => window.finishOldHandoff());
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 3');
+  expect(await page.locator('audio').nth(1).evaluate(a => a.paused)).toBe(false);
+});
+
+test('crossfade retains its volume ramp and Pause cancels both audio slots', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  await fixture(page);
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Enable crossfade', exact: true }).check();
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  const configuredVolume = await page.locator('audio').first().evaluate(a => a.volume);
+  await page.locator('audio').evaluateAll(elements => {
+    Object.defineProperty(elements[1], 'readyState', { configurable: true, value: 4 });
+    elements[0].currentTime = 116; elements[0].dispatchEvent(new Event('timeupdate'));
+  });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await expect.poll(() => page.locator('audio').nth(1).evaluate(a => a.volume)).toBeGreaterThan(0);
+  const volumes = await page.locator('audio').evaluateAll(elements => elements.slice(0, 2).map(a => a.volume));
+  expect(volumes[0]).toBeLessThan(configuredVolume);
+  expect(volumes[1]).toBeLessThan(configuredVolume);
+  expect(volumes[0] + volumes[1]).toBeCloseTo(configuredVolume, 4);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  expect(await page.locator('audio').evaluateAll(elements => elements.slice(0, 2).every(a => a.paused))).toBe(true);
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+});
+
+
+test('seeking to the end while paused stays paused with crossfade enabled', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  await fixture(page);
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Enable crossfade', exact: true }).check();
+  await page.locator('audio').evaluateAll(elements => {
+    Object.defineProperty(elements[1], 'readyState', { configurable: true, value: 4 });
+    elements[0].currentTime = 120; elements[0].dispatchEvent(new Event('seeked'));
+    Object.defineProperty(elements[0], 'ended', { configurable: true, value: true });
+    elements[0].dispatchEvent(new Event('ended'));
+  });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 1');
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  expect(await page.locator('audio').evaluateAll(elements => elements.slice(0, 2).every(a => a.paused))).toBe(true);
 });

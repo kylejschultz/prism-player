@@ -4,7 +4,7 @@ Prism displays the active audio element's media clock. Radio retains its separat
 
 For a library file whose MIME type (or suffix-derived MIME) this engine advertises as playable, Prism requests OpenSubsonic `stream` with `format=raw`. Original files retain duration metadata and HTTP byte-range seeking instead of implicitly inheriting a server transcode. Unknown/unsupported formats use the existing server-selected stream. A failed original stream falls back once per track for the session, preserving playback intent and resume position; a second failure surfaces the existing error. This may use more bandwidth for lossless tracks than server transcoding.
 
-A seek writes `currentTime` but waits for the engine's confirmed position on `seeked`/`timeupdate`. While seeking, time updates do not publish an unconfirmed position or trigger a crossfade. Finite positive media duration remains authoritative, with catalog duration used until media metadata is available. Fractional seeking remains continuous. We do not rescale the media clock to catalog length or advance a track merely because a displayed estimate reaches its endpoint.
+A seek writes `currentTime` but waits for the engine's confirmed position on `seeked`/`timeupdate`. While seeking, time updates do not publish an unconfirmed position or trigger a crossfade. Finite positive media duration remains authoritative, with catalog duration used until media metadata is available. Fractional seeking remains continuous. We do not rescale the media clock to catalog length or advance on an ordinary time update merely because a displayed estimate reaches its endpoint. An explicit completed seek to the exact media endpoint while playback is active skips the remaining tail; a paused seek stays paused. Repeat one restarts that track.
 
 ## Evidence and limits
 
@@ -23,3 +23,9 @@ Maintained tests exercise engine-confirmed positions, wrong/clamped seek results
 4. Check next/previous, pause/resume, optional crossfade and relaunch resume. Do not change the radio timing path to fix a library-only issue.
 
 Kyle's real Navidrome playback remains the acceptance gate. Automated success does not establish that the reported mismatch is resolved on his library.
+
+## End-of-track destination and loading
+
+The next selection and audio slot become current before awaiting `play()`. Network/decoder startup displays the incoming song with **Loading…**, cleared by its `playing` event. A cold next track follows the same visible selection path. Normal completion uses no crossfade after the outgoing audio has ended; an existing crossfade still ramps both volumes. Repeat one never preloads its way past the repeated track. Active-slot refs and transition generations prevent a late prior play promise from overriding or pausing a later selection.
+
+Regression fixtures hold the next play promise, exercise preloaded/cold handoffs, seek-to-end/repeat one, and cancel with Next/Pause during a handoff/crossfade. Real browser audio still exercises seek/clock/next-track behavior. Native audio buffering and actual server latency remain manual acceptance checks.

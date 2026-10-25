@@ -7904,3 +7904,69 @@ button.similar-chip:focus-visible {
   background: #59a99e;
   content: "";
 }
+
+
+/* Library is a persistent disclosure; its destinations remain ordinary buttons. */
+.nav-library {
+  margin-top: 8px;
+}
+
+.nav-library > span {
+  flex: 1;
+}
+
+.nav-library > svg:last-child {
+  transform: rotate(-90deg);
+}
+
+.nav-library > svg.expanded {
+  transform: none;
+}
+
+.sidebar-collection-nav[hidden] {
+  display: none;
+}
+
+.sidebar-collection-nav button {
+  padding-left: 28px;
+}
+
+/* Pin one compact header inside the existing library scroller. */
+.workspace-viewport.library-workspace {
+  padding-top: 4px;
+}
+
+.library-collection-panel {
+  padding-top: 0;
+}
+
+.library-browser-heading {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 58px;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  padding: 8px 4px 10px;
+  background: #171c1f;
+}
+
+.library-browser-heading .heading-actions {
+  flex: 1 1 auto;
+  width: auto;
+  justify-content: flex-end;
+}
+
+.library-browser-heading h3 {
+  font-size: 32px;
+}
+
+.player-loading {
+  margin: 0;
+  color: var(--prism-accent);
+  font-size: 11px;
+  line-height: 1.3;
+}

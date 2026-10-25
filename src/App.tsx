@@ -34,6 +34,7 @@ import {
   Check,
   Code2,
   Copy,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -79,7 +80,7 @@ import {
 import packageJson from "../package.json";
 import instrumentSansLicense from "./assets/fonts/OFL.txt?raw";
 
-type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "favorites";
+type LibraryViewMode = "overview" | "albums" | "artists" | "songs" | "playlists" | "recentlyAdded" | "recentlyPlayed" | "recentlyPlayedAlbums" | "favorites";
 type View = LibraryViewMode | "nowPlaying" | "radio" | "search" | "settings";
 type ColorTheme = "prism" | "ocean" | "orchid" | "evergreen";
 type ConnectionStatus = "idle" | "checking" | "connected" | "error";
@@ -520,6 +521,7 @@ const PLAYBACK_STATE_KEY = "prism-player.playbackState";
 const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
 const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
+const LIBRARY_EXPANDED_KEY = "prism-player.libraryExpanded";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
 const SIDEBAR_MIN_WIDTH = 208;
@@ -608,7 +610,8 @@ function scrollElementWithin(container: HTMLElement, target: HTMLElement, block:
   const containerRect = container.getBoundingClientRect();
   const targetRect = target.getBoundingClientRect();
   const targetTop = targetRect.top - containerRect.top + container.scrollTop;
-  const offset = block === "center" ? (container.clientHeight - targetRect.height) / 2 : 52;
+  const pinnedHeader = container.querySelector<HTMLElement>(".library-browser-heading");
+  const offset = block === "center" ? (container.clientHeight - targetRect.height) / 2 : Math.max(52, (pinnedHeader?.offsetHeight ?? 0) + 12);
 
   container.scrollTo({
     top: Math.max(0, targetTop - offset),
@@ -639,7 +642,8 @@ function getViewLabel(view: View) {
     artists: "Artists",
     songs: "Songs",
     playlists: "Playlists",
-    recentlyAdded: "Recently Added",
+    recentlyAdded: "Recently added",
+    recentlyPlayedAlbums: "Recently played albums",
     recentlyPlayed: "Recently Played",
     favorites: "Favorites",
     nowPlaying: "Now Playing",
@@ -2065,6 +2069,7 @@ export function App() {
   const [searchResults, setSearchResults] = useState<SearchResults>(emptySearchResults);
   const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "error">("idle");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [libraryExpanded, setLibraryExpanded] = useState(() => loadStoredBoolean(LIBRARY_EXPANDED_KEY, true));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadStoredBoolean(SIDEBAR_COLLAPSED_KEY, false));
   const [sidebarWidth, setSidebarWidth] = useState(() => loadStoredNumber(
     SIDEBAR_WIDTH_KEY,
@@ -2089,6 +2094,7 @@ export function App() {
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
+  const [localBuffering, setLocalBuffering] = useState(false);
   const [position, setPosition] = useState(() => initialPlaybackSnapshot?.position ?? 0);
   const [mediaSupport] = useState(() => document.createElement("audio"));
   const [serverStreamFallbacks, setServerStreamFallbacks] = useState<Set<string>>(() => new Set());
@@ -2139,6 +2145,8 @@ export function App() {
   const primaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const secondaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const [activeAudioSlot, setActiveAudioSlot] = useState<0 | 1>(0);
+  const activeAudioSlotRef = useRef(activeAudioSlot);
+  activeAudioSlotRef.current = activeAudioSlot;
   const transitionInProgressRef = useRef(false);
   const transitionGenerationRef = useRef(0);
   const transitionTimerRef = useRef<number | null>(null);
@@ -2396,11 +2404,11 @@ export function App() {
     !serverStreamFallbacks.has(nextTrack.id) && canPlayOriginal(nextTrack, type => mediaSupport.canPlayType(type))) : null;
 
   function getActiveAudio() {
-    return activeAudioSlot === 0 ? primaryAudioRef.current : secondaryAudioRef.current;
+    return activeAudioSlotRef.current === 0 ? primaryAudioRef.current : secondaryAudioRef.current;
   }
 
   function getStandbyAudio() {
-    return activeAudioSlot === 0 ? secondaryAudioRef.current : primaryAudioRef.current;
+    return activeAudioSlotRef.current === 0 ? secondaryAudioRef.current : primaryAudioRef.current;
   }
 
   function clearTrackTransitionTimer() {
@@ -2743,6 +2751,11 @@ export function App() {
     setRightPanelTab(tab);
     localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
     setRightPanelState(true);
+  }
+
+  function setLibraryExpandedState(expanded: boolean) {
+    setLibraryExpanded(expanded);
+    localStorage.setItem(LIBRARY_EXPANDED_KEY, String(expanded));
   }
 
   function setSidebarCollapsedState(collapsed: boolean) {
@@ -3437,6 +3450,7 @@ export function App() {
   }
 
   function selectView(view: View) {
+    if (["artists", "albums", "songs", "playlists"].includes(view)) setLibraryExpandedState(true);
     const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null };
     if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
 
@@ -3590,7 +3604,7 @@ export function App() {
     setIsPlaying(true);
   }
 
-  async function advanceWithPreloadedTrack() {
+  async function advanceWithPreloadedTrack(fromTrackEnd = false) {
     const activeAudio = getActiveAudio();
     const standbyAudio = getStandbyAudio();
     const nextIndex = currentIndex + 1;
@@ -3604,31 +3618,45 @@ export function App() {
     scrobbledPlayRef.current = "";
     locallyRecordedPlayRef.current = "";
 
-    const fadeSeconds = appSettings.trackTransitionSeconds;
+    const fadeSeconds = fromTrackEnd ? 0 : appSettings.trackTransitionSeconds;
     const fadeDurationMs = fadeSeconds * 1000;
     standbyAudio.muted = isMuted;
     standbyAudio.volume = fadeDurationMs > 0 ? 0 : volumeRef.current;
 
-    try {
-      await standbyAudio.play();
-    } catch {
-      transitionInProgressRef.current = false;
-      return false;
-    }
-
-    if (transitionGenerationRef.current !== transitionGeneration) {
-      standbyAudio.pause();
-      standbyAudio.currentTime = 0;
-      standbyAudio.volume = volumeRef.current;
-      return false;
-    }
-
+    // Select the destination before play() resolves: a decoder/network wait
+    // belongs to the new song, rather than leaving the finished song displayed.
     setActiveAudioSlot((slot) => slot === 0 ? 1 : 0);
     setCurrentIndex(nextIndex);
     setPosition(0);
+    setLocalBuffering(true);
     setPlayerDuration(Number.isFinite(standbyAudio.duration) && standbyAudio.duration > 0 ? standbyAudio.duration : nextTrack.duration || 0);
     setPlayerError("");
+    if (fromTrackEnd) activeAudio.pause();
 
+    try {
+      await standbyAudio.play();
+    } catch {
+      if (transitionGenerationRef.current === transitionGeneration) {
+        transitionInProgressRef.current = false;
+        activeAudio.pause();
+        activeAudio.volume = volumeRef.current;
+        setTransitionCompleteNonce((nonce) => nonce + 1);
+      }
+      // The active player's effect owns errors and the bounded stream fallback.
+      // Selection has already advanced, so the old ended handler must not skip again.
+      return true;
+    }
+
+    if (transitionGenerationRef.current !== transitionGeneration) {
+      if (standbyAudio !== getActiveAudio()) {
+        standbyAudio.pause();
+        standbyAudio.currentTime = 0;
+        standbyAudio.volume = volumeRef.current;
+      }
+      return true;
+    }
+
+    setLocalBuffering(false);
     if (!fadeDurationMs) {
       activeAudio.pause();
       activeAudio.currentTime = 0;
@@ -3664,8 +3692,10 @@ export function App() {
     const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : currentTrack?.duration || 0;
     if (Number.isFinite(audio.duration) && audio.duration > 0) setPlayerDuration(audio.duration);
     if (
-      !transitionInProgressRef.current
+      isPlaying
+      && !transitionInProgressRef.current
       && appSettings.trackTransitionSeconds > 0
+      && repeatMode !== "one"
       && nextTrack
       && !audio.seeking
       && duration > 0
@@ -3676,9 +3706,9 @@ export function App() {
   }
 
   function handleLocalTrackEnded(audio: HTMLAudioElement) {
-    if (audio !== getActiveAudio()) return;
-    if (nextTrack && !transitionInProgressRef.current) {
-      void advanceWithPreloadedTrack().then((advanced) => {
+    if (!isPlaying || audio !== getActiveAudio() || transitionInProgressRef.current) return;
+    if (nextTrack && repeatMode !== "one") {
+      void advanceWithPreloadedTrack(true).then((advanced) => {
         if (!advanced) playNext(true);
       });
       return;
@@ -3706,6 +3736,16 @@ export function App() {
     // The engine may clamp or reject a seek. Publish its confirmed position on seeked.
     if (!audio.seeking) setPosition(audio.currentTime);
     setDiscordPresenceSyncNonce((nonce) => nonce + 1);
+  }
+
+  function handleLocalSeeked(audio: HTMLAudioElement) {
+    if (audio !== getActiveAudio()) return;
+    // An explicit seek to the exact endpoint means skip the remaining audio tail.
+    if (isPlaying && !audio.seeking && Number.isFinite(audio.duration) && audio.duration > 0 && audio.currentTime >= audio.duration) {
+      handleLocalTrackEnded(audio);
+      return;
+    }
+    handleLocalTimeUpdate(audio);
   }
 
   function handleLoadedMetadata(audio: HTMLAudioElement) {
@@ -4488,6 +4528,7 @@ export function App() {
 
     if (audio.src === currentStreamUrl) return;
     audio.src = currentStreamUrl;
+    setLocalBuffering(isPlaying);
     audio.load();
     setPosition(pendingResumePositionRef.current || 0);
     setPlayerDuration(currentTrack?.duration ?? 0);
@@ -4915,7 +4956,7 @@ export function App() {
             onClick={() => selectView("recentlyAdded")}
           >
             <Disc3 size={18} />
-            Discover
+            Recently added
           </button>
           <button
             className={`nav-item ${activeView === "radio" ? "active" : ""}`}
@@ -4925,11 +4966,18 @@ export function App() {
             <RadioTower size={18} />
             Radio
           </button>
-          <div className="nav-section-label nav-collection-label">
-            <Library size={15} />
-            Collection
-          </div>
-          <div className="sidebar-collection-nav" aria-label="Collection">
+          <button
+            className={`nav-item nav-library ${!libraryExpanded && ["artists", "albums", "songs", "playlists"].includes(activeView) ? "active" : ""}`}
+            type="button"
+            aria-expanded={libraryExpanded}
+            aria-controls="library-navigation"
+            onClick={() => setLibraryExpandedState(!libraryExpanded)}
+          >
+            <Library size={18} />
+            <span>Library</span>
+            <ChevronDown className={libraryExpanded ? "expanded" : ""} size={15} aria-hidden="true" />
+          </button>
+          <div className="sidebar-collection-nav" id="library-navigation" aria-label="Library sections" hidden={!libraryExpanded}>
             <button className={activeView === "artists" ? "active" : ""} type="button" aria-current={activeView === "artists" ? "page" : undefined} onClick={() => selectView("artists")}><UserRound size={16} />Artists</button>
             <button className={activeView === "albums" ? "active" : ""} type="button" aria-current={activeView === "albums" ? "page" : undefined} onClick={() => selectView("albums")}><Disc3 size={16} />Albums</button>
             <button className={activeView === "songs" ? "active" : ""} type="button" aria-current={activeView === "songs" ? "page" : undefined} onClick={() => selectView("songs")}><Music2 size={16} />Songs</button>
@@ -5013,7 +5061,7 @@ export function App() {
           />
         </header>
 
-        <div className={`workspace-viewport ${activeView === "settings" ? "settings-workspace" : ""} ${activeView === "radio" ? "radio-workspace" : ""}`}>
+        <div className={`workspace-viewport ${["artists", "albums", "songs", "playlists"].includes(activeView) && !detailSelection ? "library-workspace" : ""} ${activeView === "settings" ? "settings-workspace" : ""} ${activeView === "radio" ? "radio-workspace" : ""}`}>
           {!appSettings.analyticsEnabled && !appSettings.analyticsPromptDismissed ? (
             <AnalyticsBanner onEnable={() => setAnalyticsConsent(true)} onDismiss={dismissAnalyticsPrompt} />
           ) : null}
@@ -5126,10 +5174,12 @@ export function App() {
           preload="auto"
           onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
-          onSeeked={(event) => handleLocalTimeUpdate(event.currentTarget)}
+          onSeeked={(event) => handleLocalSeeked(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
           onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
-          onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
+          onWaiting={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(true); }}
+          onPlaying={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(false); }}
+          onEnded={(event) => { if (event.currentTarget.ended) handleLocalTrackEnded(event.currentTarget); }}
           onError={(event) => handleLocalStreamError(event.currentTarget)}
         />
         <audio
@@ -5137,10 +5187,12 @@ export function App() {
           preload="auto"
           onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
-          onSeeked={(event) => handleLocalTimeUpdate(event.currentTarget)}
+          onSeeked={(event) => handleLocalSeeked(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
           onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
-          onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
+          onWaiting={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(true); }}
+          onPlaying={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(false); }}
+          onEnded={(event) => { if (event.currentTarget.ended) handleLocalTrackEnded(event.currentTarget); }}
           onError={(event) => handleLocalStreamError(event.currentTarget)}
         />
         <audio
@@ -5205,7 +5257,7 @@ export function App() {
                     {footerTrack.artist ?? "Unknown artist"}
                   </button>
                 </p>
-                {footerTrack.album ? (
+                {localBuffering && isPlaying ? <p className="player-loading" role="status">Loading…</p> : footerTrack.album ? (
                   <p className="track-album">
                     <button
                       className="track-link"
@@ -7261,6 +7313,7 @@ function LibraryView({
   onRetryLibrary: () => void;
 }) {
   const [isHomeScrollbarVisible, setIsHomeScrollbarVisible] = useState(false);
+  const browserPanelRef = useRef<HTMLElement | null>(null);
   const homeScrollbarTimeoutRef = useRef<number | null>(null);
   const libraryViews: Array<{ id: LibraryViewMode; label: string }> = [
     { id: "artists", label: "Artists" },
@@ -7269,6 +7322,10 @@ function LibraryView({
     { id: "playlists", label: "Playlists" },
   ];
   const isCollectionView = libraryViews.some(({ id }) => id === activeView);
+
+  useEffect(() => {
+    if (browserPanelRef.current) browserPanelRef.current.scrollTop = 0;
+  }, [activeView, detailSelection]);
 
   useEffect(() => () => {
     if (homeScrollbarTimeoutRef.current !== null) window.clearTimeout(homeScrollbarTimeoutRef.current);
@@ -7312,7 +7369,8 @@ function LibraryView({
 
   return (
     <section
-      className={`browser-panel view-${activeView} ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
+      ref={browserPanelRef}
+      className={`browser-panel ${isCollectionView && !detailSelection ? "library-collection-panel" : ""} view-${activeView} ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
       onScroll={activeView === "overview" || activeView === "nowPlaying" ? revealHomeScrollbar : undefined}
     >
       {detailStatus !== "idle" || detailSelection ? (
@@ -7349,7 +7407,7 @@ function LibraryView({
           {activeView !== "overview" && activeView !== "nowPlaying" ? (
             <div className={`panel-heading browser-heading ${isCollectionView ? "library-browser-heading" : ""}`}>
               <div className="browser-heading-copy">
-                <p className="eyebrow">{isCollectionView ? "Your collection" : "Browse"}</p>
+                {!isCollectionView ? <p className="eyebrow">Browse</p> : null}
                 <h3>{isCollectionView ? "Library" : panelTitle}</h3>
               </div>
               <div className="heading-actions">
@@ -7508,6 +7566,20 @@ function LibraryView({
               emptyText="No recently added albums yet."
             />
           ) : null}
+          {activeView === "recentlyPlayedAlbums" ? (
+            <AlbumBrowser
+              viewMode="list"
+              config={config}
+              albums={recentlyPlayedAlbums}
+              favoriteIds={favoriteIds}
+              favoriteBusyKey={favoriteBusyKey}
+              onToggleFavorite={onToggleFavorite}
+              onOpenAlbum={onOpenAlbum}
+              onPlayAlbum={onPlayAlbum}
+              withAlphabetRail={false}
+              emptyText="No recently played albums yet."
+            />
+          ) : null}
           {activeView === "recentlyPlayed" ? (
             <ListeningHistoryView history={listeningHistory} onPlaySong={onPlaySong} onClear={onClearListeningHistory} onOpenAlbum={onOpenAlbum} onOpenArtist={onOpenArtist} />
           ) : null}
@@ -7638,7 +7710,7 @@ function OverviewHome({
     ? mostPlayedAlbums
     : [...new Map([...favorites.albums, ...visibleRecentAlbums].map((album) => [album.id, album])).values()].slice(0, 5);
   const rotationTitle = mostPlayedAlbums.length ? "On Repeat" : favorites.albums.length ? "Top Picks" : "In Rotation";
-  const rotationView: View = mostPlayedAlbums.length || !favorites.albums.length ? "recentlyPlayed" : "favorites";
+  const rotationView: View = mostPlayedAlbums.length || !favorites.albums.length ? "recentlyPlayedAlbums" : "favorites";
   const resumeAlbum = resumeTrack?.albumId
     ? { id: resumeTrack.albumId, name: resumeTrack.album ?? "Unknown album", artist: resumeTrack.artist ?? "", artistId: resumeTrack.artistId, coverArt: resumeTrack.coverArt }
     : null;
@@ -7713,7 +7785,7 @@ function HomeListeningShelf({ history, fallbackAlbums, viewMode, config, onPlayS
 
   return (
     <section className={`home-album-shelf home-album-shelf-${viewMode}`}>
-      <div className="home-shelf-heading"><div><h4>Keep It Going</h4><p>Pick up where you left off across albums and playlists.</p></div><button className="home-shelf-action" type="button" onClick={() => onSelectView("recentlyPlayed")}>See all <ChevronRight size={15} /></button></div>
+      <div className="home-shelf-heading"><div><h4>Keep It Going</h4><p>Pick up where you left off across albums and playlists.</p></div><button className="home-shelf-action" type="button" onClick={() => onSelectView("recentlyPlayedAlbums")}>See all <ChevronRight size={15} /></button></div>
       <div className="home-album-carousel"><div className={`home-album-row home-album-row-${viewMode}`} tabIndex={0} aria-label="Recently played">
         {(items.length ? items.map(({ source, song }) => {
           const playlist = source !== "library" && source.type === "playlist" ? source : null;
