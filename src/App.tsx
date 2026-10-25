@@ -8,7 +8,6 @@ import { navidromeClient, navidromeKeys, type LyricLine } from "./data/navidrome
 import { canPlayOriginal } from "./localPlayback";
 import { isFlac } from "./flacCompatibility";
 import { useFlacCompatibility } from "./useFlacCompatibility";
-import { PlaybackDiagnostics, PLAYBACK_DIAGNOSTIC_EVENTS, type PlaybackDiagnosticEvent, type PlaybackDiagnosticState } from "./playbackDiagnostics";
 import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
@@ -2100,10 +2099,6 @@ export function App() {
   const [lastPlayedTrack, setLastPlayedTrack] = useState<Song | null>(
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
-  const [playbackDiagnostics] = useState(() => new PlaybackDiagnostics());
-  const [diagnosticState, setDiagnosticState] = useState<PlaybackDiagnosticState>("idle");
-  const diagnosticRecorderRef = useRef<(event: PlaybackDiagnosticEvent, audio: HTMLAudioElement, requestedTime?: number) => void>(() => undefined);
-  const diagnosticSourcesRef = useRef(Array.from({ length: 2 }, () => ({ queuePosition: 0, catalogDuration: 0, sourceFormat: undefined as string | undefined, serverFallback: false })));
   const [localBuffering, setLocalBuffering] = useState(false);
   const [position, setPosition] = useState(() => initialPlaybackSnapshot?.position ?? 0);
   const [mediaSupport] = useState(() => document.createElement("audio"));
@@ -2421,73 +2416,12 @@ export function App() {
   const currentStreamUrl = currentFlacSource ? compatibility.current.url : currentRawStreamUrl;
   const nextStreamUrl = nextFlacSource ? compatibility.next.url : nextRawStreamUrl;
   const preparingFlac = Boolean(currentFlacSource && compatibility.current.preparing);
-  const flacFallback = Boolean(currentFlacSource && compatibility.current.fallback);
 
   function setFlacCompatibility(enabled: boolean) {
     const audio = getActiveAudio();
     stopTrackTransition();
     pendingResumePositionRef.current = audio?.currentTime || position;
     updateAppSettings({ ...appSettings, flacCompatibility: enabled });
-  }
-
-  // Read only numeric/boolean media state; no URLs or track objects enter the recorder.
-  diagnosticRecorderRef.current = (event, audio, requestedTime) => {
-    const active = audio === getActiveAudio();
-    const slot = audio === primaryAudioRef.current ? 0 : 1;
-    const track = active ? currentTrack : nextTrack;
-    if (event === "source-selected") diagnosticSourcesRef.current[slot] = {
-      queuePosition: (active ? currentIndex : currentIndex + 1) + 1,
-      catalogDuration: track?.duration ?? 0, sourceFormat: track?.contentType || track?.suffix,
-      serverFallback: Boolean(track && serverStreamFallbacks.has(track.id)),
-    };
-    const source = audio.getAttribute("src");
-    const mode = !source ? "none" : source.startsWith("blob:") || new URL(source, window.location.href).searchParams.get("format") === "raw" ? "raw" : "server-selected";
-    playbackDiagnostics.record(event, audio, {
-      ...diagnosticSourcesRef.current[slot], slot, active,
-      localPlayback: activePlaybackSource === "local", requestedStreamMode: mode, preparedPcm: Boolean(source?.startsWith("blob:")),
-      playIntent: isPlaying, transitioning: transitionInProgressRef.current,
-      displayedPosition: position, displayedDuration: playerDuration, repeatMode,
-      crossfadeSeconds: appSettings.trackTransitionSeconds,
-    }, requestedTime);
-  };
-
-  useEffect(() => {
-    if (diagnosticState !== "recording") return;
-    const audios = [primaryAudioRef.current, secondaryAudioRef.current].filter((audio): audio is HTMLAudioElement => Boolean(audio));
-    const cleanups = audios.flatMap(audio => PLAYBACK_DIAGNOSTIC_EVENTS.map(event => {
-      const listener = () => diagnosticRecorderRef.current(event, audio);
-      audio.addEventListener(event, listener);
-      return () => audio.removeEventListener(event, listener);
-    }));
-    audios.forEach(audio => diagnosticRecorderRef.current("capture-start", audio));
-    const sample = window.setInterval(() => {
-      const audio = getActiveAudio();
-      if (audio) diagnosticRecorderRef.current("sample", audio);
-    }, 1000);
-    const timeout = window.setTimeout(() => stopPlaybackDiagnostics(), 5 * 60 * 1000);
-    return () => { cleanups.forEach(cleanup => cleanup()); window.clearInterval(sample); window.clearTimeout(timeout); };
-  }, [diagnosticState]);
-
-  useEffect(() => {
-    const audio = getActiveAudio();
-    if (audio) diagnosticRecorderRef.current("selection-changed", audio);
-  }, [activeAudioSlot, currentIndex, currentStreamUrl]);
-
-  function startPlaybackDiagnostics() {
-    playbackDiagnostics.start();
-    setDiagnosticState("recording");
-  }
-
-  function stopPlaybackDiagnostics() {
-    const audio = getActiveAudio();
-    if (audio) diagnosticRecorderRef.current("capture-stop", audio);
-    playbackDiagnostics.stop();
-    setDiagnosticState("stopped");
-  }
-
-  function clearPlaybackDiagnostics() {
-    playbackDiagnostics.clear();
-    setDiagnosticState("idle");
   }
 
   function getActiveAudio() {
@@ -3773,6 +3707,13 @@ export function App() {
     return true;
   }
 
+  function guardLocalPlayback(audio: HTMLAudioElement) {
+    if (audio === getActiveAudio() || transitionInProgressRef.current) return true;
+    // A delayed engine/play request must not make the preloaded player audible.
+    audio.pause();
+    return false;
+  }
+
   function handleLocalTimeUpdate(audio: HTMLAudioElement) {
     if (audio !== getActiveAudio()) return;
     if (!audio.seeking) setPosition(audio.currentTime);
@@ -3820,7 +3761,6 @@ export function App() {
   function seekTo(nextPosition: number) {
     const audio = getActiveAudio();
     if (!audio || !Number.isFinite(nextPosition)) return;
-    diagnosticRecorderRef.current("seek-request", audio, nextPosition);
     if (preparingFlac) {
       pendingResumePositionRef.current = Math.max(0, Math.min(nextPosition, currentTrack?.duration || nextPosition));
       setPosition(pendingResumePositionRef.current);
@@ -3869,7 +3809,6 @@ export function App() {
       return true;
     }
     if (!track || !audio.src || audio.src !== (active ? currentStreamUrl : nextStreamUrl) || new URL(audio.src).searchParams.get("format") !== "raw") return false;
-    diagnosticRecorderRef.current("server-fallback", audio);
     if (active) pendingResumePositionRef.current = audio.currentTime || pendingResumePositionRef.current;
     setServerStreamFallbacks(previous => previous.has(track.id) ? previous : new Set([...previous, track.id]));
     return true;
@@ -4636,7 +4575,6 @@ export function App() {
 
     if (audio.src === currentStreamUrl) return;
     audio.src = currentStreamUrl;
-    diagnosticRecorderRef.current("source-selected", audio);
     setLocalBuffering(isPlaying);
     audio.load();
     setPosition(pendingResumePositionRef.current || 0);
@@ -4670,7 +4608,6 @@ export function App() {
 
     if (standbyAudio.src !== nextStreamUrl) {
       standbyAudio.src = nextStreamUrl;
-      diagnosticRecorderRef.current("source-selected", standbyAudio);
       standbyAudio.load();
     }
   }, [activeAudioSlot, nextStreamUrl, transitionCompleteNonce, volume]);
@@ -5196,10 +5133,9 @@ export function App() {
                 <div className="panel-heading"><div><p className="eyebrow">Playback</p><h3 id="flac-compatibility-title">FLAC compatibility</h3></div><Music2 size={18} /></div>
                 <label className="settings-checkbox"><input type="checkbox" checked={appSettings.flacCompatibility} onChange={event => setFlacCompatibility(event.target.checked)} /><span>Prepare FLAC tracks for accurate seeking</span></label>
                 <p className="settings-note">Work around macOS FLAC seek timing errors. Downloads and prepares the current and next track in memory before playback, preserving audio quality. Adds initial buffering and memory use; no permanent files are saved.</p>
-                <p className="settings-note">For tracks that are too large or can’t be prepared, Prism uses original streaming and shows a notice.</p>
-                {preparingFlac ? <p className="settings-note" role="status">Preparing lossless audio…</p> : flacFallback ? <p className="settings-note" role="status">Compatibility unavailable for this track; using original streaming.</p> : null}
+                <p className="settings-note">For tracks that are too large or can’t be prepared, Prism uses original streaming; the FLAC seek limitation may still apply.</p>
+                {preparingFlac ? <p className="settings-note" role="status">Preparing lossless audio…</p> : null}
               </section> : null}
-              playbackDiagnosticsPanel={<PlaybackDiagnosticsPanel state={diagnosticState} onStart={startPlaybackDiagnostics} onStop={stopPlaybackDiagnostics} onClear={clearPlaybackDiagnostics} getReport={() => playbackDiagnostics.exportJSON()} />}
               discordPresenceStatus={discordPresenceStatus}
               updateAppSettings={updateAppSettings}
               onSelectRadioStation={selectRadioStation}
@@ -5293,26 +5229,26 @@ export function App() {
         <audio
           ref={primaryAudioRef}
           preload="auto"
-          onPlay={() => setActivePlaybackSource("local")}
+          onPlay={(event) => { if (guardLocalPlayback(event.currentTarget)) setActivePlaybackSource("local"); }}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
           onSeeked={(event) => handleLocalSeeked(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
           onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
           onWaiting={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(true); }}
-          onPlaying={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(false); }}
+          onPlaying={(event) => { if (guardLocalPlayback(event.currentTarget) && event.currentTarget === getActiveAudio()) setLocalBuffering(false); }}
           onEnded={(event) => { if (event.currentTarget.ended) handleLocalTrackEnded(event.currentTarget); }}
           onError={(event) => handleLocalStreamError(event.currentTarget)}
         />
         <audio
           ref={secondaryAudioRef}
           preload="auto"
-          onPlay={() => setActivePlaybackSource("local")}
+          onPlay={(event) => { if (guardLocalPlayback(event.currentTarget)) setActivePlaybackSource("local"); }}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
           onSeeked={(event) => handleLocalSeeked(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
           onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
           onWaiting={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(true); }}
-          onPlaying={(event) => { if (event.currentTarget === getActiveAudio()) setLocalBuffering(false); }}
+          onPlaying={(event) => { if (guardLocalPlayback(event.currentTarget) && event.currentTarget === getActiveAudio()) setLocalBuffering(false); }}
           onEnded={(event) => { if (event.currentTarget.ended) handleLocalTrackEnded(event.currentTarget); }}
           onError={(event) => handleLocalStreamError(event.currentTarget)}
         />
@@ -5378,7 +5314,7 @@ export function App() {
                     {footerTrack.artist ?? "Unknown artist"}
                   </button>
                 </p>
-                {preparingFlac && isPlaying ? <p className="player-loading" role="status">Preparing lossless audio…</p> : flacFallback ? <p className="player-loading" role="status">Compatibility unavailable · original stream</p> : localBuffering && isPlaying ? <p className="player-loading" role="status">Loading…</p> : footerTrack.album ? (
+                {preparingFlac && isPlaying ? <p className="player-loading" role="status">Preparing lossless audio…</p> : localBuffering && isPlaying ? <p className="player-loading" role="status">Loading…</p> : footerTrack.album ? (
                   <p className="track-album">
                     <button
                       className="track-link"
@@ -5894,9 +5830,30 @@ function RightSidebar({
   }, [lyricsLines, position]);
 
   useEffect(() => {
-    if (tab !== "lyrics" || activeLyricIndex < 0 || !lyricsScrollRef.current || !activeLyricRef.current) return;
-    scrollElementWithin(lyricsScrollRef.current, activeLyricRef.current, "center");
-  }, [activeLyricIndex, tab]);
+    const container = lyricsScrollRef.current;
+    if (tab !== "lyrics" || lyricsStatus === "loading" || !container || !lyricsLines.some(line => line.startMs != null)) return;
+    const first = container.querySelector("p");
+    const last = container.querySelector("p:last-child");
+    if (!first || !last) return;
+
+    // Scrollable edge space lets the first and final verses reach the same center.
+    // Measure the actual rows because the active font and wrapping change their heights.
+    const centerActiveLyric = () => {
+      const gap = parseFloat(getComputedStyle(container).rowGap) || 0;
+      container.style.setProperty("--lyrics-start-space", `${Math.max(0, (container.clientHeight - first.getBoundingClientRect().height) / 2 - gap)}px`);
+      container.style.setProperty("--lyrics-end-space", `${Math.max(0, (container.clientHeight - last.getBoundingClientRect().height) / 2 - gap)}px`);
+      if (activeLyricRef.current) scrollElementWithin(container, activeLyricRef.current, "center");
+    };
+    centerActiveLyric();
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      // Defer layout writes out of observer delivery (especially for one-line WebKit panes).
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(centerActiveLyric);
+    });
+    [container, ...container.querySelectorAll("p")].forEach(element => observer.observe(element));
+    return () => { observer.disconnect(); window.cancelAnimationFrame(frame); };
+  }, [activeLyricIndex, lyricsLines, lyricsStatus, tab]);
 
   useEffect(() => {
     latestDragOverQueueIndexRef.current = dragOverQueueIndex;
@@ -6093,7 +6050,7 @@ function RightSidebar({
               {lyricsStatus === "loading" ? (
                 <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />
               ) : lyricsLines.length ? (
-                <div className="lyrics-lines" ref={lyricsScrollRef}>
+                <div className={`lyrics-lines${lyricsLines.some(line => line.startMs != null) ? " synced" : ""}`} ref={lyricsScrollRef}>
                   {lyricsLines.map((line, index) => (
                     <p
                       className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
@@ -6398,39 +6355,6 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
   );
 }
 
-function PlaybackDiagnosticsPanel({ state, onStart, onStop, onClear, getReport }: {
-  state: PlaybackDiagnosticState;
-  onStart: () => void;
-  onStop: () => void;
-  onClear: () => void;
-  getReport: () => string;
-}) {
-  const [report, setReport] = useState("");
-  const [copyStatus, setCopyStatus] = useState("");
-  async function copyReport() {
-    const text = getReport();
-    setReport(text);
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyStatus("Diagnostics copied. You can paste them into a file or this conversation.");
-    } catch {
-      setCopyStatus("Clipboard unavailable. Select and copy the report below.");
-    }
-  }
-  return <section className="settings-panel settings-section" aria-labelledby="settings-diagnostics-title">
-    <div className="panel-heading"><div><p className="eyebrow">Troubleshooting</p><h3 id="settings-diagnostics-title">Playback diagnostics</h3></div><Info size={18} /></div>
-    <p className="settings-note">Record library playback timing for up to five minutes. Recording stays in memory until you close Prism or clear it. Nothing is uploaded. Track names, account details and stream URLs are excluded.</p>
-    <p className="settings-note" role="status">{state === "recording" ? "Recording playback timing…" : state === "stopped" ? "Recording stopped. Copy the diagnostics to share them." : "Recording is off."}</p>
-    <div className="diagnostic-actions">
-      {state === "recording" ? <button className="secondary-button compact-button" type="button" onClick={onStop}>Stop recording</button> : <button className="secondary-button compact-button" type="button" onClick={() => { setReport(""); setCopyStatus(""); onStart(); }}>{state === "stopped" ? "Start new recording" : "Start recording"}</button>}
-      <button className="secondary-button compact-button" type="button" disabled={state === "idle"} onClick={() => void copyReport()}><Copy size={15} />Copy diagnostics</button>
-      <button className="secondary-button compact-button" type="button" disabled={state === "idle"} onClick={() => { onClear(); setReport(""); setCopyStatus(""); }}>Clear diagnostics</button>
-    </div>
-    {copyStatus ? <p className="settings-note" role="status">{copyStatus}</p> : null}
-    {report ? <label>Playback diagnostic report<textarea className="diagnostic-report" readOnly value={report} rows={8} onFocus={event => event.currentTarget.select()} /></label> : null}
-  </section>;
-}
-
 function SettingsView({
   form,
   setForm,
@@ -6438,7 +6362,6 @@ function SettingsView({
   statusMessage,
   appSettings,
   discordPresenceStatus,
-  playbackDiagnosticsPanel,
   playbackCompatibilityPanel,
   updateAppSettings,
   onSelectRadioStation,
@@ -6459,7 +6382,6 @@ function SettingsView({
   statusMessage: string;
   appSettings: AppSettings;
   discordPresenceStatus: DiscordPresenceStatus;
-  playbackDiagnosticsPanel: ReactNode;
   playbackCompatibilityPanel: ReactNode;
   updateAppSettings: (settings: AppSettings) => void;
   onSelectRadioStation: (stationUrl: string) => void;
@@ -6737,7 +6659,6 @@ function SettingsView({
       </section>
 
       {playbackCompatibilityPanel}
-      {playbackDiagnosticsPanel}
 
       <section className="settings-panel settings-section" id="settings-panel-appearance" aria-labelledby="settings-appearance-title">
         <div className="panel-heading">

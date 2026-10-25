@@ -2069,6 +2069,23 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 2px 8px 16px 0;
 }
 
+.lyrics-lines.synced {
+  padding-block: 0;
+}
+
+.lyrics-lines.synced::before,
+.lyrics-lines.synced::after {
+  content: "";
+}
+
+.lyrics-lines.synced::before {
+  height: var(--lyrics-start-space, 0px);
+}
+
+.lyrics-lines.synced::after {
+  height: var(--lyrics-end-space, 0px);
+}
+
 .lyrics-lines p {
   margin: 0;
   border-left: 3px solid transparent;
@@ -7951,7 +7968,9 @@ button.similar-chip:focus-visible {
   gap: 8px 16px;
   margin-bottom: 12px;
   padding: 8px 4px 10px;
-  background: #171c1f;
+  background: rgba(23, 28, 31, 0.52);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
 }
 
 .library-browser-heading .heading-actions {
@@ -7970,6 +7989,3 @@ button.similar-chip:focus-visible {
   font-size: 11px;
   line-height: 1.3;
 }
-
-.diagnostic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.diagnostic-report { width: 100%; min-width: 0; resize: vertical; font-family: ui-monospace, monospace; font-size: 12px; }

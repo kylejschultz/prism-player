@@ -9,7 +9,7 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false } = {}) {
   const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
   const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
@@ -46,7 +46,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -76,6 +76,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     if (url.hostname !== 'music.fixture.invalid') return route.fulfill({ json: {} });
     const endpoint = url.pathname.split('/').at(-1).replace('.view', ''), id = url.searchParams.get('id');
     requests.push(endpoint);
+    if (endpoint === 'getCoverArt' && artwork) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="300" height="600" fill="#59A99E"/><rect x="300" width="300" height="600" fill="#ADC8DE"/></svg>' });
     if (endpoint === 'getCoverArt' || endpoint === 'stream') return route.abort();
     if (url.pathname === '/auth/login') return route.fulfill({ json: { name: 'Fixture' } });
     if (endpoint === 'getLyricsBySongId') {
@@ -213,11 +214,19 @@ for (const enabled of [undefined, false]) {
   });
 }
 
+async function expectCenteredLyric(lines) {
+  await expect.poll(() => lines.evaluate(el => {
+    const verse = el.querySelector('p.active').getBoundingClientRect();
+    return Math.abs(verse.top + verse.height / 2 - el.getBoundingClientRect().top - el.clientHeight / 2);
+  })).toBeLessThan(2);
+}
+
 test('radio lyrics use the heard track, played clock and station offset', async ({ page }) => {
   const { requests } = await fixture(page, { lyricsEnabled: true, lyricsResponse: { songId: 'heard', synced: true, offsetMs: 1500, lines: [{ text: 'Opening line', startMs: 0 }, { text: 'Current line', startMs: 6000 }, { text: 'Later line', startMs: 60000 }] } });
   const sidebar = await radioLyrics(page);
   await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(3);
   await expect(sidebar.locator('.lyrics-lines p.active')).toHaveText('Current line');
+  await expectCenteredLyric(sidebar.locator('.lyrics-lines'));
   expect(requests).toContain('radio-lyrics:heard');
   await page.screenshot({ path: test.info().outputPath('radio-lyrics.png') });
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
@@ -327,6 +336,7 @@ for (const mode of ['structured plain', 'older server', 'no lyrics']) {
     if (mode === 'no lyrics') await expect(sidebar).toContainText('No lyrics found');
     else await expect(sidebar.locator('.lyrics-lines p.plain')).toHaveCount(mode === 'structured plain' ? 1 : 2);
     await expect(sidebar.locator('.lyrics-lines p.active')).toHaveCount(0);
+    if (mode !== 'no lyrics') expect(await sidebar.locator('.lyrics-lines').evaluate(el => el.querySelector('p').getBoundingClientRect().top - el.getBoundingClientRect().top)).toBeLessThan(4);
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
@@ -384,6 +394,7 @@ test('lyrics fill the sidebar at every window size and emphasize the current ver
     expect(metrics.height).toBeGreaterThan(height - 240);
     await expect(lines.locator('p.active')).toHaveAttribute('aria-current', 'true');
     await expect(lines.locator('p.active')).toBeInViewport();
+    await expectCenteredLyric(lines);
     const listBox = await lines.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
     expect(listBox.y + listBox.height).toBeLessThanOrEqual(footer.y);
     await page.screenshot({ path: test.info().outputPath(`lyrics-${width}-${height}.png`) });
@@ -394,6 +405,31 @@ test('lyrics fill the sidebar at every window size and emphasize the current ver
   expect(errors).toEqual([]);
 });
 
+
+for (const count of [1, 6]) {
+  test(`synced lyrics center first and final wrapped verses through resizing (${count} lines)`, async ({ page }) => {
+    await installTimingFixture(page, 120);
+    const { errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: count }, (_, i) => ({ start: i * 3000, value: `Verse ${i}: keep the melody beside you, through the streets beneath the rain, until the evening settles in` })) }] });
+    await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+    const lines = page.locator('#playback-sidebar .lyrics-lines');
+    const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+    await expect(lines.locator('p')).toHaveCount(count);
+    for (const time of [0, Math.floor(count / 2) * 3, (count - 1) * 3]) {
+      await seek.fill(String(time));
+      await expect(lines.locator('p.active')).toContainText(`Verse ${time / 3}:`);
+      for (const [width, height] of [[1440, 900], [900, 650]]) {
+        await page.setViewportSize({ width, height });
+        await expectCenteredLyric(lines);
+        await page.getByRole('separator', { name: 'Resize right sidebar', exact: true }).press('End');
+        await expectCenteredLyric(lines);
+        await page.getByRole('separator', { name: 'Resize right sidebar', exact: true }).press('Home');
+        await expectCenteredLyric(lines);
+      }
+      if (count === 6) await page.screenshot({ path: test.info().outputPath(`lyrics-centered-${time}.png`) });
+    }
+    expect(errors).toEqual([]);
+  });
+}
 
 async function installTimingFixture(page, duration) {
   await page.addInitScript(duration => {
@@ -618,7 +654,9 @@ test('Library expands accessibly, remembers collapse, and Recently added replace
 });
 
 test('Library title and section controls stay below Search while all four sections scroll', async ({ page }) => {
-  await fixture(page, { largeLibrary: true });
+  await fixture(page, { largeLibrary: true, artwork: true });
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(page.locator('.cover-wash-backdrop')).toBeVisible();
   await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
   for (const width of [1440, 980]) {
     await page.setViewportSize({ width, height: 800 });
@@ -626,6 +664,9 @@ test('Library title and section controls stay below Search while all four sectio
       await page.locator('.sidebar').getByRole('button', { name: section, exact: true }).click();
       const panel = page.locator(`.view-${section.toLowerCase()}`), header = panel.locator('.library-browser-heading');
       await expect(header).toBeVisible();
+      const surface = await header.evaluate(el => ({ background: getComputedStyle(el).backgroundColor, blur: getComputedStyle(el).backdropFilter || getComputedStyle(el).webkitBackdropFilter }));
+      expect(surface.background).toMatch(/^rgba\(.+, 0\./);
+      expect(surface.blur).toContain('blur(');
       await expect.poll(() => panel.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
       const before = await header.boundingBox(), search = await page.locator('.topbar').boundingBox();
       expect(before.y - search.y - search.height).toBeLessThan(20);
@@ -639,9 +680,16 @@ test('Library title and section controls stay below Search while all four sectio
         await expect.poll(async () => (await target.boundingBox()).y - (await header.boundingBox()).y - (await header.boundingBox()).height).toBeLessThan(24);
         await expect.poll(async () => (await target.boundingBox()).y - (await header.boundingBox()).y - (await header.boundingBox()).height).toBeGreaterThanOrEqual(0);
       }
+      if (width === 1440) await header.screenshot({ path: test.info().outputPath(`library-wash-${section}.png`) });
       if (section === 'Playlists') await page.screenshot({ path: test.info().outputPath(`library-sticky-${width}.png`) });
     }
   }
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('checkbox', { name: /Low performance mode/ }).check();
+  await page.locator('.sidebar').getByRole('button', { name: 'Songs', exact: true }).click();
+  await expect(page.locator('.cover-wash-backdrop')).toHaveCount(0);
+  await expect(page.locator('.library-browser-heading')).toBeVisible();
 });
 
 test('Home recently played See all opens albums instead of individual listening history', async ({ page }) => {
@@ -768,83 +816,18 @@ test('seeking to the end while paused stays paused with crossfade enabled', asyn
 });
 
 
-test('playback diagnostics are opt-in, survive navigation and copy only safe media state', async ({ page }) => {
-  await installTimingFixture(page, 120);
-  await fixture(page, { mediaType: 'audio/flac' });
-  await page.evaluate(() => { Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.copiedDiagnostics = text; } } }); });
+test('MP3 playback with FLAC mode enabled has no compatibility warning or recorder', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window.navigator, 'platform', { configurable: true, get: () => 'MacIntel' }));
+  await fixture(page, { realMedia: true, mediaType: 'audio/mpeg' });
   await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Playback diagnostics', exact: true });
-  await expect(panel).toContainText('Recording is off.');
-  await expect(panel.getByRole('button', { name: 'Copy diagnostics', exact: true })).toBeDisabled();
-  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
-  await expect(panel).toContainText('Recording playback timing…');
+  await page.getByRole('checkbox', { name: 'Prepare FLAC tracks for accurate seeking', exact: true }).check();
+  await expect(page.getByRole('heading', { name: 'Playback diagnostics', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Start recording', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await page.locator('.sidebar').getByRole('button', { name: 'Home', exact: true }).click();
-  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('112');
-  await page.locator('audio').first().dispatchEvent('error');
-  await expect.poll(() => page.locator('audio').first().evaluate(a => new URL(a.src).searchParams.has('format'))).toBe(false);
-  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(panel).toContainText('Recording playback timing…');
-  await panel.getByRole('button', { name: 'Stop recording', exact: true }).click();
-  await panel.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
-  await expect(panel).toContainText('Diagnostics copied.');
-  const text = await page.evaluate(() => window.copiedDiagnostics);
-  const report = JSON.parse(text);
-  expect(report.state).toBe('stopped');
-  expect(report.events.some(event => event.event === 'seek-request' && event.requestedTime === 112)).toBe(true);
-  expect(report.events.some(event => event.event === 'capture-start' && event.requestedStreamMode === 'raw' && event.sourceFormat === 'audio/flac')).toBe(true);
-  expect(report.events.some(event => event.event === 'server-fallback')).toBe(true);
-  expect(report.events.some(event => event.event === 'source-selected' && event.requestedStreamMode === 'server-selected' && event.serverFallback)).toBe(true);
-  for (const secret of ['music.fixture.invalid', 'fixture-only', 'Brigham', 'Album a', 'artistId', 'serverUrl']) expect(text).not.toContain(secret);
-  await panel.scrollIntoViewIfNeeded();
-  await panel.screenshot({ path: test.info().outputPath('playback-diagnostics.png') });
-  const frozen = await panel.getByLabel('Playback diagnostic report').inputValue();
-  await panel.getByRole('button', { name: 'Clear diagnostics', exact: true }).click();
-  await expect(panel).toContainText('Recording is off.');
-  await expect(panel.getByLabel('Playback diagnostic report')).toHaveCount(0);
-  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
-  await page.reload();
-  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(panel).toContainText('Recording is off.');
-  expect(frozen.length).toBeGreaterThan(100);
-});
-
-test('diagnostic capture stops at five minutes and clipboard failure leaves a selectable report', async ({ page }) => {
-  await fixture(page);
-  await page.clock.install();
-  await page.evaluate(() => { Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Clipboard blocked'); } } }); });
-  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Playback diagnostics', exact: true });
-  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
-  await page.clock.fastForward(5 * 60 * 1000 + 1);
-  await expect(panel).toContainText('Recording stopped.');
-  await panel.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
-  await expect(panel).toContainText('Clipboard unavailable.');
-  const report = panel.getByLabel('Playback diagnostic report');
-  expect(JSON.parse(await report.inputValue()).state).toBe('stopped');
-  await report.focus();
-  expect(await report.evaluate(el => el.selectionEnd - el.selectionStart)).toBe((await report.inputValue()).length);
-});
-
-
-test('diagnostics observe a real media seek and handoff without changing playback', async ({ page }) => {
-  await fixture(page, { realMedia: true, mediaType: 'audio/wav' });
-  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Playback diagnostics', exact: true });
-  await panel.getByRole('button', { name: 'Start recording', exact: true }).click();
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('5');
-  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2', { timeout: 5000 });
-  await panel.getByRole('button', { name: 'Stop recording', exact: true }).click();
-  await panel.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
-  const report = JSON.parse(await panel.getByLabel('Playback diagnostic report').inputValue());
-  expect(report.events.some(event => event.event === 'seek-request' && event.requestedTime === 5)).toBe(true);
-  expect(report.events.some(event => event.event === 'seeked' && event.currentTime >= 5 && event.duration === 6)).toBe(true);
-  expect(report.events.some(event => event.event === 'ended' && event.ended)).toBe(true);
-  expect(report.events.some(event => event.event === 'selection-changed' && event.active && event.queuePosition === 2)).toBe(true);
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.paused && !a.src.startsWith('blob:'))).toBe(true);
+  await expect(page.getByText(/Compatibility unavailable/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
 });
-
 
 async function flacFixture(page, { holdFirst, failPreparation = false, samplePath } = {}) {
   await page.addInitScript(() => {
@@ -877,6 +860,30 @@ async function flacFixture(page, { holdFirst, failPreparation = false, samplePat
   expect(preparationRequests).toEqual([]);
   return { toggle, errors, preparationRequests };
 }
+
+test('a delayed standby playback start cannot overlap the current FLAC outside a crossfade', async ({ page }) => {
+  const { toggle, errors } = await flacFixture(page);
+  await toggle.check();
+  await expect.poll(() => page.locator('audio').nth(1).evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.paused)).toBe(true);
+  const source = await page.locator('audio').first().evaluate(a => a.src);
+  // Emulate a late engine/play request on the preloaded, inactive player.
+  await page.locator('audio').nth(1).evaluate(a => a.play().catch(() => undefined));
+  await expect.poll(() => page.locator('audio').nth(1).evaluate(a => a.paused)).toBe(true);
+  expect(await page.locator('audio').first().evaluate(a => ({ src: a.src, paused: a.paused }))).toEqual({ src: source, paused: false });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 1');
+  // Repeat after a natural handoff, when the other slot owns current playback.
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('5');
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.src.startsWith('blob:') && a.readyState >= 3)).toBe(true);
+  await page.locator('audio').first().evaluate(a => a.play().catch(() => undefined));
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.paused)).toBe(true);
+  expect(await page.locator('audio').nth(1).evaluate(a => a.paused)).toBe(false);
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  expect(errors).toEqual([]);
+});
 
 test('FLAC compatibility is opt-in and real prepared audio seeks, advances and releases old data', async ({ page }) => {
   const { toggle, errors, preparationRequests } = await flacFixture(page);
@@ -920,15 +927,15 @@ test('Next during FLAC preparation ignores the cancelled result and fallback sta
   await expect.poll(() => page.locator('audio').first().evaluate(a => a.src.startsWith('blob:') && !a.paused)).toBe(true);
   finish(); await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
   await page.locator('audio').first().dispatchEvent('error');
-  await expect(page.locator('.player-loading')).toHaveText('Compatibility unavailable · original stream');
+  await expect(page.getByText(/Compatibility unavailable/)).toHaveCount(0);
   await expect.poll(() => page.locator('audio').first().evaluate(a => !a.src.startsWith('blob:') && !a.paused)).toBe(true);
   await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
 });
 
-test('failed FLAC preparation reports original-stream fallback without an automatic retry loop', async ({ page }) => {
+test('failed FLAC preparation quietly uses original-stream fallback without an automatic retry loop', async ({ page }) => {
   const { toggle, errors, preparationRequests } = await flacFixture(page, { failPreparation: true });
   await toggle.check();
-  await expect(page.locator('.player-loading')).toHaveText('Compatibility unavailable · original stream');
+  await expect(page.getByText(/Compatibility unavailable/)).toHaveCount(0);
   await expect.poll(() => page.locator('audio').first().evaluate(a => a.readyState >= 3)).toBe(true);
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expect.poll(() => page.locator('audio').first().evaluate(a => !a.paused && !a.src.startsWith('blob:'))).toBe(true);
@@ -953,7 +960,7 @@ test('prepared FLAC rejection preserves play intent through the original-stream 
   });
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expect.poll(() => page.locator('audio').first().evaluate(a => !a.src.startsWith('blob:') && !a.paused)).toBe(true);
-  await expect(page.locator('.player-loading')).toHaveText('Compatibility unavailable · original stream');
+  await expect(page.getByText(/Compatibility unavailable/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Pause', exact: true }).click(); expect(errors).toEqual([]);
 });
 
