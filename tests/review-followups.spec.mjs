@@ -50,7 +50,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
-    if (route.request().resourceType() === 'media') {
+    if (route.request().resourceType() === 'media' || (url.hostname === 'music.fixture.invalid' && url.pathname.includes('/rest/stream'))) {
       const bytes = realMedia ? 96000 : 16000;
       const wav = Buffer.alloc(bytes + 44);
       wav.write('RIFF', 0); wav.writeUInt32LE(bytes + 36, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(bytes, 40);
@@ -336,7 +336,10 @@ for (const mode of ['structured plain', 'older server', 'no lyrics']) {
     if (mode === 'no lyrics') await expect(sidebar).toContainText('No lyrics found');
     else await expect(sidebar.locator('.lyrics-lines p.plain')).toHaveCount(mode === 'structured plain' ? 1 : 2);
     await expect(sidebar.locator('.lyrics-lines p.active')).toHaveCount(0);
-    if (mode !== 'no lyrics') expect(await sidebar.locator('.lyrics-lines').evaluate(el => el.querySelector('p').getBoundingClientRect().top - el.getBoundingClientRect().top)).toBeLessThan(4);
+    if (mode !== 'no lyrics') {
+      expect(await sidebar.locator('.lyrics-lines').evaluate(el => el.querySelector('p').getBoundingClientRect().top - el.getBoundingClientRect().top)).toBeLessThan(4);
+      await expect(sidebar.locator('.lyrics-lines p').first()).toHaveCSS('filter', 'none');
+    }
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     expect(errors).toEqual([]);
@@ -430,6 +433,34 @@ for (const count of [1, 6]) {
     expect(errors).toEqual([]);
   });
 }
+
+test('synced lyric focus blurs distant lines in both directions and follows seeking', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  const { errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 20 }, (_, i) => ({ start: i * 3000, value: `Verse ${i}: leave the porch light on` })) }] });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  // Avoid hovering a verse while measuring its resting blur.
+  await page.mouse.move(0, 0);
+  const lines = page.locator('#playback-sidebar .lyrics-lines'), rows = lines.locator('p');
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  for (const current of [6, 10, 0, 19]) {
+    await seek.fill(String(current * 3));
+    await expect(lines.locator('p.active')).toContainText(`Verse ${current}:`);
+    await expectCenteredLyric(lines);
+    for (const offset of [-3, -2, -1, 0, 1, 2, 3]) {
+      const index = current + offset;
+      if (index < 0 || index >= 20) continue;
+      await expect(rows.nth(index)).toHaveAttribute('data-distance', String(Math.min(3, Math.abs(offset))));
+      await expect(rows.nth(index)).toHaveCSS('filter', Math.abs(offset) < 2 ? 'none' : Math.abs(offset) === 2 ? 'blur(0.65px)' : 'blur(1.3px)');
+    }
+  }
+  await seek.fill('30');
+  await expectCenteredLyric(lines);
+  await page.screenshot({ path: test.info().outputPath('lyrics-distance-focus.png') });
+  const distant = rows.nth(12);
+  await distant.hover();
+  await expect(distant).toHaveCSS('filter', 'none');
+  expect(errors).toEqual([]);
+});
 
 async function installTimingFixture(page, duration) {
   await page.addInitScript(duration => {
@@ -665,12 +696,15 @@ test('Library title and section controls stay below Search while all four sectio
       const panel = page.locator(`.view-${section.toLowerCase()}`), header = panel.locator('.library-browser-heading');
       await expect(header).toBeVisible();
       const surface = await header.evaluate(el => ({ background: getComputedStyle(el).backgroundColor, blur: getComputedStyle(el).backdropFilter || getComputedStyle(el).webkitBackdropFilter }));
-      expect(surface.background).toMatch(/^rgba\(.+, 0\./);
-      expect(surface.blur).toContain('blur(');
-      await expect.poll(() => panel.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+      expect(surface.background).toBe('rgba(0, 0, 0, 0)');
+      expect(surface.blur).toBe('none');
+      const scroller = panel.locator('.library-browser-content');
+      await expect.poll(() => scroller.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+      expect((await scroller.boundingBox()).y).toBeGreaterThanOrEqual((await header.boundingBox()).y + (await header.boundingBox()).height);
       const before = await header.boundingBox(), search = await page.locator('.topbar').boundingBox();
       expect(before.y - search.y - search.height).toBeLessThan(20);
-      await panel.evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
+      await scroller.evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
+      if (section === 'Songs') await expect.poll(() => panel.locator('.song-browser-row').first().getAttribute('aria-posinset').then(Number)).toBeGreaterThan(1);
       await expect.poll(async () => Math.abs((await header.boundingBox()).y - before.y)).toBeLessThan(2);
       await expect(header.getByRole('button', { name: section, exact: true })).toBeInViewport();
       if (section === 'Artists' || section === 'Albums') {
@@ -860,6 +894,37 @@ async function flacFixture(page, { holdFirst, failPreparation = false, samplePat
   expect(preparationRequests).toEqual([]);
   return { toggle, errors, preparationRequests };
 }
+
+test('a pending non-crossfade handoff cannot allow the old player to restart', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  const { errors } = await fixture(page);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.evaluate(() => {
+    const play = HTMLMediaElement.prototype.play;
+    let pending;
+    HTMLMediaElement.prototype.play = function () {
+      const started = play.call(this);
+      if (new URL(this.src, window.location.href).searchParams.get('id') === 'a-1') {
+        pending ||= new Promise(resolve => { window.finishNextPlay = resolve; });
+        return pending;
+      }
+      return started;
+    };
+    const [current, standby] = document.querySelectorAll('audio');
+    Object.defineProperty(standby, 'readyState', { configurable: true, value: 4 });
+    Object.defineProperty(current, 'ended', { configurable: true, value: true });
+    current.currentTime = 120; current.dispatchEvent(new Event('ended'));
+  });
+  await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+  await expect.poll(() => page.locator('audio').nth(1).evaluate(a => !a.paused)).toBe(true);
+  await expect(page.locator('audio').first()).not.toHaveAttribute('src');
+  await page.locator('audio').first().evaluate(a => a.play());
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.paused)).toBe(true);
+  expect(await page.locator('audio').nth(1).evaluate(a => a.paused)).toBe(false);
+  await page.evaluate(() => window.finishNextPlay());
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  expect(errors).toEqual([]);
+});
 
 test('a delayed standby playback start cannot overlap the current FLAC outside a crossfade', async ({ page }) => {
   const { toggle, errors } = await flacFixture(page);

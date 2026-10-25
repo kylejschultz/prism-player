@@ -615,7 +615,8 @@ function scrollElementWithin(container: HTMLElement, target: HTMLElement, block:
   const targetRect = target.getBoundingClientRect();
   const targetTop = targetRect.top - containerRect.top + container.scrollTop;
   const pinnedHeader = container.querySelector<HTMLElement>(".library-browser-heading");
-  const offset = block === "center" ? (container.clientHeight - targetRect.height) / 2 : Math.max(52, (pinnedHeader?.offsetHeight ?? 0) + 12);
+  const offset = block === "center" ? (container.clientHeight - targetRect.height) / 2
+    : container.matches(".library-browser-content") ? 0 : Math.max(52, (pinnedHeader?.offsetHeight ?? 0) + 12);
 
   container.scrollTo({
     top: Math.max(0, targetTop - offset),
@@ -2153,6 +2154,7 @@ export function App() {
   const activeAudioSlotRef = useRef(activeAudioSlot);
   activeAudioSlotRef.current = activeAudioSlot;
   const transitionInProgressRef = useRef(false);
+  const crossfadeOutgoingAudioRef = useRef<HTMLAudioElement | null>(null);
   const transitionGenerationRef = useRef(0);
   const transitionTimerRef = useRef<number | null>(null);
   const [transitionCompleteNonce, setTransitionCompleteNonce] = useState(0);
@@ -2412,7 +2414,7 @@ export function App() {
   const currentFlacSource = flacModeEnabled && currentTrack && isFlac(currentTrack) && currentRawStreamUrl && !serverStreamFallbacks.has(currentTrack.id) ? currentRawStreamUrl : null;
   const nextFlacSource = flacModeEnabled && nextTrack && isFlac(nextTrack) && nextRawStreamUrl && !serverStreamFallbacks.has(nextTrack.id) ? nextRawStreamUrl : null;
   const compatibility = useFlacCompatibility(currentFlacSource, transitionInProgressRef.current || activePlaybackSource !== "local" ? null : nextFlacSource,
-    transitionInProgressRef.current ? getStandbyAudio()?.src ?? null : null);
+    crossfadeOutgoingAudioRef.current?.src ?? null);
   const currentStreamUrl = currentFlacSource ? compatibility.current.url : currentRawStreamUrl;
   const nextStreamUrl = nextFlacSource ? compatibility.next.url : nextRawStreamUrl;
   const preparingFlac = Boolean(currentFlacSource && compatibility.current.preparing);
@@ -2443,6 +2445,7 @@ export function App() {
     transitionGenerationRef.current += 1;
     clearTrackTransitionTimer();
     transitionInProgressRef.current = false;
+    crossfadeOutgoingAudioRef.current = null;
     const activeAudio = getActiveAudio();
     if (activeAudio) activeAudio.volume = volumeRef.current;
     [primaryAudioRef.current, secondaryAudioRef.current].forEach((audio) => {
@@ -3641,24 +3644,32 @@ export function App() {
 
     const fadeSeconds = fromTrackEnd ? 0 : appSettings.trackTransitionSeconds;
     const fadeDurationMs = fadeSeconds * 1000;
+    crossfadeOutgoingAudioRef.current = fadeDurationMs > 0 ? activeAudio : null;
     standbyAudio.muted = isMuted;
     standbyAudio.volume = fadeDurationMs > 0 ? 0 : volumeRef.current;
 
     // Select the destination before play() resolves: a decoder/network wait
     // belongs to the new song, rather than leaving the finished song displayed.
-    setActiveAudioSlot((slot) => slot === 0 ? 1 : 0);
+    const nextSlot = activeAudioSlotRef.current === 0 ? 1 : 0;
+    activeAudioSlotRef.current = nextSlot;
+    setActiveAudioSlot(nextSlot);
     setCurrentIndex(nextIndex);
     setPosition(0);
     setLocalBuffering(true);
     setPlayerDuration(Number.isFinite(standbyAudio.duration) && standbyAudio.duration > 0 ? standbyAudio.duration : nextTrack.duration || 0);
     setPlayerError("");
-    if (fromTrackEnd) activeAudio.pause();
+    if (!fadeDurationMs) {
+      activeAudio.pause();
+      activeAudio.removeAttribute("src");
+      activeAudio.load();
+    }
 
     try {
       await standbyAudio.play();
     } catch {
       if (transitionGenerationRef.current === transitionGeneration) {
         transitionInProgressRef.current = false;
+        crossfadeOutgoingAudioRef.current = null;
         activeAudio.pause();
         activeAudio.volume = volumeRef.current;
         setTransitionCompleteNonce((nonce) => nonce + 1);
@@ -3683,6 +3694,7 @@ export function App() {
       activeAudio.currentTime = 0;
       activeAudio.volume = volumeRef.current;
       transitionInProgressRef.current = false;
+      crossfadeOutgoingAudioRef.current = null;
       setTransitionCompleteNonce((nonce) => nonce + 1);
       return true;
     }
@@ -3701,6 +3713,7 @@ export function App() {
       activeAudio.volume = volumeRef.current;
       standbyAudio.volume = volumeRef.current;
       transitionInProgressRef.current = false;
+      crossfadeOutgoingAudioRef.current = null;
       setTransitionCompleteNonce((nonce) => nonce + 1);
     }, 50);
 
@@ -3708,14 +3721,14 @@ export function App() {
   }
 
   function guardLocalPlayback(audio: HTMLAudioElement) {
-    if (audio === getActiveAudio() || transitionInProgressRef.current) return true;
+    if (audio === getActiveAudio() || audio === crossfadeOutgoingAudioRef.current) return true;
     // A delayed engine/play request must not make the preloaded player audible.
     audio.pause();
     return false;
   }
 
   function handleLocalTimeUpdate(audio: HTMLAudioElement) {
-    if (audio !== getActiveAudio()) return;
+    if (!guardLocalPlayback(audio) || audio !== getActiveAudio()) return;
     if (!audio.seeking) setPosition(audio.currentTime);
 
     const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : currentTrack?.duration || 0;
@@ -6054,6 +6067,7 @@ function RightSidebar({
                   {lyricsLines.map((line, index) => (
                     <p
                       className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
+                      data-distance={line.startMs != null && activeLyricIndex >= 0 ? Math.min(3, Math.abs(index - activeLyricIndex)) : undefined}
                       aria-current={line.text && index === activeLyricIndex ? "true" : undefined}
                       key={`${line.text}-${line.startMs ?? "plain"}-${index}`}
                       ref={index === activeLyricIndex ? activeLyricRef : undefined}
@@ -7406,7 +7420,12 @@ function LibraryView({
   const isCollectionView = libraryViews.some(({ id }) => id === activeView);
 
   useEffect(() => {
-    if (browserPanelRef.current) browserPanelRef.current.scrollTop = 0;
+    const panel = browserPanelRef.current;
+    if (panel) {
+      panel.scrollTop = 0;
+      const content = panel.querySelector(".library-browser-content");
+      if (content) content.scrollTop = 0;
+    }
   }, [activeView, detailSelection]);
 
   useEffect(() => () => {
@@ -7537,6 +7556,7 @@ function LibraryView({
               </div>
             </div>
           ) : null}
+          <div className={isCollectionView ? "library-browser-content" : "browser-content"}>
           {showLibraryError ? (
             <StateNotice
               tone="bad"
@@ -7704,6 +7724,7 @@ function LibraryView({
           ) : null}
             </>
           ) : null}
+          </div>
         </>
       )}
     </section>
@@ -8427,7 +8448,7 @@ function SearchSongList({
   const virtualItems = virtualizer.getVirtualItems();
   const setSongListRef = useCallback((element: HTMLDivElement | null) => {
     listRef.current = element;
-    setScrollElement(element?.closest<HTMLElement>(".browser-panel") ?? null);
+    setScrollElement(element?.closest<HTMLElement>(".library-browser-content, .browser-panel") ?? null);
   }, [listRef]);
 
   return (
@@ -8579,7 +8600,7 @@ function AlphabetRail({ letters, prefix }: { letters: string[]; prefix: string }
 
   function jumpToLetter(letter: string) {
     const target = document.getElementById(alphaSectionId(prefix, letter));
-    const browserPanel = target?.closest<HTMLElement>(".browser-panel");
+    const browserPanel = target?.closest<HTMLElement>(".library-browser-content, .browser-panel");
 
     if (target && browserPanel) scrollElementWithin(browserPanel, target);
   }

@@ -2096,7 +2096,20 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   letter-spacing: 0;
   overflow-wrap: anywhere;
   color: rgba(237, 242, 246, 0.66);
-  transition: border-color 160ms ease, color 160ms ease;
+  transition: border-color 160ms ease, color 160ms ease, filter 160ms ease;
+}
+
+/* Keep the current verse and its immediate neighbors sharp. */
+.lyrics-lines p[data-distance="2"] {
+  filter: blur(0.65px);
+}
+
+.lyrics-lines p[data-distance="3"] {
+  filter: blur(1.3px);
+}
+
+.lyrics-lines p:hover {
+  filter: none;
 }
 
 .lyrics-lines p.active {
@@ -7948,18 +7961,38 @@ button.similar-chip:focus-visible {
   padding-left: 28px;
 }
 
-/* Pin one compact header inside the existing library scroller. */
+/* Keep the compact header above the list so only the artwork wash sits behind it. */
 .workspace-viewport.library-workspace {
   padding-top: 4px;
 }
 
-.library-collection-panel {
-  padding-top: 0;
+.browser-panel.library-collection-panel {
+  display: flex;
+  flex-direction: column;
+  padding-block: 0;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.browser-content {
+  display: contents;
+}
+
+.library-browser-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 28px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.library-browser-content .alphabet-rail {
+  top: 0;
 }
 
 .library-browser-heading {
-  position: sticky;
-  top: 0;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 4;
   flex-direction: row;
   flex-wrap: wrap;
@@ -7968,9 +8001,9 @@ button.similar-chip:focus-visible {
   gap: 8px 16px;
   margin-bottom: 12px;
   padding: 8px 4px 10px;
-  background: rgba(23, 28, 31, 0.52);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .library-browser-heading .heading-actions {
