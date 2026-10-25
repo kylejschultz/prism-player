@@ -2101,15 +2101,11 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 /* Keep the current verse and its immediate neighbors sharp. */
 .lyrics-lines p[data-distance="2"] {
-  filter: blur(0.65px);
+  filter: blur(1px);
 }
 
 .lyrics-lines p[data-distance="3"] {
-  filter: blur(1.3px);
-}
-
-.lyrics-lines p:hover {
-  filter: none;
+  filter: blur(2px);
 }
 
 .lyrics-lines p.active {

@@ -5841,6 +5841,7 @@ function RightSidebar({
 
     return active;
   }, [lyricsLines, position]);
+  const lyricFocusIndex = activeLyricIndex >= 0 ? activeLyricIndex : lyricsLines.findIndex(line => line.startMs != null);
 
   useEffect(() => {
     const container = lyricsScrollRef.current;
@@ -6067,7 +6068,7 @@ function RightSidebar({
                   {lyricsLines.map((line, index) => (
                     <p
                       className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
-                      data-distance={line.startMs != null && activeLyricIndex >= 0 ? Math.min(3, Math.abs(index - activeLyricIndex)) : undefined}
+                      data-distance={line.startMs != null ? Math.min(3, Math.abs(index - lyricFocusIndex)) : undefined}
                       aria-current={line.text && index === activeLyricIndex ? "true" : undefined}
                       key={`${line.text}-${line.startMs ?? "plain"}-${index}`}
                       ref={index === activeLyricIndex ? activeLyricRef : undefined}

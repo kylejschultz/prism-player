@@ -436,29 +436,40 @@ for (const count of [1, 6]) {
 
 test('synced lyric focus blurs distant lines in both directions and follows seeking', async ({ page }) => {
   await installTimingFixture(page, 120);
-  const { errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 20 }, (_, i) => ({ start: i * 3000, value: `Verse ${i}: leave the porch light on` })) }] });
+  const { errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 20 }, (_, i) => ({ start: 10000 + i * 3000, value: `Verse ${i}: leave the porch light on` })) }] });
   await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
   // Avoid hovering a verse while measuring its resting blur.
   await page.mouse.move(0, 0);
   const lines = page.locator('#playback-sidebar .lyrics-lines'), rows = lines.locator('p');
   const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  // Before the first timestamp, focus the first verse without marking it active.
+  await seek.fill('0');
+  await expect(lines.locator('p.active')).toHaveCount(0);
+  await expect(rows.nth(0)).toHaveCSS('filter', 'none');
+  await expect(rows.nth(1)).toHaveCSS('filter', 'none');
+  await expect(rows.nth(2)).toHaveCSS('filter', 'blur(1px)');
+  await expect(rows.nth(3)).toHaveCSS('filter', 'blur(2px)');
+  await rows.nth(3).hover();
+  await expect(rows.nth(3)).toHaveCSS('filter', 'blur(2px)');
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: test.info().outputPath('lyrics-before-first-timestamp.png') });
   for (const current of [6, 10, 0, 19]) {
-    await seek.fill(String(current * 3));
+    await seek.fill(String(10 + current * 3));
     await expect(lines.locator('p.active')).toContainText(`Verse ${current}:`);
     await expectCenteredLyric(lines);
     for (const offset of [-3, -2, -1, 0, 1, 2, 3]) {
       const index = current + offset;
       if (index < 0 || index >= 20) continue;
       await expect(rows.nth(index)).toHaveAttribute('data-distance', String(Math.min(3, Math.abs(offset))));
-      await expect(rows.nth(index)).toHaveCSS('filter', Math.abs(offset) < 2 ? 'none' : Math.abs(offset) === 2 ? 'blur(0.65px)' : 'blur(1.3px)');
+      await expect(rows.nth(index)).toHaveCSS('filter', Math.abs(offset) < 2 ? 'none' : Math.abs(offset) === 2 ? 'blur(1px)' : 'blur(2px)');
     }
   }
-  await seek.fill('30');
+  await seek.fill('40');
   await expectCenteredLyric(lines);
   await page.screenshot({ path: test.info().outputPath('lyrics-distance-focus.png') });
   const distant = rows.nth(12);
   await distant.hover();
-  await expect(distant).toHaveCSS('filter', 'none');
+  await expect(distant).toHaveCSS('filter', 'blur(1px)');
   expect(errors).toEqual([]);
 });
 
