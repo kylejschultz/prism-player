@@ -1,17 +1,18 @@
 /* global window, localStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const artist = { id: 'artist', name: 'Brigham Young University Vocal Point', albumCount: 2 };
 const albums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, artist: artist.name, artistId: artist.id, songCount: 4, year: 2026 - index }));
 const songs = albums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...songs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric" } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType } = {}) {
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ artist, albums, songs, cachedSong }) => {
+  await page.addInitScript(({ artist, albums, songs, cachedSong, realMedia }) => {
     localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
     localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
     localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
@@ -25,11 +26,13 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
         transaction.oncomplete = () => { db.close(); resolve(); };
       };
     });
+    if (!realMedia) {
     const playing = new WeakSet();
     Object.defineProperty(HTMLMediaElement.prototype, 'paused', { get() { return !playing.has(this); } });
     HTMLMediaElement.prototype.play = function () { playing.add(this); this.dispatchEvent(new Event('play')); return Promise.resolve(); };
     HTMLMediaElement.prototype.pause = function () { playing.delete(this); this.dispatchEvent(new Event('pause')); };
     HTMLMediaElement.prototype.load = function () {};
+    }
     window.__TAURI_INTERNALS__ = { transformCallback: () => 1, invoke: async command => {
       if (command === 'get_navidrome_password') { await window.fixtureReady; return 'fixture-only'; }
       if (command === 'get_native_architecture') return 'arm64';
@@ -38,14 +41,23 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs, cachedSong });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
     if (route.request().resourceType() === 'media') {
-      const wav = Buffer.alloc(16044);
-      wav.write('RIFF', 0); wav.writeUInt32LE(16036, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(16000, 40);
-      return route.fulfill({ contentType: 'audio/wav', body: wav });
+      const bytes = realMedia ? 96000 : 16000;
+      const wav = Buffer.alloc(bytes + 44);
+      wav.write('RIFF', 0); wav.writeUInt32LE(bytes + 36, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(bytes, 40);
+      if (!realMedia) return route.fulfill({ contentType: 'audio/wav', body: wav });
+      // Real seeking requires the same byte-range response contract as a raw file.
+      const range = /bytes=(\d+)-(\d*)/.exec(route.request().headers().range || '');
+      const start = range ? Number(range[1]) : 0;
+      const end = range?.[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+      return route.fulfill({ status: range ? 206 : 200, contentType: 'audio/wav', headers: {
+        'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1),
+        ...(range ? { 'Content-Range': `bytes ${start}-${end}/${wav.length}` } : {}),
+      }, body: wav.subarray(start, end + 1) });
     }
     if (url.hostname === 'radio.fixture.invalid') {
       if (route.request().resourceType() === 'image') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#304745"/></svg>' });
@@ -479,4 +491,103 @@ test('Instrument Sans loads locally across the app and its full license is reada
   await expect(license).toContainText('SIL OPEN FONT LICENSE Version 1.1');
   expect((await license.textContent()).length).toBeGreaterThan(4000);
   await page.screenshot({ path: test.info().outputPath('font-license.png') });
+});
+
+
+test('library seek waits for the media engine to confirm the actual position', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  await fixture(page);
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('audio').first().evaluate(audio => {
+    audio.currentTime = 30;
+    audio.dispatchEvent(new Event('timeupdate'));
+    Object.defineProperty(audio, 'seeking', { configurable: true, value: true });
+  });
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await seek.fill('110');
+  await expect(page.locator('.seek-row span').first()).toHaveText('0:30');
+  await page.locator('audio').first().evaluate(audio => {
+    // An engine can land somewhere other than the requested target.
+    audio.currentTime = 104.25;
+    Object.defineProperty(audio, 'seeking', { configurable: true, value: false });
+    audio.dispatchEvent(new Event('seeked'));
+  });
+  await expect(seek).toHaveValue('104.25');
+  await expect(page.locator('.seek-row span').first()).toHaveText('1:44');
+});
+
+test('supported originals use raw streams and decoding failure falls back only once', async ({ page }) => {
+  await page.addInitScript(() => { HTMLMediaElement.prototype.canPlayType = () => 'probably'; });
+  const { errors } = await fixture(page, { mediaType: 'audio/flac' });
+  await expect.poll(() => page.locator('audio').first().evaluate(a => new URL(a.src).searchParams.get('format'))).toBe('raw');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.locator('audio').first().dispatchEvent('error');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => new URL(a.src).searchParams.has('format'))).toBe(false);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.locator('audio').first().dispatchEvent('error');
+  await expect(page.locator('.player-error')).toHaveText('Track stream failed.');
+  await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('real media clock and completed seeks drive progress through a real track end', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.mediaEvents = [];
+    for (const name of ['loadedmetadata','durationchange','seeking','seeked','timeupdate','play','pause','ended','error']) {
+      document.addEventListener(name, event => {
+        const a = event.target;
+        if (a instanceof HTMLMediaElement) window.mediaEvents.push({ event: name, time: a.currentTime, duration: a.duration, paused: a.paused, seeking: a.seeking, slot: Array.from(document.querySelectorAll('audio')).indexOf(a) });
+      }, true);
+    }
+  });
+  const { errors } = await fixture(page, { realMedia: true, mediaType: 'audio/wav' });
+  const seek = page.getByRole('slider', { name: 'Seek', exact: true });
+  await expect(seek).toHaveAttribute('max', '6');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await seek.fill('2');
+  await expect.poll(() => page.locator('audio').first().evaluate(a => !a.seeking && a.currentTime >= 2)).toBe(true);
+  await expect.poll(async () => Number(await seek.inputValue())).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => page.locator('audio').first().evaluate(a => a.currentTime)).toBeGreaterThan(2.2);
+  const comparison = await page.locator('audio').first().evaluate(a => ({ time: a.currentTime, display: Number(document.querySelector('input[aria-label="Seek"]').value) }));
+  expect(Math.abs(comparison.time - comparison.display)).toBeLessThan(0.5);
+  await seek.fill('5');
+  try {
+    await expect(page.locator('.player-bar .now-playing-copy .track-title')).toHaveText('Album a track 2', { timeout: 5000 });
+  } finally {
+    await test.info().attach('real-media-events', { body: JSON.stringify(await page.evaluate(() => ({ events: window.mediaEvents, final: Array.from(document.querySelectorAll('audio')).map(a => ({ time: a.currentTime, duration: a.duration, paused: a.paused, seeking: a.seeking, ended: a.ended, readyState: a.readyState })) })), null, 2), contentType: 'application/json' });
+  }
+  expect(errors).toEqual([]);
+});
+
+test('Facet is the default with a vector brand, readable state colors and retained alternative themes', async ({ page }) => {
+  await fixture(page, { localLyrics: [{ synced: true, line: [{ start: 0, value: 'A clear current lyric' }] }] });
+  await expect(page.locator('.app-shell')).toHaveClass(/theme-prism/);
+  await expect(page.locator('.brand-mark')).toHaveAttribute('src', /facet.*svg/);
+  const colors = await page.locator('.app-shell').evaluate(el => {
+    const css = getComputedStyle(el);
+    return { accent: css.getPropertyValue('--prism-accent').trim(), highlight: css.getPropertyValue('--prism-highlight').trim(), background: css.backgroundColor };
+  });
+  expect(colors).toEqual({ accent: '#adc8de', highlight: '#59a99e', background: 'rgb(19, 22, 25)' });
+  await page.getByRole('button', { name: 'Open lyrics', exact: true }).click();
+  await expect(page.locator('.lyrics-lines p.active')).toHaveCSS('border-left-color', 'rgb(89, 169, 158)');
+  for (const width of [1440, 1100, 900]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect.poll(() => page.locator('.app-shell').evaluate(el => el.getBoundingClientRect().height)).toBe(1000);
+    await page.waitForTimeout(250);
+    const resume = await page.locator('.home-resume-card').boundingBox();
+    const radio = await page.locator('.home-dashboard-lead .home-radio-card').boundingBox();
+    expect(radio.y >= resume.y + resume.height || radio.x >= resume.x + resume.width).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`facet-lyrics-${width}.png`) });
+  }
+  let snapshot = (await page.content()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+  snapshot = snapshot.replaceAll('/src/assets/brand/facet.svg', 'data:image/svg+xml;base64,' + readFileSync(new URL('../src/assets/brand/facet.svg', import.meta.url)).toString('base64'));
+  snapshot = snapshot.replaceAll('/src/assets/fonts/InstrumentSans-variable.woff2', 'data:font/woff2;base64,' + readFileSync(new URL('../src/assets/fonts/InstrumentSans-variable.woff2', import.meta.url)).toString('base64'));
+  writeFileSync(test.info().outputPath('facet-fixture.html'), snapshot);
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  const facet = page.getByRole('button', { name: /Facet Teal, pale blue and periwinkle/ });
+  await expect(facet).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: /Ocean Blue and sea-glass/ }).click();
+  await expect(page.locator('.app-shell')).toHaveClass(/theme-ocean/);
+  await facet.click();
+  await expect(page.locator('.app-shell')).toHaveClass(/theme-prism/);
 });

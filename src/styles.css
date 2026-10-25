@@ -7,19 +7,19 @@
 }
 
 :root {
-  --prism-accent: #f0d27b;
-  --prism-accent-strong: #f8df91;
-  --prism-accent-rgb: 240, 210, 123;
-  --prism-accent-strong-rgb: 248, 223, 145;
-  --prism-highlight: #f2d985;
-  --prism-highlight-rgb: 242, 217, 133;
-  --prism-glow-left-rgb: 66, 145, 132;
-  --prism-glow-right-rgb: 190, 77, 59;
-  --prism-glow-bottom-rgb: 215, 188, 104;
+  --prism-accent: #adc8de;
+  --prism-accent-strong: #d3e4f1;
+  --prism-accent-rgb: 173, 200, 222;
+  --prism-accent-strong-rgb: 211, 228, 241;
+  --prism-highlight: #59a99e;
+  --prism-highlight-rgb: 89, 169, 158;
+  --prism-glow-left-rgb: 89, 169, 158;
+  --prism-glow-right-rgb: 137, 143, 189;
+  --prism-glow-bottom-rgb: 173, 200, 222;
   --prism-ui-font: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --prism-display-font: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-family: var(--prism-ui-font);
-  color: #f4f1ec;
+  color: #edf2f6;
   background: #111111;
   font-size: 14px;
   font-weight: 400;
@@ -51,12 +51,12 @@ body {
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.18);
+  background: rgba(237, 242, 246, 0.18);
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(244, 241, 236, 0.28);
+  background: rgba(237, 242, 246, 0.28);
   background-clip: padding-box;
 }
 
@@ -67,7 +67,7 @@ button {
 }
 
 button:focus-visible {
-  outline: 2px solid rgba(var(--prism-accent-rgb), 0.72);
+  outline: 2px solid var(--prism-accent);
   outline-offset: 2px;
 }
 
@@ -86,20 +86,20 @@ textarea {
   padding: 0 12px;
   outline: 0;
   background: rgba(0, 0, 0, 0.24);
-  color: #f4f1ec;
+  color: #edf2f6;
   font: inherit;
 }
 
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: rgba(var(--prism-accent-rgb), 0.7);
+  border-color: var(--prism-accent);
   box-shadow: 0 0 0 3px rgba(var(--prism-accent-rgb), 0.12);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(244, 241, 236, 0.36);
+  color: rgba(237, 242, 246, 0.36);
 }
 
 textarea {
@@ -120,7 +120,7 @@ textarea {
     radial-gradient(circle at 15% 20%, rgba(var(--prism-glow-left-rgb), 0.28), transparent 34%),
     radial-gradient(circle at 74% 22%, rgba(var(--prism-glow-right-rgb), 0.22), transparent 38%),
     radial-gradient(circle at 42% 74%, rgba(var(--prism-glow-bottom-rgb), 0.08), transparent 32%),
-    linear-gradient(135deg, #0f1110 0%, #171514 54%, #0b0c0c 100%);
+    linear-gradient(135deg, #111416 0%, #191a1d 54%, #0c1013 100%);
 }
 
 :root[data-prism-theme="ocean"],
@@ -245,7 +245,7 @@ textarea {
   width: 2px;
   height: 42px;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.34);
+  background: rgba(237, 242, 246, 0.34);
   content: "";
   opacity: 0;
   transform: translateY(-50%);
@@ -313,7 +313,7 @@ body.right-sidebar-resizing * {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
   background: rgba(12, 12, 12, 0.76);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   backdrop-filter: blur(18px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
   cursor: pointer;
@@ -348,43 +348,18 @@ body.right-sidebar-resizing * {
 }
 
 .brand-mark {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  overflow: hidden;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, #e7cc79, #cc493e 48%, #3f9185);
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
-}
-
-.brand-mark::after {
-  position: absolute;
-  inset: 1px;
-  border-radius: 7px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 34%),
-    radial-gradient(circle at 76% 78%, rgba(13, 13, 12, 0.28), transparent 38%);
-  content: "";
-}
-
-.brand-mark span {
-  position: relative;
-  z-index: 1;
-  color: rgba(17, 17, 17, 0.84);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-  text-shadow: 0 1px 16px rgba(244, 241, 236, 0.2);
+  display: block;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .eyebrow,
 .track-meta {
   margin: 0;
-  color: rgba(244, 241, 236, 0.62);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.62);
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -424,7 +399,7 @@ h1 {
   min-height: 24px;
   margin-top: 6px;
   padding: 0 12px;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
@@ -460,7 +435,7 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(10, 10, 10, 0.34);
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
 }
 
 .global-search:focus-within {
@@ -474,7 +449,7 @@ h1 {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 12px;
   font-weight: 400;
 }
@@ -516,8 +491,8 @@ h1 {
 
 .suggestion-section > p {
   padding: 6px 8px 2px;
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -530,7 +505,7 @@ h1 {
   padding: 0 8px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   text-align: left;
   cursor: pointer;
 }
@@ -551,8 +526,8 @@ h1 {
 
 .suggestion-row small,
 .suggestion-note {
-  color: rgba(244, 241, 236, 0.48);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.48);
+  font-size: 11px;
   font-weight: 400;
 }
 
@@ -572,7 +547,7 @@ h1 {
   padding: 0 10px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   text-align: left;
 }
 
@@ -586,7 +561,7 @@ h1 {
   min-height: 34px;
   margin-left: 14px;
   padding-left: 14px;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
 }
 
 .nav-item.nav-child.active,
@@ -616,7 +591,7 @@ h1 {
 
 .nav-playlist-trigger > svg:last-child {
   margin-left: auto;
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
 }
 
 .sidebar-playlist-menu {
@@ -647,7 +622,7 @@ h1 {
   padding: 8px 9px;
   border-radius: 7px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -669,8 +644,8 @@ h1 {
 
 .sidebar-playlist-menu-heading {
   margin: 8px 9px 2px;
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.46);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -691,8 +666,8 @@ h1 {
 }
 
 .sidebar-playlist-menu-copy small {
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -709,7 +684,7 @@ h1 {
 
 .sidebar-playlist-menu-empty {
   padding: 10px 9px;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 12px;
 }
 
@@ -731,7 +706,7 @@ h1 {
 .sidebar-settings {
   flex: 1;
   min-width: 0;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
 }
 
 .sidebar-collapse-toggle {
@@ -788,7 +763,7 @@ h1 {
   width: 2px;
   height: 42px;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.34);
+  background: rgba(237, 242, 246, 0.34);
   content: "";
   opacity: 0;
   transform: translateY(-50%);
@@ -838,7 +813,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   min-height: 28px;
   border-radius: 7px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   cursor: pointer;
 }
@@ -870,7 +845,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .right-panel-footnote {
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   font-size: 11px;
   text-align: right;
 }
@@ -928,7 +903,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .right-now-copy .track-link {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -945,7 +920,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -1034,7 +1009,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .analytics-banner p,
 .settings-note {
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   line-height: 1.42;
 }
@@ -1066,7 +1041,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0;
   border-radius: 7px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -1095,7 +1070,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 16px;
   border-radius: 8px;
   background: var(--prism-accent);
-  color: #18140d;
+  color: #101416;
   font-weight: 600;
 }
 
@@ -1108,7 +1083,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 14px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
-  color: #f4f1ec;
+  color: #edf2f6;
   font-weight: 500;
 }
 
@@ -1164,13 +1139,13 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .browser-panel.home-panel.is-scrolling {
-  scrollbar-color: rgba(244, 241, 236, 0.34) transparent;
+  scrollbar-color: rgba(237, 242, 246, 0.34) transparent;
 }
 
 .browser-panel.home-panel.is-scrolling::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.34);
+  background: rgba(237, 242, 246, 0.34);
   background-clip: padding-box;
 }
 
@@ -1194,7 +1169,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .panel-heading span,
 .list-row span:last-child {
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 13px;
 }
 
@@ -1224,7 +1199,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 8px;
   border-radius: 6px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -1307,7 +1282,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .state-notice small {
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 11px;
 }
 
@@ -1442,7 +1417,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   max-width: 720px;
   margin: 0;
   overflow: hidden;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: clamp(28px, 4vw, 48px);
   font-weight: 680;
   letter-spacing: -0.035em;
@@ -1456,14 +1431,14 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .home-now-playing-copy > p:not(.eyebrow) {
   max-width: 560px;
   margin: 0;
-  color: rgba(244, 241, 236, 0.9);
+  color: rgba(237, 242, 246, 0.9);
 }
 
 .home-now-playing-meta-link {
   appearance: none;
   padding: 0;
   background: transparent;
-  color: #f4f1ec;
+  color: #edf2f6;
   font: inherit;
   text-align: inherit;
   cursor: pointer;
@@ -1507,7 +1482,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-dashboard-intro > div > p:not(.eyebrow) {
   max-width: 440px;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   line-height: 1.45;
 }
 
@@ -1520,7 +1495,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-items: center;
   gap: 8px;
   margin-top: 14px;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-weight: 600;
 }
 
@@ -1584,7 +1559,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-shelf-heading p {
   margin: 0;
-  color: rgba(244, 241, 236, 0.52);
+  color: rgba(237, 242, 246, 0.52);
   font-size: 12px;
   line-height: 1.35;
 }
@@ -1596,7 +1571,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   margin-left: auto;
   padding: 4px 0;
   border: 0;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   background: transparent;
   font: inherit;
   font-size: 13px;
@@ -1659,7 +1634,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   position: absolute;
   top: 50%;
   z-index: 1;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.5));
   pointer-events: none;
   transform: translateY(-50%);
@@ -1689,12 +1664,12 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-row:hover,
 .home-album-row:focus-visible {
-  scrollbar-color: rgba(244, 241, 236, 0.42) transparent;
+  scrollbar-color: rgba(237, 242, 246, 0.42) transparent;
 }
 
 .home-album-row:hover::-webkit-scrollbar-thumb,
 .home-album-row:focus-visible::-webkit-scrollbar-thumb {
-  background: rgba(244, 241, 236, 0.36);
+  background: rgba(237, 242, 246, 0.36);
 }
 
 .home-album {
@@ -1754,8 +1729,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-copy small {
   -webkit-line-clamp: 1;
-  color: rgba(244, 241, 236, 0.56);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.56);
+  font-size: 11px;
   line-height: 1.2;
 }
 
@@ -1904,12 +1879,12 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .home-now-playing {
   max-width: 560px;
   margin-top: 8px;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   font-size: 13px;
 }
 
 .home-now-playing {
-  color: rgba(244, 241, 236, 0.9);
+  color: rgba(237, 242, 246, 0.9);
 }
 
 .home-cover-stage {
@@ -2067,7 +2042,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-shortcut small {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
   font-weight: 400;
   text-overflow: ellipsis;
@@ -2075,7 +2050,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .home-shortcut > svg {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   transition: color 160ms ease, transform 160ms ease;
 }
 
@@ -2103,7 +2078,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   line-height: 1.4;
   letter-spacing: 0;
   overflow-wrap: anywhere;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   transition: border-color 160ms ease, color 160ms ease;
 }
 
@@ -2123,7 +2098,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .lyrics-lines p.plain {
   font-weight: 400;
-  color: rgba(244, 241, 236, 0.86);
+  color: rgba(237, 242, 246, 0.86);
 }
 
 .detail-panel {
@@ -2140,7 +2115,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-content: center;
   gap: 10px;
   min-height: 230px;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   text-align: center;
 }
 
@@ -2154,7 +2129,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   border-radius: 8px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.76);
+  color: rgba(237, 242, 246, 0.76);
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -2195,7 +2170,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   margin: 4px 0 0;
   padding: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 15px;
   font-weight: 500;
   text-align: left;
@@ -2275,7 +2250,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   height: 34px;
   border-radius: 999px;
   background: var(--prism-accent);
-  color: #18140d;
+  color: #101416;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
   opacity: 0;
   transform: translate(-50%, calc(-50% + 4px));
@@ -2315,7 +2290,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 11px;
   font-weight: 400;
 }
@@ -2329,7 +2304,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .playlist-comment {
   max-width: 720px;
   margin: 0 0 14px;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -2355,7 +2330,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .playlist-detail-fields label:not(.checkbox-row) {
   display: grid;
   gap: 7px;
-  color: rgba(244, 241, 236, 0.64);
+  color: rgba(237, 242, 246, 0.64);
   font-size: 11px;
   font-weight: 500;
 }
@@ -2370,7 +2345,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 12px;
 }
 
@@ -2380,7 +2355,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .checkbox-row small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
 }
 
 .checkbox-row.disabled {
@@ -2396,7 +2371,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .playlist-create-actions p {
   margin-right: auto;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 12px;
 }
 
@@ -2453,7 +2428,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.76);
+  color: rgba(237, 242, 246, 0.76);
   font-size: 12px;
   font-weight: 400;
   text-decoration: none;
@@ -2478,7 +2453,7 @@ button.similar-chip:focus-visible {
 }
 
 .section-label h4 {
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
   font-size: 13px;
   font-weight: 500;
 }
@@ -2502,7 +2477,7 @@ button.similar-chip:focus-visible {
   min-height: 30px;
   margin-top: 8px;
   padding: 0 8px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0;
@@ -2517,7 +2492,7 @@ button.similar-chip:focus-visible {
 }
 
 .disc-heading small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
   font-weight: 400;
 }
@@ -2552,7 +2527,7 @@ button.similar-chip:focus-visible {
 .album-row small,
 .track-number,
 .track-duration {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -2625,8 +2600,8 @@ button.similar-chip:focus-visible {
   overflow: hidden;
   padding: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.46);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-align: left;
@@ -2643,7 +2618,7 @@ button.similar-chip:focus-visible {
 .track-artist,
 .track-album {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2677,7 +2652,7 @@ button.similar-chip:focus-visible {
 }
 
 .playlist-track-editor-heading span {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -2763,7 +2738,7 @@ button.similar-chip:focus-visible {
 
 .favorite-button {
   background: transparent;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
 }
 
 .favorite-button.active {
@@ -2880,9 +2855,9 @@ button.similar-chip:focus-visible {
 }
 
 .about-commit-sha {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -2904,7 +2879,7 @@ button.similar-chip:focus-visible {
 .about-install-id-value code {
   overflow: hidden;
   min-width: 0;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   text-overflow: ellipsis;
@@ -2916,7 +2891,7 @@ button.similar-chip:focus-visible {
 }
 
 .settings-label {
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -2947,7 +2922,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.035);
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
@@ -2987,15 +2962,15 @@ button.similar-chip:focus-visible {
 }
 
 .theme-option-copy strong {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 12px;
   font-weight: 600;
 }
 
 .theme-option-copy small {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.54);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.54);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3007,7 +2982,7 @@ button.similar-chip:focus-visible {
 
 .update-check-status {
   margin: 0;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   line-height: 1.25;
   text-align: right;
@@ -3039,7 +3014,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
@@ -3056,7 +3031,7 @@ button.similar-chip:focus-visible {
 .settings-panel label {
   display: grid;
   gap: 8px;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 12px;
   font-weight: 500;
 }
@@ -3169,7 +3144,7 @@ button.similar-chip:focus-visible {
 
 .connection-status-row p:last-child {
   margin-top: 10px;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   line-height: 1.45;
 }
 
@@ -3195,7 +3170,7 @@ button.similar-chip:focus-visible {
   padding: 0 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 11px;
   font-weight: 500;
   text-transform: capitalize;
@@ -3260,7 +3235,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-tune-copy h3 {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 34px;
   font-weight: 650;
   line-height: 1.05;
@@ -3268,7 +3243,7 @@ button.similar-chip:focus-visible {
 
 .radio-tune-copy span {
   overflow-wrap: anywhere;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 14px;
 }
 
@@ -3328,7 +3303,7 @@ button.similar-chip:focus-visible {
 .radio-request-form input,
 .radio-request-form textarea {
   min-height: 36px;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 13px;
 }
 
@@ -3348,7 +3323,7 @@ button.similar-chip:focus-visible {
 
 .radio-request-status,
 .radio-request-receipt p {
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -3412,7 +3387,7 @@ button.similar-chip:focus-visible {
 .radio-cover-fallback {
   display: grid;
   place-items: center;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   background:
     radial-gradient(circle at 34% 24%, rgba(var(--prism-accent-rgb), 0.18), transparent 34%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
@@ -3438,7 +3413,7 @@ button.similar-chip:focus-visible {
   /* Three lines is the hard visual limit; the full title remains available to assistive tech. */
   -webkit-line-clamp: 3;
   margin-top: 10px;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: clamp(36px, 9cqw, 48px);
   font-weight: 650;
   line-height: 1;
@@ -3452,7 +3427,7 @@ button.similar-chip:focus-visible {
 
 .radio-copy h3 em {
   margin-top: 6px;
-  color: rgba(244, 241, 236, 0.64);
+  color: rgba(237, 242, 246, 0.64);
   font-size: 0.48em;
   font-style: italic;
   font-weight: 500;
@@ -3468,7 +3443,7 @@ button.similar-chip:focus-visible {
 
 .radio-album {
   margin-top: 7px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 14px;
   font-weight: 500;
 }
@@ -3499,9 +3474,9 @@ button.similar-chip:focus-visible {
 }
 
 .radio-dj-callout small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -3509,7 +3484,7 @@ button.similar-chip:focus-visible {
   max-height: 4.05em;
   overflow-y: auto;
   padding-right: 6px;
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
@@ -3562,7 +3537,7 @@ button.similar-chip:focus-visible {
 .radio-status {
   min-height: 18px;
   margin-top: 12px;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 12px;
 }
 
@@ -3576,13 +3551,13 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 10px;
   max-width: 420px;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
 }
 
 .radio-channel-select select {
   min-height: 34px;
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
 }
 
 .radio-broadcast-details {
@@ -3619,14 +3594,14 @@ button.similar-chip:focus-visible {
 
 .radio-broadcast-details strong {
   margin-top: 7px;
-  color: rgba(244, 241, 236, 0.84);
+  color: rgba(237, 242, 246, 0.84);
   font-size: 16px;
   font-weight: 600;
 }
 
 .radio-broadcast-details small {
   margin-top: 5px;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 13px;
   font-weight: 500;
 }
@@ -3648,7 +3623,7 @@ button.similar-chip:focus-visible {
 }
 
 .search-summary h4 {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 18px;
   font-weight: 500;
 }
@@ -3670,7 +3645,7 @@ button.similar-chip:focus-visible {
   padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 11px;
 }
 
@@ -3711,7 +3686,7 @@ button.similar-chip:focus-visible {
   background:
     linear-gradient(115deg, rgba(var(--prism-accent-rgb), 0.15), rgba(255, 255, 255, 0.035) 58%, transparent),
     rgba(8, 11, 13, 0.62);
-  color: rgba(244, 241, 236, 0.76);
+  color: rgba(237, 242, 246, 0.76);
   text-align: left;
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
   cursor: pointer;
@@ -3753,7 +3728,7 @@ button.similar-chip:focus-visible {
 }
 
 .search-primary-copy small {
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 12px;
 }
 
@@ -3762,7 +3737,7 @@ button.similar-chip:focus-visible {
   border-radius: 999px;
   background: rgba(var(--prism-accent-rgb), 0.15);
   color: var(--prism-accent-strong);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -3774,7 +3749,7 @@ button.similar-chip:focus-visible {
 }
 
 .search-section-label h4 {
-  color: rgba(244, 241, 236, 0.94);
+  color: rgba(237, 242, 246, 0.94);
   font-size: 15px;
   font-weight: 600;
 }
@@ -3785,7 +3760,7 @@ button.similar-chip:focus-visible {
   padding: 5px 9px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.84);
+  color: rgba(237, 242, 246, 0.84);
   font-size: 12px;
 }
 
@@ -3796,7 +3771,7 @@ button.similar-chip:focus-visible {
 }
 
 .section-label small {
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   font-size: 11px;
 }
 
@@ -3855,13 +3830,13 @@ button.similar-chip:focus-visible {
 }
 
 .search-playlist-row strong {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 13px;
   font-weight: 500;
 }
 
 .search-playlist-row small {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -3908,7 +3883,7 @@ button.similar-chip:focus-visible {
 
 .search-song-main small,
 .search-song-row > small {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -3936,7 +3911,7 @@ button.similar-chip:focus-visible {
 
 .alpha-heading {
   margin-bottom: 8px;
-  color: rgba(244, 241, 236, 0.44);
+  color: rgba(237, 242, 246, 0.44);
   font-size: 11px;
   font-weight: 500;
 }
@@ -3956,8 +3931,8 @@ button.similar-chip:focus-visible {
   height: 15px;
   border-radius: 4px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.58);
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -4026,7 +4001,7 @@ button.similar-chip:focus-visible {
 .album-list-row small,
 .playlist-row small {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4253,7 +4228,7 @@ button.similar-chip:focus-visible {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
     rgba(0, 0, 0, 0.08);
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   text-align: center;
 }
 
@@ -4267,7 +4242,7 @@ button.similar-chip:focus-visible {
 }
 
 .empty-view h3 {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 22px;
   font-weight: 600;
 }
@@ -4335,7 +4310,7 @@ button.similar-chip:focus-visible {
   aspect-ratio: 1;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(244, 241, 236, 0.4);
+  color: rgba(237, 242, 246, 0.4);
 }
 
 .artist-about-photo img {
@@ -4350,7 +4325,7 @@ button.similar-chip:focus-visible {
 }
 
 .artist-about-copy > p {
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   line-height: 1.65;
 }
 
@@ -4425,7 +4400,7 @@ button.similar-chip:focus-visible {
 
 .confirm-copy p:last-child,
 .confirm-status {
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 13px;
   line-height: 1.42;
 }
@@ -4505,7 +4480,7 @@ button.similar-chip:focus-visible {
 .whats-new-copy,
 .wizard-status {
   margin-top: 10px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -4530,7 +4505,7 @@ button.similar-chip:focus-visible {
   display: grid;
   gap: 8px;
   padding-left: 19px;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 14px;
   line-height: 1.4;
 }
@@ -4551,7 +4526,7 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 8px;
   min-height: 42px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -4588,7 +4563,7 @@ button.similar-chip:focus-visible {
   gap: 6px;
   margin: 0;
   padding-left: 18px;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -4768,7 +4743,7 @@ button.similar-chip:focus-visible {
 .history-track-album {
   font-size: 12px;
   font-weight: 400;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
 }
 
 .radio-footer-title {
@@ -4783,7 +4758,7 @@ button.similar-chip:focus-visible {
 
 .track-album {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4808,13 +4783,13 @@ button.similar-chip:focus-visible {
 }
 
 .track-meta .track-link {
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: inherit;
 }
 
 .track-meta .track-link:hover:not(:disabled),
 .track-meta .track-link:focus-visible:not(:disabled) {
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
 }
 
 .player-center {
@@ -4868,7 +4843,7 @@ button.similar-chip:focus-visible {
 
 .transport .playback-mode-button {
   border: 1px solid transparent;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
@@ -4900,7 +4875,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-transport button {
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
 }
 
 .radio-transport button.active {
@@ -4975,9 +4950,9 @@ button.similar-chip:focus-visible {
 
 .radio-schedule-popover-row > span,
 .radio-booth-popover-row > span {
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
 }
 
@@ -5015,7 +4990,7 @@ button.similar-chip:focus-visible {
 
 .radio-schedule-popover-row strong {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.88);
+  color: rgba(237, 242, 246, 0.88);
   font-size: 14px;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -5028,13 +5003,13 @@ button.similar-chip:focus-visible {
 
 .radio-schedule-popover-row small {
   margin-top: 3px;
-  color: rgba(244, 241, 236, 0.52);
+  color: rgba(237, 242, 246, 0.52);
   font-size: 12px;
 }
 
 .radio-schedule-popover-row p {
   margin: 6px 0 0;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   font-size: 12px;
   line-height: 1.35;
   display: -webkit-box;
@@ -5066,7 +5041,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-booth-popover-row p {
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -5087,7 +5062,7 @@ button.similar-chip:focus-visible {
 
 .radio-popover-empty {
   padding: 18px 0 4px;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 13px;
   text-align: center;
 }
@@ -5099,8 +5074,8 @@ button.similar-chip:focus-visible {
   gap: 10px;
   width: min(680px, 100%);
   height: 22px;
-  color: rgba(244, 241, 236, 0.48);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.48);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -5159,7 +5134,7 @@ button.similar-chip:focus-visible {
   grid-template-columns: 24px 132px;
   align-items: center;
   gap: 8px;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
 }
 
 .volume-mute-button {
@@ -5178,7 +5153,7 @@ button.similar-chip:focus-visible {
 }
 
 .volume-control.muted {
-  color: rgba(244, 241, 236, 0.32);
+  color: rgba(237, 242, 246, 0.32);
 }
 
 .volume-control .volume-slider:disabled {
@@ -5196,7 +5171,7 @@ button.similar-chip:focus-visible {
   padding: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   cursor: pointer;
 }
 
@@ -5229,21 +5204,21 @@ button.similar-chip:focus-visible {
 }
 
 .queue-heading span {
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
 }
 
 .queue-heading button {
   padding: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 11px;
   cursor: pointer;
 }
 
 .queue-heading button:hover:not(:disabled),
 .queue-heading button:focus-visible:not(:disabled) {
-  color: #f4f1ec;
+  color: #edf2f6;
 }
 
 .queue-list {
@@ -5325,8 +5300,8 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 6px;
   padding: 8px 8px 1px;
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
 }
@@ -5350,7 +5325,7 @@ button.similar-chip:focus-visible {
 }
 
 .queue-row > small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -5367,7 +5342,7 @@ button.similar-chip:focus-visible {
   padding: 0;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   cursor: grab;
   opacity: 0;
   touch-action: none;
@@ -5382,7 +5357,7 @@ button.similar-chip:focus-visible {
 .queue-row:focus-within .queue-drag-handle {
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
 }
 
 .queue-track {
@@ -5427,8 +5402,8 @@ button.similar-chip:focus-visible {
 }
 
 .radio-queue-meta small {
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 9px;
+  color: rgba(237, 242, 246, 0.46);
+  font-size: 11px;
   font-weight: 650;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -5440,8 +5415,8 @@ button.similar-chip:focus-visible {
 }
 
 .queue-row small {
-  color: rgba(244, 241, 236, 0.48);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.48);
+  font-size: 11px;
 }
 
 .queue-row-actions {
@@ -5459,7 +5434,7 @@ button.similar-chip:focus-visible {
   padding: 0;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   cursor: pointer;
 }
 
@@ -5471,12 +5446,12 @@ button.similar-chip:focus-visible {
 .queue-row-actions button:hover:not(:disabled),
 .queue-row-actions button:focus-visible:not(:disabled) {
   background: rgba(255, 255, 255, 0.13);
-  color: #f4f1ec;
+  color: #edf2f6;
 }
 
 .queue-empty {
   padding: 14px 8px;
-  color: rgba(244, 241, 236, 0.52);
+  color: rgba(237, 242, 246, 0.52);
   font-size: 12px;
 }
 
@@ -5499,7 +5474,7 @@ button.similar-chip:focus-visible {
 }
 
 .queue-drag-ghost > svg {
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
 }
 
 .queue-drag-ghost div {
@@ -5521,8 +5496,8 @@ button.similar-chip:focus-visible {
 }
 
 .queue-drag-ghost small {
-  color: rgba(244, 241, 236, 0.62);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.62);
+  font-size: 11px;
 }
 
 .queue-drag-ghost > small {
@@ -5562,7 +5537,7 @@ button.similar-chip:focus-visible {
   display: block;
   overflow: hidden;
   margin-top: 3px;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -5600,7 +5575,7 @@ button.similar-chip:focus-visible {
   padding: 5px 7px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   text-align: left;
 }
 
@@ -5663,7 +5638,7 @@ button.similar-chip:focus-visible {
 .song-context-list small,
 .song-context-empty,
 .song-context-status {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
 }
 
@@ -6101,8 +6076,8 @@ button.similar-chip:focus-visible {
 }
 
 .brand-wordmark p {
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 9px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -6173,8 +6148,8 @@ button.similar-chip:focus-visible {
 
 .album-type-label {
   margin-bottom: 9px;
-  color: rgba(244, 241, 236, 0.55);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.55);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -6213,7 +6188,7 @@ button.similar-chip:focus-visible {
 .album-description {
   max-width: 620px;
   margin-top: 14px;
-  color: rgba(244, 241, 236, 0.55);
+  color: rgba(237, 242, 246, 0.55);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -6260,7 +6235,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-tracks-heading span {
-  color: rgba(244, 241, 236, 0.43);
+  color: rgba(237, 242, 246, 0.43);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -6355,7 +6330,7 @@ button.similar-chip:focus-visible {
   min-height: 30px;
   padding: 0 8px 0 4px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.64);
+  color: rgba(237, 242, 246, 0.64);
   font-size: 12px;
   cursor: pointer;
 }
@@ -6384,7 +6359,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   background: rgba(6, 9, 11, 0.34);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   backdrop-filter: blur(14px);
   cursor: pointer;
 }
@@ -6434,7 +6409,7 @@ button.similar-chip:focus-visible {
   height: 28px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   cursor: pointer;
 }
 
@@ -6544,7 +6519,7 @@ button.similar-chip:focus-visible {
   padding: 0 13px;
   border-radius: 999px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.55);
+  color: rgba(237, 242, 246, 0.55);
   font-size: 12px;
   font-weight: 560;
   cursor: pointer;
@@ -6666,7 +6641,7 @@ button.similar-chip:focus-visible {
 .home-resume-copy > p:not(.eyebrow) {
   margin: 0;
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6915,7 +6890,7 @@ button.similar-chip:focus-visible {
   padding: 0 12px;
   border-radius: 9px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -6924,7 +6899,7 @@ button.similar-chip:focus-visible {
 .sidebar-collection-nav button:hover,
 .sidebar-collection-nav button:focus-visible {
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(244, 241, 236, 0.84);
+  color: rgba(237, 242, 246, 0.84);
 }
 
 .sidebar-collection-nav button.active {
@@ -6974,7 +6949,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-track-album {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
 }
 
 .playlist-track-editor .track-list {
@@ -7163,8 +7138,8 @@ button.similar-chip:focus-visible {
 
 .detail-type-label {
   margin-bottom: 9px;
-  color: rgba(244, 241, 236, 0.55);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.55);
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -7195,12 +7170,12 @@ button.similar-chip:focus-visible {
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
 }
 
 .detail-page .detail-stats span + span::before {
   margin-right: 8px;
-  color: rgba(244, 241, 236, 0.28);
+  color: rgba(237, 242, 246, 0.28);
   content: "•";
 }
 
@@ -7230,7 +7205,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   background: rgba(6, 9, 11, 0.3);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   backdrop-filter: blur(14px);
 }
 
@@ -7248,7 +7223,7 @@ button.similar-chip:focus-visible {
 }
 
 .detail-tracks-heading span {
-  color: rgba(244, 241, 236, 0.43);
+  color: rgba(237, 242, 246, 0.43);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -7286,7 +7261,7 @@ button.similar-chip:focus-visible {
 }
 
 .artist-top-songs .section-label small {
-  color: rgba(244, 241, 236, 0.44);
+  color: rgba(237, 242, 246, 0.44);
   font-size: 11px;
 }
 
@@ -7369,7 +7344,7 @@ button.similar-chip:focus-visible {
 }
 
 .latest-release-main small {
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
 }
 
@@ -7485,7 +7460,7 @@ button.similar-chip:focus-visible {
   background:
     radial-gradient(circle at 30% 24%, rgba(var(--prism-accent-rgb), 0.2), transparent 46%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(5, 8, 10, 0.45));
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.3);
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
@@ -7517,7 +7492,7 @@ button.similar-chip:focus-visible {
 }
 
 .playlist-card-copy small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
 }
 
@@ -7602,7 +7577,7 @@ button.similar-chip:focus-visible {
 
 .artist-album-main small,
 .artist-album-empty {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
 }
 
@@ -7760,7 +7735,7 @@ button.similar-chip:focus-visible {
 .player-bar .track-meta,
 .player-bar .track-album {
   font-size: 11px;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
 }
 
 .artist-row {
@@ -7862,4 +7837,70 @@ button.similar-chip:focus-visible {
   font: inherit;
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* Facet keeps the default frame charcoal; cover-derived artwork wash is unchanged. */
+.app-shell.theme-prism {
+  background: #131619;
+}
+
+.theme-prism .nav-item.active {
+  background: #282e32;
+  color: #adc8de;
+  position: relative;
+  box-shadow: none;
+}
+
+.theme-prism .lyrics-lines p.active {
+  border-left-color: #59a99e;
+}
+
+.theme-prism .cover-fallback,
+.theme-prism .setup-art {
+  background: #293d3b;
+  color: #adc8de;
+}
+
+.theme-prism .home-shortcut::before {
+  background: #898fbd;
+}
+
+.theme-prism .home-resume-card {
+  background: #202629;
+}
+
+.theme-prism .player-bar {
+  background: #11191b;
+}
+
+.theme-prism .transport .play-button {
+  box-shadow: none;
+}
+
+/* Use the available workspace width when a playback sidebar is open. */
+.home-dashboard {
+  container-type: inline-size;
+}
+
+@container (max-width: 680px) {
+  .home-dashboard-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-album-row {
+    grid-auto-columns: calc((100% - 12px) / 2);
+  }
+
+  .home-album-row.home-album-row-art {
+    grid-auto-columns: calc((100% - 24px) / 3);
+  }
+}
+
+.theme-prism .nav-item.active::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  border-radius: 2px;
+  background: #59a99e;
+  content: "";
 }

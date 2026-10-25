@@ -127,8 +127,8 @@ export const navidromeClient = {
   buildCoverArtUrl(config: NavidromeConfig, coverArt?: string, size = "420") {
     return coverArt ? buildUrl(config, "getCoverArt", { id: coverArt, size }).toString() : null;
   },
-  buildStreamUrl(config: NavidromeConfig, songId: string) {
-    return buildUrl(config, "stream", { id: songId }).toString();
+  buildStreamUrl(config: NavidromeConfig, songId: string, original = false) {
+    return buildUrl(config, "stream", { id: songId, ...(original ? { format: "raw" } : {}) }).toString();
   },
   async resolveConfig(config: NavidromeConfig) {
     const normalized = normalizeServerUrl(config.serverUrl);

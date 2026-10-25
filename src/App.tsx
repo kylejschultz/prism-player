@@ -5,6 +5,8 @@ import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { navidromeClient, navidromeKeys, type LyricLine } from "./data/navidrome";
+import { canPlayOriginal } from "./localPlayback";
+import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
 import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
@@ -245,7 +247,7 @@ type AppSettings = {
 };
 
 const colorThemes: Array<{ id: ColorTheme; label: string; description: string; swatches: [string, string, string] }> = [
-  { id: "prism", label: "Prism", description: "Warm gold and ember", swatches: ["#f0d27b", "#be4d3b", "#429184"] },
+  { id: "prism", label: "Facet", description: "Teal, pale blue and periwinkle", swatches: ["#59A99E", "#ADC8DE", "#898FBD"] },
   { id: "ocean", label: "Ocean", description: "Blue and sea-glass", swatches: ["#73c7f2", "#397ec4", "#5dc6b2"] },
   { id: "orchid", label: "Orchid", description: "Violet and rose", swatches: ["#d3a5f7", "#ba5b92", "#8765c5"] },
   { id: "evergreen", label: "Evergreen", description: "Fern and amber", swatches: ["#a9d88a", "#3f8b72", "#d3aa57"] },
@@ -306,6 +308,8 @@ export type SearchResults = {
 };
 
 export type Song = {
+  contentType?: string;
+  suffix?: string;
   id: string;
   title: string;
   albumId?: string;
@@ -1075,10 +1079,6 @@ function buildNavidromeUrl(config: NavidromeConfig, endpoint: string, params: Re
 function buildCoverArtUrl(config: NavidromeConfig, coverArt?: string, size = "420") {
   if (!coverArt) return null;
   return buildNavidromeUrl(config, "getCoverArt", { id: coverArt, size }).toString();
-}
-
-function buildStreamUrl(config: NavidromeConfig, songId: string) {
-  return buildNavidromeUrl(config, "stream", { id: songId }).toString();
 }
 
 function normalizeStationUrl(value: string) {
@@ -2090,6 +2090,8 @@ export function App() {
     () => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex] ?? loadLastPlayedTrack(),
   );
   const [position, setPosition] = useState(() => initialPlaybackSnapshot?.position ?? 0);
+  const [mediaSupport] = useState(() => document.createElement("audio"));
+  const [serverStreamFallbacks, setServerStreamFallbacks] = useState<Set<string>>(() => new Set());
   const [playerDuration, setPlayerDuration] = useState(() => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex]?.duration ?? 0);
   const [volume, setVolume] = useState(() => loadStoredSettings().lastVolume);
   const [rightPanelOpen, setRightPanelOpen] = useState(() => loadStoredBoolean(RIGHT_PANEL_OPEN_KEY, false));
@@ -2387,9 +2389,11 @@ export function App() {
       cancelled = true;
     };
   }, [isRadioPlaying, radioNowPlayingSongId, radioStationUrl]);
-  const currentStreamUrl = config && currentTrack ? buildStreamUrl(config, currentTrack.id) : null;
+  const currentStreamUrl = config && currentTrack ? navidromeClient.buildStreamUrl(config, currentTrack.id,
+    !serverStreamFallbacks.has(currentTrack.id) && canPlayOriginal(currentTrack, type => mediaSupport.canPlayType(type))) : null;
   const nextTrack = currentIndex < queue.length - 1 ? queue[currentIndex + 1] : null;
-  const nextStreamUrl = config && nextTrack ? buildStreamUrl(config, nextTrack.id) : null;
+  const nextStreamUrl = config && nextTrack ? navidromeClient.buildStreamUrl(config, nextTrack.id,
+    !serverStreamFallbacks.has(nextTrack.id) && canPlayOriginal(nextTrack, type => mediaSupport.canPlayType(type))) : null;
 
   function getActiveAudio() {
     return activeAudioSlot === 0 ? primaryAudioRef.current : secondaryAudioRef.current;
@@ -3655,7 +3659,7 @@ export function App() {
 
   function handleLocalTimeUpdate(audio: HTMLAudioElement) {
     if (audio !== getActiveAudio()) return;
-    setPosition(audio.currentTime);
+    if (!audio.seeking) setPosition(audio.currentTime);
 
     const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : currentTrack?.duration || 0;
     if (Number.isFinite(audio.duration) && audio.duration > 0) setPlayerDuration(audio.duration);
@@ -3663,6 +3667,7 @@ export function App() {
       !transitionInProgressRef.current
       && appSettings.trackTransitionSeconds > 0
       && nextTrack
+      && !audio.seeking
       && duration > 0
       && duration - audio.currentTime <= appSettings.trackTransitionSeconds
     ) {
@@ -3697,8 +3702,9 @@ export function App() {
   function seekTo(nextPosition: number) {
     const audio = getActiveAudio();
     if (!audio || !Number.isFinite(nextPosition)) return;
-    audio.currentTime = nextPosition;
-    setPosition(nextPosition);
+    audio.currentTime = Math.max(0, Math.min(nextPosition, playerDuration || currentTrack?.duration || nextPosition));
+    // The engine may clamp or reject a seek. Publish its confirmed position on seeked.
+    if (!audio.seeking) setPosition(audio.currentTime);
     setDiscordPresenceSyncNonce((nonce) => nonce + 1);
   }
 
@@ -3717,7 +3723,24 @@ export function App() {
 
     if (safePosition <= 0) return;
     audio.currentTime = safePosition;
-    setPosition(safePosition);
+    if (!audio.seeking) setPosition(audio.currentTime);
+  }
+
+  function retryServerStream(audio: HTMLAudioElement) {
+    const active = audio === getActiveAudio();
+    const track = active ? currentTrack : nextTrack;
+    if (!track || !audio.src || audio.src !== (active ? currentStreamUrl : nextStreamUrl) || new URL(audio.src).searchParams.get("format") !== "raw") return false;
+    if (active) pendingResumePositionRef.current = audio.currentTime || pendingResumePositionRef.current;
+    setServerStreamFallbacks(previous => previous.has(track.id) ? previous : new Set([...previous, track.id]));
+    return true;
+  }
+
+  function handleLocalStreamError(audio: HTMLAudioElement) {
+    if (retryServerStream(audio)) return;
+    if (audio === getActiveAudio() && currentTrack) {
+      setIsPlaying(false);
+      setPlayerError("Track stream failed.");
+    }
   }
 
   function handleLocalDurationChange(audio: HTMLAudioElement) {
@@ -3903,7 +3926,9 @@ export function App() {
     tuneOutRadio();
     setSuppressLocalFooter(false);
     if (audio && currentStreamUrl) {
+      const requestedSource = audio.src;
       void audio.play().catch(() => {
+        if (audio.src !== requestedSource || (audio.error && retryServerStream(audio))) return;
         setPlayerError("Playback was blocked by the browser.");
       });
     }
@@ -4469,7 +4494,10 @@ export function App() {
     setPlayerError("");
 
     if (isPlaying) {
+      const requestedSource = audio.src;
       void audio.play().catch(() => {
+        if (audio.src !== requestedSource) return;
+        if (audio.error && retryServerStream(audio)) return;
         setIsPlaying(false);
         setPlayerError("Playback was blocked by the browser.");
       });
@@ -4590,7 +4618,10 @@ export function App() {
     if (!audio || !currentStreamUrl) return;
 
     if (isPlaying) {
+      const requestedSource = audio.src;
       void audio.play().catch(() => {
+        if (audio.src !== requestedSource) return;
+        if (audio.error && retryServerStream(audio)) return;
         setIsPlaying(false);
         setPlayerError("Playback was blocked by the browser.");
       });
@@ -5095,30 +5126,22 @@ export function App() {
           preload="auto"
           onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
+          onSeeked={(event) => handleLocalTimeUpdate(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
           onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
           onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
-          onError={() => {
-            if (currentTrack && primaryAudioRef.current === getActiveAudio()) {
-              setIsPlaying(false);
-              setPlayerError("Track stream failed.");
-            }
-          }}
+          onError={(event) => handleLocalStreamError(event.currentTarget)}
         />
         <audio
           ref={secondaryAudioRef}
           preload="auto"
           onPlay={() => setActivePlaybackSource("local")}
           onTimeUpdate={(event) => handleLocalTimeUpdate(event.currentTarget)}
+          onSeeked={(event) => handleLocalTimeUpdate(event.currentTarget)}
           onLoadedMetadata={(event) => handleLoadedMetadata(event.currentTarget)}
           onDurationChange={(event) => handleLocalDurationChange(event.currentTarget)}
           onEnded={(event) => handleLocalTrackEnded(event.currentTarget)}
-          onError={() => {
-            if (currentTrack && secondaryAudioRef.current === getActiveAudio()) {
-              setIsPlaying(false);
-              setPlayerError("Track stream failed.");
-            }
-          }}
+          onError={(event) => handleLocalStreamError(event.currentTarget)}
         />
         <audio
           ref={radioAudioRef}
@@ -5992,9 +6015,7 @@ function RadioQueueRow({ track, tone = "next" }: { track: RadioTrack; tone?: "pr
 
 function PrismMark({ className = "" }: { className?: string }) {
   return (
-    <div className={`prism-mark ${className}`} aria-hidden="true">
-      <span>P</span>
-    </div>
+    <img className={`prism-mark ${className}`} src={facetMark} alt="" aria-hidden="true" />
   );
 }
 
