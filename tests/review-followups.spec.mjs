@@ -678,6 +678,8 @@ for (const ready of [true, false]) {
     await page.evaluate(() => window.finishNextPlay());
     await expect(page.locator('.player-loading')).toHaveCount(0);
     await expect(page.locator('.player-bar .track-title')).toHaveText('Album a track 2');
+    // Handoff completion must re-arm preloading for the following song.
+    await expect.poll(() => page.locator('audio').nth(ready ? 0 : 1).evaluate(a => new URL(a.src).searchParams.get('id'))).toBe('a-2');
     expect(errors).toEqual([]);
   });
 }

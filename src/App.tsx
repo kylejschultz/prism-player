@@ -3662,6 +3662,7 @@ export function App() {
       activeAudio.currentTime = 0;
       activeAudio.volume = volumeRef.current;
       transitionInProgressRef.current = false;
+      setTransitionCompleteNonce((nonce) => nonce + 1);
       return true;
     }
 
