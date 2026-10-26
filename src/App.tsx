@@ -56,6 +56,8 @@ import {
   Pause,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightOpen,
+  PanelRightClose,
   Play,
   Plus,
   RadioTower,
@@ -91,7 +93,7 @@ type CatalogStatus = "idle" | "hydrating" | "syncing" | "ready" | "stale" | "err
 type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type HomeShelfViewMode = "art" | "list";
-type RightPanelTab = "queue" | "lyrics" | "schedule" | "request" | "booth";
+type RightPanelTab = "queue" | "schedule" | "request" | "booth";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
@@ -523,7 +525,6 @@ const LAST_PLAYED_TRACK_KEY = "prism-player.lastPlayedTrack";
 const PLAYBACK_STATE_KEY = "prism-player.playbackState";
 const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
-const RIGHT_PANEL_TAB_KEY = "prism-player.rightPanelTab";
 const LIBRARY_EXPANDED_KEY = "prism-player.libraryExpanded";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
@@ -1032,15 +1033,6 @@ function loadStoredNumber(key: string, fallback: number, min: number, max: numbe
     return Number.isFinite(value) ? clampNumber(value, min, max) : fallback;
   } catch {
     return fallback;
-  }
-}
-
-function loadStoredRightPanelTab(): RightPanelTab {
-  try {
-    const storedTab = localStorage.getItem(RIGHT_PANEL_TAB_KEY);
-    return storedTab === "lyrics" ? storedTab : "queue";
-  } catch {
-    return "queue";
   }
 }
 
@@ -2107,7 +2099,7 @@ export function App() {
   const [playerDuration, setPlayerDuration] = useState(() => initialPlaybackSnapshot?.queue[initialPlaybackSnapshot.currentIndex]?.duration ?? 0);
   const [volume, setVolume] = useState(() => loadStoredSettings().lastVolume);
   const [rightPanelOpen, setRightPanelOpen] = useState(() => loadStoredBoolean(RIGHT_PANEL_OPEN_KEY, false));
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>(() => loadStoredRightPanelTab());
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("queue");
   const [lyricsStatus, setLyricsStatus] = useState<LyricsStatus>("idle");
   const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
   const [lyricsMessage, setLyricsMessage] = useState("");
@@ -2768,12 +2760,7 @@ export function App() {
   }
 
   function selectRightPanelTab(tab: RightPanelTab) {
-    if (rightPanelOpen && rightPanelTab === tab) {
-      setRightPanelState(false);
-      return;
-    }
-    setRightPanelTab(tab);
-    localStorage.setItem(RIGHT_PANEL_TAB_KEY, tab);
+    setRightPanelTab(rightPanelOpen && rightPanelTab === tab ? "queue" : tab);
     setRightPanelState(true);
   }
 
@@ -4339,7 +4326,7 @@ export function App() {
   }, [appSettings.analyticsEnabled, config, libraryData, libraryStatus]);
 
   useEffect(() => {
-    if (!rightPanelOpen || rightPanelTab !== "lyrics") return;
+    if (!rightPanelOpen) return;
     const isRadioLyricsSession = radioStatus === "playing" || radioStatus === "checking";
 
     setRadioLyricsOffsetMs(0);
@@ -4416,7 +4403,7 @@ export function App() {
     return () => {
       controller.abort();
     };
-  }, [config, currentTrack, radioStatus, rightPanelOpen, rightPanelTab, radioStationUrl, radioNowPlayingSongId, radioStationState?.lyrics?.enabled]);
+  }, [config, currentTrack, radioStatus, rightPanelOpen, radioStationUrl, radioNowPlayingSongId, radioStationState?.lyrics?.enabled]);
 
   useEffect(() => {
     [primaryAudioRef.current, secondaryAudioRef.current].forEach((audio) => {
@@ -4956,7 +4943,7 @@ export function App() {
   const radioIsLiked = Boolean(radioLikeStatus?.liked && (!radioLikeStatus.songId || radioLikeStatus.songId === radioNowPlayingSongId));
 
   useEffect(() => {
-    if (!isRadioPlaying && rightPanelTab !== "queue" && rightPanelTab !== "lyrics") setRightPanelState(false);
+    if (!isRadioPlaying && rightPanelTab !== "queue") setRightPanelTab("queue");
   }, [isRadioPlaying, rightPanelTab]);
 
   return (
@@ -5460,24 +5447,14 @@ export function App() {
         <div className="player-actions">
           <div className="player-panel-buttons" role="group" aria-label="Player panels">
             <button
-              className={`player-panel-toggle ${rightPanelOpen && rightPanelTab === "queue" ? "active" : ""}`}
+              className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
               type="button"
-              aria-label={`${rightPanelOpen && rightPanelTab === "queue" ? "Close" : "Open"} ${isRadioPlaying || radioStatus === "checking" ? "timeline" : "queue"}`}
-              aria-expanded={rightPanelOpen && rightPanelTab === "queue"}
+              aria-label={`${rightPanelOpen ? "Close" : "Open"} playback sidebar`}
+              aria-expanded={rightPanelOpen}
               aria-controls="playback-sidebar"
-              onClick={() => selectRightPanelTab("queue")}
+              onClick={() => setRightPanelState(!rightPanelOpen)}
             >
-              <ListMusic size={16} />
-            </button>
-            <button
-              className={`player-panel-toggle ${rightPanelOpen && rightPanelTab === "lyrics" ? "active" : ""}`}
-              type="button"
-              aria-label={`${rightPanelOpen && rightPanelTab === "lyrics" ? "Close" : "Open"} lyrics`}
-              aria-expanded={rightPanelOpen && rightPanelTab === "lyrics"}
-              aria-controls="playback-sidebar"
-              onClick={() => selectRightPanelTab("lyrics")}
-            >
-              <Music2 size={16} />
+              {rightPanelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
             </button>
           </div>
           <div className={`volume-control ${isMuted ? "muted" : ""}`}>
@@ -5524,7 +5501,7 @@ export function App() {
               ) : rightPanelTab === "request" ? (
                 <RadioRequestPopover
                   stationUrl={radioStationUrl}
-                  onClose={() => setRightPanelState(false)}
+                  onClose={() => setRightPanelTab("queue")}
                   onResolved={() => {
                     if (!radioStationUrl) return;
                     const requestGeneration = radioGenerationRef.current;
@@ -5572,6 +5549,7 @@ export function App() {
           onRemoveQueueItem={removeQueueItem}
           onClearQueue={clearQueue}
           onClose={() => setRightPanelState(false)}
+          onShowQueue={() => selectRightPanelTab("queue")}
         />
       ) : null}
 
@@ -5782,6 +5760,7 @@ function RightSidebar({
   onRemoveQueueItem,
   onClearQueue,
   onClose,
+  onShowQueue,
 }: {
   tab: RightPanelTab;
   radioContent: ReactNode;
@@ -5810,6 +5789,7 @@ function RightSidebar({
   onRemoveQueueItem: (index: number) => void;
   onClearQueue: () => void;
   onClose: () => void;
+  onShowQueue: () => void;
 }) {
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
@@ -5846,7 +5826,7 @@ function RightSidebar({
 
   useEffect(() => {
     const container = lyricsScrollRef.current;
-    if (tab !== "lyrics" || lyricsStatus === "loading" || !container || !lyricsLines.some(line => line.startMs != null)) return;
+    if (lyricsStatus === "loading" || !container || !lyricsLines.some(line => line.startMs != null)) return;
     const first = container.querySelector("p");
     const last = container.querySelector("p:last-child");
     if (!first || !last) return;
@@ -5868,14 +5848,13 @@ function RightSidebar({
     });
     [container, ...container.querySelectorAll("p")].forEach(element => observer.observe(element));
     return () => { observer.disconnect(); window.cancelAnimationFrame(frame); };
-  }, [activeLyricIndex, lyricsLines, lyricsStatus, tab]);
+  }, [activeLyricIndex, lyricsLines, lyricsStatus]);
 
   useEffect(() => {
     latestDragOverQueueIndexRef.current = dragOverQueueIndex;
   }, [dragOverQueueIndex]);
 
   const headingLabel = tab === "queue" ? (isRadioSession ? "Timeline" : "Queue")
-    : tab === "lyrics" ? "Lyrics"
     : { schedule: "Schedule", request: "Request", booth: "Booth Feed" }[tab];
     const queueIndexFromPointer = (event: PointerEvent) => {
       const rows = Array.from(document.querySelectorAll<HTMLElement>(".right-sidebar [data-queue-index]"))
@@ -5946,7 +5925,7 @@ function RightSidebar({
     <aside
       id="playback-sidebar"
       className="right-sidebar"
-      aria-label={headingLabel}
+      aria-label="Playback sidebar"
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
       }}
@@ -5956,9 +5935,14 @@ function RightSidebar({
           <p className="eyebrow">Player</p>
           <h3>{headingLabel}</h3>
         </div>
-        <button className="icon-button right-sidebar-close" type="button" aria-label={`Close ${headingLabel.toLowerCase()}`} onClick={onClose}>
-          <X size={16} />
-        </button>
+        <div className="right-sidebar-heading-actions">
+          {isRadioSession && tab !== "queue" ? (
+            <button className="icon-button" type="button" aria-label="Show timeline" onClick={onShowQueue}><ListMusic size={16} /></button>
+          ) : null}
+          <button className="icon-button right-sidebar-close" type="button" aria-label="Close playback sidebar" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {tab === "queue" ? (
@@ -6054,7 +6038,11 @@ function RightSidebar({
             </p>
           ) : null}
         </div>
-      ) : tab === "lyrics" ? (
+      ) : (
+        <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
+      )}
+      <section className="playback-lyrics-section" aria-labelledby="playback-lyrics-heading">
+        <h3 id="playback-lyrics-heading">Lyrics</h3>
         <div className="right-panel-section lyrics-panel">
           {isRadioSession || currentTrack ? (
             <>
@@ -6086,9 +6074,7 @@ function RightSidebar({
             <EmptyPanel icon={<Music2 size={20} />} text="No active playback." />
           )}
         </div>
-      ) : (
-        <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
-      )}
+      </section>
       {queueDragGhost ? (
         <div
           className="queue-drag-ghost"
@@ -6192,6 +6178,12 @@ function SearchBox({
   onOpenPlaylist: (playlist: Playlist) => void;
   onPlaySong: (song: Song) => void;
 }) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  function closeSuggestions() {
+    setFocused(false);
+    searchInputRef.current?.blur();
+  }
+
   const trimmedQuery = query.trim();
   const totalResults = results.artists.length + results.albums.length + results.songs.length + results.playlists.length;
   const showSuggestions = isFocused && trimmedQuery.length >= 2 && (status !== "idle" || totalResults > 0);
@@ -6199,32 +6191,36 @@ function SearchBox({
   return (
     <form
       className="global-search"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
-        if (trimmedQuery.length >= 2) onSubmit();
+        if (trimmedQuery.length >= 2) { closeSuggestions(); onSubmit(); }
       }}
     >
       <Search size={16} />
       <input
         type="search"
+        ref={searchInputRef}
         value={query}
         placeholder="Search"
         disabled={!hasConfig}
         onChange={(event) => setQuery(event.target.value)}
         onFocus={() => setFocused(true)}
-        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
       />
       {status === "searching" ? <Loader2 size={14} className="spin search-spinner" /> : null}
 
       {showSuggestions ? (
-        <div className="search-suggestions">
+        // WebKit buttons may blur Search on press; retain focus until their completed click.
+        <div className="search-suggestions" onMouseDown={(event) => { if (event.button === 0) event.preventDefault(); }}>
           {status === "error" ? <p className="suggestion-note">Search unavailable</p> : null}
           {status === "searching" && !totalResults ? <p className="suggestion-note">Searching</p> : null}
           {results.artists.length ? (
             <div className="suggestion-section">
               <p>Artists</p>
               {results.artists.slice(0, 2).map((artist) => (
-                <button className="suggestion-row" type="button" key={`artist-${artist.id}`} onMouseDown={() => onOpenArtist(artist)}>
+                <button className="suggestion-row" type="button" key={`artist-${artist.id}`} onClick={() => { closeSuggestions(); onOpenArtist(artist); }}>
                   <UserRound size={15} />
                   <span>{artist.name}</span>
                   <small>{artist.albumCount ? `${artist.albumCount} albums` : "Artist"}</small>
@@ -6236,7 +6232,7 @@ function SearchBox({
             <div className="suggestion-section">
               <p>Albums</p>
               {results.albums.slice(0, 3).map((album) => (
-                <button className="suggestion-row" type="button" key={`album-${album.id}`} onMouseDown={() => onOpenAlbum(album)}>
+                <button className="suggestion-row" type="button" key={`album-${album.id}`} onClick={() => { closeSuggestions(); onOpenAlbum(album); }}>
                   <Disc3 size={15} />
                   <span>{album.name}</span>
                   <small>{album.artist || "Album"}</small>
@@ -6252,7 +6248,7 @@ function SearchBox({
                   className="suggestion-row"
                   type="button"
                   key={`playlist-${playlist.id}`}
-                  onMouseDown={() => onOpenPlaylist(playlist)}
+                  onClick={() => { closeSuggestions(); onOpenPlaylist(playlist); }}
                 >
                   <ListMusic size={15} />
                   <span>{playlist.name}</span>
@@ -6265,7 +6261,7 @@ function SearchBox({
             <div className="suggestion-section">
               <p>Songs</p>
               {results.songs.slice(0, 5).map((song) => (
-                <button className="suggestion-row" type="button" key={`song-${song.id}`} onMouseDown={() => onPlaySong(song)}>
+                <button className="suggestion-row" type="button" key={`song-${song.id}`} onClick={() => { closeSuggestions(); onPlaySong(song); }}>
                   <Music2 size={15} />
                   <span>{song.title}</span>
                   <small>{song.artist ?? song.album ?? "Song"}</small>
@@ -6274,7 +6270,7 @@ function SearchBox({
             </div>
           ) : null}
           {totalResults > 4 ? (
-            <button className="suggestion-row view-all" type="button" onMouseDown={onSubmit}>
+            <button className="suggestion-row view-all" type="button" onClick={() => { closeSuggestions(); onSubmit(); }}>
               <Search size={15} />
               <span>View all results</span>
               <small>{totalResults}</small>

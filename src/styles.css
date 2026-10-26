@@ -735,7 +735,7 @@ h1 {
   grid-column: 3;
   grid-row: 1 / 2;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(140px, 0.75fr) minmax(180px, 1.25fr);
   gap: 14px;
   min-width: 0;
   min-height: 0;
@@ -786,6 +786,26 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.right-sidebar-heading-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.playback-lyrics-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.playback-lyrics-section > h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .right-sidebar-heading h3 {

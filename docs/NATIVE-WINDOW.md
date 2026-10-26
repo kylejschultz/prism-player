@@ -10,7 +10,7 @@ The search header and Radio surface are transparent over the same artwork wash. 
 
 ## Acceptance checks
 
-Automated fixtures cover Radio alignment and summary reachability with lyrics/timeline at 980×640, 1440×900 and 1920×1080; absence of the extra backdrop; native-button space with navigation expanded/collapsed; Search and Back; and the non-macOS layout.
+Automated fixtures cover Radio alignment and summary reachability with the playback sidebar open/closed at 980×640, 1440×900 and 1920×1080; absence of the extra backdrop; native-button space with navigation expanded/collapsed; Search and Back; and the non-macOS layout.
 
 Before publishing a macOS candidate, also check the actual packaged app:
 
@@ -18,6 +18,6 @@ Before publishing a macOS candidate, also check the actual packaged app:
 2. Drag blank header space and the upper-left region; double-click the header using the system's preferred behavior.
 3. Type/select text in Search, choose a suggestion and use Back with navigation open and hidden.
 4. Resize to the minimum size, zoom, enter/exit full screen, close/reopen and restore the window on the current monitor.
-5. On Radio, check vertical centering and the uninterrupted artwork wash with playback panels open and closed. Station summaries must remain reachable in short windows.
+5. On Radio, check vertical centering and the uninterrupted artwork wash with the playback sidebar open and closed. Station summaries must remain reachable in short windows.
 
 Browser fixtures and an isolated native window fixture establish different evidence. A native fixture using the same window configuration does not establish functional acceptance of the complete packaged app or its saved account state.
