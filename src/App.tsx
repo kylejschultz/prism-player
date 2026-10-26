@@ -4974,12 +4974,13 @@ export function App() {
     >
       <ContextMenu.Trigger asChild>
     <main
-      className={`app-shell theme-${appSettings.colorTheme} ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
+      className={`app-shell ${isMacOSDesktopApp() ? "macos-titlebar" : ""} theme-${appSettings.colorTheme} ${rightPanelOpen ? "with-right-panel" : "right-panel-collapsed"} ${
         sidebarCollapsed ? "sidebar-collapsed" : ""
       } ${workspaceWashUrl ? "with-cover-wash" : ""}`}
       style={{ "--sidebar-width": `${sidebarWidth}px`, "--right-sidebar-width": `${rightSidebarWidth}px` } as CSSProperties}
       onContextMenu={openLibraryContextMenu}
     >
+      {isMacOSDesktopApp() ? <div className="native-window-drag-region" data-tauri-drag-region aria-hidden="true" /> : null}
       {workspaceWashUrl ? <div className="cover-wash-backdrop" style={{ backgroundImage: `url(${workspaceWashUrl})` }} aria-hidden="true" /> : null}
       <div
         className={`history-swipe-indicator history-swipe-indicator-${historySwipeIndicator.direction}`}
@@ -5101,7 +5102,7 @@ export function App() {
       )}
 
       <section className={`workspace ${activeView === "radio" ? "radio-workspace-active" : ""}`} aria-label="Music workspace">
-        <header className="topbar">
+        <header className="topbar" data-tauri-drag-region={isMacOSDesktopApp() || undefined}>
           {detailSelection && canNavigateBack ? (
             <button className="content-back-button topbar-back-button" type="button" onClick={onNavigateBack}>
               <ChevronLeft size={16} aria-hidden="true" />

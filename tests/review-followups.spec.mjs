@@ -1159,3 +1159,92 @@ test('workspace spacing preserves usable content and controls at native window s
   expect(errors).toEqual([]);
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
 });
+
+test('Radio listening content centers in the viewport without overlapping station details or a backdrop seam', async ({ page }) => {
+  await fixture(page, { artwork: true });
+  await page.locator('.sidebar').getByRole('button', { name: 'Radio', exact: true }).click();
+  await page.getByRole('button', { name: 'Tune In', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
+  for (const [width, height] of [[1440, 900], [1920, 1080], [980, 640]]) {
+    await page.setViewportSize({ width, height });
+    for (const panel of ['lyrics', 'timeline']) {
+      const toggle = page.getByRole('group', { name: 'Player panels' }).getByRole('button', { name: `Open ${panel}`, exact: true });
+      if (await toggle.isVisible()) await toggle.click();
+      const layout = await page.locator('.radio-hero').evaluate(el => {
+        const hero = el.getBoundingClientRect();
+        const cover = el.querySelector('.radio-cover-card').getBoundingClientRect();
+        const copy = el.querySelector('.radio-copy').getBoundingClientRect();
+        const details = el.querySelector('.radio-broadcast-details').getBoundingClientRect();
+        const css = getComputedStyle(el);
+        const gap = parseFloat(css.rowGap);
+        const availableTop = hero.top + parseFloat(css.paddingTop);
+        const availableBottom = hero.bottom - parseFloat(css.paddingBottom);
+        const contentHeight = Math.max(cover.height, copy.height);
+        const roomForCenter = availableBottom - availableTop >= contentHeight + 2 * (details.height + gap);
+        return { roomForCenter, detailsTop: details.top, contentBottom: Math.max(cover.bottom, copy.bottom), center: (availableTop + availableBottom) / 2, coverCenter: (cover.top + cover.bottom) / 2, copyCenter: (copy.top + copy.bottom) / 2, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, backdrop: css.backdropFilter, background: css.backgroundImage };
+      });
+      if (layout.roomForCenter) {
+        expect(Math.abs(layout.coverCenter - layout.center)).toBeLessThanOrEqual(2);
+        expect(Math.abs(layout.copyCenter - layout.center)).toBeLessThanOrEqual(2);
+      }
+      expect(Math.abs(layout.coverCenter - layout.copyCenter)).toBeLessThanOrEqual(2);
+      expect(layout.contentBottom).toBeLessThan(layout.detailsTop);
+      await page.locator('.radio-broadcast-details').scrollIntoViewIfNeeded();
+      await expect(page.locator('.radio-broadcast-details')).toBeInViewport();
+      await page.locator('.radio-hero').evaluate(el => { el.scrollTop = 0; });
+      expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+      expect(layout.backdrop).toBe('none');
+      expect(layout.background).toBe('none');
+      expect(await page.locator('.topbar').evaluate(el => getComputedStyle(el).backgroundImage)).toBe('none');
+      await page.screenshot({ path: test.info().outputPath(`radio-centered-${width}-${panel}.png`) });
+    }
+  }
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+});
+
+test('macOS overlay reserves native button space and keeps search and Back interactive with either sidebar layout', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window.navigator, 'platform', { value: 'MacIntel' }));
+  const { errors } = await fixture(page, { artwork: true });
+  await expect(page.locator('.app-shell')).toHaveClass(/macos-titlebar/);
+  for (const [width, height] of [[980, 640], [1440, 900]]) {
+    await page.setViewportSize({ width, height });
+    for (const collapsed of [false, true]) {
+      const sidebar = page.locator('.sidebar');
+      if (await sidebar.isVisible() === collapsed) await page.getByRole('button', { name: collapsed ? 'Hide left sidebar' : 'Show left sidebar', exact: true }).click();
+      const search = page.getByRole('searchbox', { name: 'Search', exact: true });
+      const bounds = await search.boundingBox();
+      expect(bounds.y).toBeLessThan(20);
+      expect(bounds.x).toBeGreaterThan(96);
+      await search.fill('Album');
+      await expect(search).toBeFocused();
+      await search.fill('');
+      await expect(page.locator('.topbar')).toHaveAttribute('data-tauri-drag-region', 'true');
+      await expect(page.locator('.native-window-drag-region')).toHaveAttribute('data-tauri-drag-region', 'true');
+      const drag = await page.locator('.native-window-drag-region').boundingBox();
+      expect(drag.width).toBeGreaterThanOrEqual(96);
+      if (!collapsed) {
+        const brand = await page.locator('.brand').boundingBox();
+        expect(brand.y).toBeGreaterThanOrEqual(drag.y + drag.height);
+      }
+      await page.screenshot({ path: test.info().outputPath(`overlay-${width}-${collapsed ? 'collapsed' : 'expanded'}.png`) });
+    }
+    await page.getByRole('button', { name: 'Show left sidebar', exact: true }).click();
+    await page.locator('.sidebar').getByRole('button', { name: 'Albums', exact: true }).click();
+    await page.getByRole('button', { name: 'Open Album a', exact: true }).click({ position: { x: 12, y: 12 } });
+    await page.getByRole('button', { name: 'Hide left sidebar', exact: true }).click();
+    const back = page.getByRole('button', { name: 'Back', exact: true });
+    expect((await back.boundingBox()).x).toBeGreaterThanOrEqual(96);
+    await back.click();
+    await expect(page.locator('.library-browser-heading')).toBeVisible();
+    await page.getByRole('button', { name: 'Show left sidebar', exact: true }).click();
+  }
+  expect(errors).toEqual([]);
+});
+
+test('non-macOS keeps its standard native window layout', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window.navigator, 'platform', { value: 'Win32' }));
+  await fixture(page);
+  await expect(page.locator('.app-shell')).not.toHaveClass(/macos-titlebar/);
+  await expect(page.locator('.native-window-drag-region')).toHaveCount(0);
+  await expect(page.locator('.topbar')).not.toHaveAttribute('data-tauri-drag-region');
+});
