@@ -670,10 +670,6 @@ test('Facet is the default with a vector brand, readable state colors and retain
     expect(radio.y >= resume.y + resume.height || radio.x >= resume.x + resume.width).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`facet-lyrics-${width}.png`) });
   }
-  let snapshot = (await page.content()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
-  snapshot = snapshot.replaceAll('/src/assets/brand/facet.svg', 'data:image/svg+xml;base64,' + readFileSync(new URL('../src/assets/brand/facet.svg', import.meta.url)).toString('base64'));
-  snapshot = snapshot.replaceAll('/src/assets/fonts/InstrumentSans-variable.woff2', 'data:font/woff2;base64,' + readFileSync(new URL('../src/assets/fonts/InstrumentSans-variable.woff2', import.meta.url)).toString('base64'));
-  writeFileSync(test.info().outputPath('facet-fixture.html'), snapshot);
   await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
   const facet = page.getByRole('button', { name: /Facet Teal, pale blue and periwinkle/ });
   await expect(facet).toHaveAttribute('aria-pressed', 'true');
