@@ -18,6 +18,18 @@ const prismOneHighlights = [
 ];
 
 export const WHATS_NEW_RELEASES: WhatsNewRelease[] = [
+  {
+    version: "1.1.0",
+    title: "What’s New in Prism 1.1",
+    highlights: [
+      "A fresh Prism: The Facet icon, teal and periwinkle theme, Instrument Sans typography, and integrated macOS title bar bring a cleaner look with more room for your music.",
+      "Your library, closer: Expand Library in the sidebar, keep section controls in view, browse Recently added, and open recently played albums from Home.",
+      "Artists and artwork: Collaboration credits appear under the primary artist, discographies load in list view, and missing portraits use readable initials.",
+      "Queue and lyrics together: A single sidebar keeps queue or radio timeline above lyrics, with an adjustable divider that remembers your preferred split.",
+      "Lyrics in time: Supported library and radio lyrics follow playback, center the current line, and soften distant lines. Plain lyrics and stations without lyric support still work.",
+      "Playback refinements: Queue removals stay removed, optional profile requests no longer hold up the library, and track handoffs show the incoming song while it loads. An optional macOS FLAC mode prepares tracks before playback for more accurate seeking, using extra startup time and memory.",
+    ],
+  },
   // The manual dev build still identifies as 0.5.0. Keeping this preview entry
   // lets the final cross-platform smoke test exercise the exact 1.0 copy.
   { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
