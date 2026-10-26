@@ -1,3 +1,5 @@
+import type { ArtistImageEntry } from "./artistArtwork";
+
 /**
  * Durable catalog metadata storage. Artwork bytes remain in the WebView's
  * HTTP cache; artist image URLs are persisted so artist browsing can render
@@ -14,7 +16,7 @@ export type LibraryCatalogSnapshot<TLibrary, TSong> = {
   library: TLibrary;
   songs: TSong[];
   /** Artist portrait URLs keyed by Navidrome artist id. */
-  artistImages?: Record<string, string>;
+  artistImages?: Record<string, string | ArtistImageEntry>;
   /** True once the complete song catalog has been fetched. */
   songsComplete: boolean;
 };

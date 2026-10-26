@@ -76,6 +76,7 @@ Click any screenshot to open it full size.
 - Playlist editing and favorites.
 - Subwave radio with now-playing, schedules, requests, likes, and booth updates.
 - Queue, now-playing details, and lyrics in the sidebar.
+- Synced library lyrics follow playback and seeking when your server supplies timestamps, with plain lyrics as a fallback. See [lyrics support](docs/LYRICS.md).
 
 
 ## Privacy
@@ -87,3 +88,5 @@ Discord Rich Presence is also opt-in and desktop-only. When enabled, Prism sends
 ## License
 
 [GNU General Public License v3.0](./LICENSE) — free to use, modify, and share. If you distribute a modified version, it needs to stay under the same license.
+
+Instrument Sans is bundled under the [SIL Open Font License 1.1](src/assets/fonts/OFL.txt), with its copyright notice available in Settings → About → Typography & licenses. The font loads locally; no font-service connection or license key is required. [Font source and provenance](src/assets/fonts/README.md).

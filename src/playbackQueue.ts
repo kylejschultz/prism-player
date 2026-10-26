@@ -67,6 +67,11 @@ export function toggleShuffleTraversal<T>(
   };
 }
 
+export function removeSourceQueueOccurrence<T>(sourceQueue: T[], removed: T, keyOf: (item: T) => string): T[] {
+  const index = sourceQueue.findIndex((item) => keyOf(item) === keyOf(removed));
+  return index < 0 ? sourceQueue : sourceQueue.filter((_, itemIndex) => itemIndex !== index);
+}
+
 export function nextRepeatMode(mode: RepeatMode): RepeatMode {
   return mode === "off" ? "all" : mode === "all" ? "one" : "off";
 }

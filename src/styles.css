@@ -1,17 +1,25 @@
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("./assets/fonts/InstrumentSans-variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 :root {
-  --prism-accent: #f0d27b;
-  --prism-accent-strong: #f8df91;
-  --prism-accent-rgb: 240, 210, 123;
-  --prism-accent-strong-rgb: 248, 223, 145;
-  --prism-highlight: #f2d985;
-  --prism-highlight-rgb: 242, 217, 133;
-  --prism-glow-left-rgb: 66, 145, 132;
-  --prism-glow-right-rgb: 190, 77, 59;
-  --prism-glow-bottom-rgb: 215, 188, 104;
-  --prism-ui-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --prism-display-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --prism-accent: #adc8de;
+  --prism-accent-strong: #d3e4f1;
+  --prism-accent-rgb: 173, 200, 222;
+  --prism-accent-strong-rgb: 211, 228, 241;
+  --prism-highlight: #59a99e;
+  --prism-highlight-rgb: 89, 169, 158;
+  --prism-glow-left-rgb: 89, 169, 158;
+  --prism-glow-right-rgb: 137, 143, 189;
+  --prism-glow-bottom-rgb: 173, 200, 222;
+  --prism-ui-font: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --prism-display-font: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-family: var(--prism-ui-font);
-  color: #f4f1ec;
+  color: #edf2f6;
   background: #111111;
   font-size: 14px;
   font-weight: 400;
@@ -43,12 +51,12 @@ body {
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.18);
+  background: rgba(237, 242, 246, 0.18);
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(244, 241, 236, 0.28);
+  background: rgba(237, 242, 246, 0.28);
   background-clip: padding-box;
 }
 
@@ -59,7 +67,7 @@ button {
 }
 
 button:focus-visible {
-  outline: 2px solid rgba(var(--prism-accent-rgb), 0.72);
+  outline: 2px solid var(--prism-accent);
   outline-offset: 2px;
 }
 
@@ -78,20 +86,20 @@ textarea {
   padding: 0 12px;
   outline: 0;
   background: rgba(0, 0, 0, 0.24);
-  color: #f4f1ec;
+  color: #edf2f6;
   font: inherit;
 }
 
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: rgba(var(--prism-accent-rgb), 0.7);
+  border-color: var(--prism-accent);
   box-shadow: 0 0 0 3px rgba(var(--prism-accent-rgb), 0.12);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: rgba(244, 241, 236, 0.36);
+  color: rgba(237, 242, 246, 0.36);
 }
 
 textarea {
@@ -112,7 +120,7 @@ textarea {
     radial-gradient(circle at 15% 20%, rgba(var(--prism-glow-left-rgb), 0.28), transparent 34%),
     radial-gradient(circle at 74% 22%, rgba(var(--prism-glow-right-rgb), 0.22), transparent 38%),
     radial-gradient(circle at 42% 74%, rgba(var(--prism-glow-bottom-rgb), 0.08), transparent 32%),
-    linear-gradient(135deg, #0f1110 0%, #171514 54%, #0b0c0c 100%);
+    linear-gradient(135deg, #111416 0%, #191a1d 54%, #0c1013 100%);
 }
 
 :root[data-prism-theme="ocean"],
@@ -237,7 +245,7 @@ textarea {
   width: 2px;
   height: 42px;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.34);
+  background: rgba(237, 242, 246, 0.34);
   content: "";
   opacity: 0;
   transform: translateY(-50%);
@@ -305,7 +313,7 @@ body.right-sidebar-resizing * {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
   background: rgba(12, 12, 12, 0.76);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   backdrop-filter: blur(18px);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
   cursor: pointer;
@@ -340,43 +348,18 @@ body.right-sidebar-resizing * {
 }
 
 .brand-mark {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  overflow: hidden;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, #e7cc79, #cc493e 48%, #3f9185);
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
-}
-
-.brand-mark::after {
-  position: absolute;
-  inset: 1px;
-  border-radius: 7px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.34), transparent 34%),
-    radial-gradient(circle at 76% 78%, rgba(13, 13, 12, 0.28), transparent 38%);
-  content: "";
-}
-
-.brand-mark span {
-  position: relative;
-  z-index: 1;
-  color: rgba(17, 17, 17, 0.84);
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1;
-  text-shadow: 0 1px 16px rgba(244, 241, 236, 0.2);
+  display: block;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .eyebrow,
 .track-meta {
   margin: 0;
-  color: rgba(244, 241, 236, 0.62);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.62);
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -416,7 +399,7 @@ h1 {
   min-height: 24px;
   margin-top: 6px;
   padding: 0 12px;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
@@ -452,7 +435,7 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(10, 10, 10, 0.34);
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
 }
 
 .global-search:focus-within {
@@ -466,7 +449,7 @@ h1 {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 12px;
   font-weight: 400;
 }
@@ -508,8 +491,8 @@ h1 {
 
 .suggestion-section > p {
   padding: 6px 8px 2px;
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -522,7 +505,7 @@ h1 {
   padding: 0 8px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   text-align: left;
   cursor: pointer;
 }
@@ -543,8 +526,8 @@ h1 {
 
 .suggestion-row small,
 .suggestion-note {
-  color: rgba(244, 241, 236, 0.48);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.48);
+  font-size: 11px;
   font-weight: 400;
 }
 
@@ -564,7 +547,7 @@ h1 {
   padding: 0 10px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   text-align: left;
 }
 
@@ -578,7 +561,7 @@ h1 {
   min-height: 34px;
   margin-left: 14px;
   padding-left: 14px;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
 }
 
 .nav-item.nav-child.active,
@@ -608,7 +591,7 @@ h1 {
 
 .nav-playlist-trigger > svg:last-child {
   margin-left: auto;
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
 }
 
 .sidebar-playlist-menu {
@@ -639,7 +622,7 @@ h1 {
   padding: 8px 9px;
   border-radius: 7px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -661,8 +644,8 @@ h1 {
 
 .sidebar-playlist-menu-heading {
   margin: 8px 9px 2px;
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.46);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -683,8 +666,8 @@ h1 {
 }
 
 .sidebar-playlist-menu-copy small {
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   line-height: 1.35;
 }
 
@@ -701,7 +684,7 @@ h1 {
 
 .sidebar-playlist-menu-empty {
   padding: 10px 9px;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 12px;
 }
 
@@ -723,7 +706,7 @@ h1 {
 .sidebar-settings {
   flex: 1;
   min-width: 0;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
 }
 
 .sidebar-collapse-toggle {
@@ -752,10 +735,11 @@ h1 {
   grid-column: 3;
   grid-row: 1 / 2;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 14px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
   min-width: 0;
-  padding: 18px 14px 16px;
+  min-height: 0;
+  padding: 16px 14px;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(12, 12, 12, 0.5);
   backdrop-filter: blur(24px);
@@ -779,7 +763,7 @@ h1 {
   width: 2px;
   height: 42px;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.34);
+  background: rgba(237, 242, 246, 0.34);
   content: "";
   opacity: 0;
   transform: translateY(-50%);
@@ -804,9 +788,28 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   gap: 12px;
 }
 
+.right-sidebar-heading-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.playback-lyrics-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding-top: 4px;
+}
+
+.playback-lyrics-section > h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .right-sidebar-heading h3 {
   margin-top: 4px;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -829,7 +832,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   min-height: 28px;
   border-radius: 7px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   cursor: pointer;
 }
@@ -851,13 +854,17 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   gap: 10px;
 }
 
+.radio-timeline-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 .right-queue-list {
   margin-inline: -4px;
   padding-right: 2px;
 }
 
 .right-panel-footnote {
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   font-size: 11px;
   text-align: right;
 }
@@ -872,7 +879,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .lyrics-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
+  gap: 10px;
   min-height: 0;
 }
 
@@ -915,7 +922,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .right-now-copy .track-link {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -932,7 +939,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -1021,7 +1028,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .analytics-banner p,
 .settings-note {
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   line-height: 1.42;
 }
@@ -1053,7 +1060,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0;
   border-radius: 7px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -1082,7 +1089,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 16px;
   border-radius: 8px;
   background: var(--prism-accent);
-  color: #18140d;
+  color: #101416;
   font-weight: 600;
 }
 
@@ -1095,7 +1102,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 14px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
-  color: #f4f1ec;
+  color: #edf2f6;
   font-weight: 500;
 }
 
@@ -1151,13 +1158,13 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .browser-panel.home-panel.is-scrolling {
-  scrollbar-color: rgba(244, 241, 236, 0.34) transparent;
+  scrollbar-color: rgba(237, 242, 246, 0.34) transparent;
 }
 
 .browser-panel.home-panel.is-scrolling::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(244, 241, 236, 0.34);
+  background: rgba(237, 242, 246, 0.34);
   background-clip: padding-box;
 }
 
@@ -1181,7 +1188,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .panel-heading span,
 .list-row span:last-child {
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 13px;
 }
 
@@ -1211,7 +1218,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 8px;
   border-radius: 6px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -1294,7 +1301,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .state-notice small {
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 11px;
 }
 
@@ -1429,7 +1436,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   max-width: 720px;
   margin: 0;
   overflow: hidden;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: clamp(28px, 4vw, 48px);
   font-weight: 680;
   letter-spacing: -0.035em;
@@ -1443,14 +1450,14 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .home-now-playing-copy > p:not(.eyebrow) {
   max-width: 560px;
   margin: 0;
-  color: rgba(244, 241, 236, 0.9);
+  color: rgba(237, 242, 246, 0.9);
 }
 
 .home-now-playing-meta-link {
   appearance: none;
   padding: 0;
   background: transparent;
-  color: #f4f1ec;
+  color: #edf2f6;
   font: inherit;
   text-align: inherit;
   cursor: pointer;
@@ -1494,7 +1501,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-dashboard-intro > div > p:not(.eyebrow) {
   max-width: 440px;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   line-height: 1.45;
 }
 
@@ -1507,7 +1514,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-items: center;
   gap: 8px;
   margin-top: 14px;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-weight: 600;
 }
 
@@ -1571,7 +1578,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-shelf-heading p {
   margin: 0;
-  color: rgba(244, 241, 236, 0.52);
+  color: rgba(237, 242, 246, 0.52);
   font-size: 12px;
   line-height: 1.35;
 }
@@ -1583,7 +1590,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   margin-left: auto;
   padding: 4px 0;
   border: 0;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   background: transparent;
   font: inherit;
   font-size: 13px;
@@ -1646,7 +1653,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   position: absolute;
   top: 50%;
   z-index: 1;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.5));
   pointer-events: none;
   transform: translateY(-50%);
@@ -1676,12 +1683,12 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-row:hover,
 .home-album-row:focus-visible {
-  scrollbar-color: rgba(244, 241, 236, 0.42) transparent;
+  scrollbar-color: rgba(237, 242, 246, 0.42) transparent;
 }
 
 .home-album-row:hover::-webkit-scrollbar-thumb,
 .home-album-row:focus-visible::-webkit-scrollbar-thumb {
-  background: rgba(244, 241, 236, 0.36);
+  background: rgba(237, 242, 246, 0.36);
 }
 
 .home-album {
@@ -1741,8 +1748,8 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-album-copy small {
   -webkit-line-clamp: 1;
-  color: rgba(244, 241, 236, 0.56);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.56);
+  font-size: 11px;
   line-height: 1.2;
 }
 
@@ -1891,12 +1898,12 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .home-now-playing {
   max-width: 560px;
   margin-top: 8px;
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   font-size: 13px;
 }
 
 .home-now-playing {
-  color: rgba(244, 241, 236, 0.9);
+  color: rgba(237, 242, 246, 0.9);
 }
 
 .home-cover-stage {
@@ -2054,7 +2061,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .home-shortcut small {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
   font-weight: 400;
   text-overflow: ellipsis;
@@ -2062,7 +2069,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .home-shortcut > svg {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   transition: color 160ms ease, transform 160ms ease;
 }
 
@@ -2074,32 +2081,69 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .lyrics-lines {
   display: grid;
   align-content: start;
-  gap: 12px;
-  max-height: min(56vh, 520px);
+  gap: 4px;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 8px 18px 0;
-  color: rgba(244, 241, 236, 0.82);
+  overflow-anchor: none;
+  padding: 2px 8px 16px 0;
+}
+
+.lyrics-lines.synced {
+  padding-block: 0;
+}
+
+.lyrics-lines.synced::before,
+.lyrics-lines.synced::after {
+  content: "";
+}
+
+.lyrics-lines.synced::before {
+  height: var(--lyrics-start-space, 0px);
+}
+
+.lyrics-lines.synced::after {
+  height: var(--lyrics-end-space, 0px);
 }
 
 .lyrics-lines p {
-  border-left: 2px solid transparent;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 14px;
-  line-height: 1.48;
-  color: rgba(244, 241, 236, 0.52);
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  margin: 0;
+  border-left: 3px solid transparent;
+  padding: 4px 10px;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  color: rgba(237, 242, 246, 0.66);
+  transition: border-color 160ms ease, color 160ms ease, filter 160ms ease;
+}
+
+/* Keep the current verse and its immediate neighbors sharp. */
+.lyrics-lines p[data-distance="2"] {
+  filter: blur(1px);
+}
+
+.lyrics-lines p[data-distance="3"] {
+  filter: blur(2px);
 }
 
 .lyrics-lines p.active {
   border-left-color: var(--prism-accent);
-  background: rgba(var(--prism-accent-rgb), 0.1);
-  color: #fff8dc;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.lyrics-lines p:empty {
+  border-left-color: transparent;
+  padding-block: 2px;
 }
 
 .lyrics-lines p.plain {
-  color: rgba(244, 241, 236, 0.82);
+  font-weight: 400;
+  color: rgba(237, 242, 246, 0.86);
 }
 
 .detail-panel {
@@ -2116,7 +2160,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-content: center;
   gap: 10px;
   min-height: 230px;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   text-align: center;
 }
 
@@ -2130,7 +2174,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   border-radius: 8px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.76);
+  color: rgba(237, 242, 246, 0.76);
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -2171,7 +2215,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   margin: 4px 0 0;
   padding: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 15px;
   font-weight: 500;
   text-align: left;
@@ -2251,7 +2295,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   height: 34px;
   border-radius: 999px;
   background: var(--prism-accent);
-  color: #18140d;
+  color: #101416;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38);
   opacity: 0;
   transform: translate(-50%, calc(-50% + 4px));
@@ -2291,7 +2335,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 11px;
   font-weight: 400;
 }
@@ -2305,7 +2349,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .playlist-comment {
   max-width: 720px;
   margin: 0 0 14px;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -2331,7 +2375,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 .playlist-detail-fields label:not(.checkbox-row) {
   display: grid;
   gap: 7px;
-  color: rgba(244, 241, 236, 0.64);
+  color: rgba(237, 242, 246, 0.64);
   font-size: 11px;
   font-weight: 500;
 }
@@ -2346,7 +2390,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 12px;
 }
 
@@ -2356,7 +2400,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .checkbox-row small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
 }
 
 .checkbox-row.disabled {
@@ -2372,7 +2416,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 
 .playlist-create-actions p {
   margin-right: auto;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 12px;
 }
 
@@ -2429,7 +2473,7 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   padding: 0 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.76);
+  color: rgba(237, 242, 246, 0.76);
   font-size: 12px;
   font-weight: 400;
   text-decoration: none;
@@ -2454,7 +2498,7 @@ button.similar-chip:focus-visible {
 }
 
 .section-label h4 {
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
   font-size: 13px;
   font-weight: 500;
 }
@@ -2478,7 +2522,7 @@ button.similar-chip:focus-visible {
   min-height: 30px;
   margin-top: 8px;
   padding: 0 8px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0;
@@ -2493,7 +2537,7 @@ button.similar-chip:focus-visible {
 }
 
 .disc-heading small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
   font-weight: 400;
 }
@@ -2528,7 +2572,7 @@ button.similar-chip:focus-visible {
 .album-row small,
 .track-number,
 .track-duration {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -2601,8 +2645,8 @@ button.similar-chip:focus-visible {
   overflow: hidden;
   padding: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.46);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-align: left;
@@ -2619,7 +2663,7 @@ button.similar-chip:focus-visible {
 .track-artist,
 .track-album {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2653,7 +2697,7 @@ button.similar-chip:focus-visible {
 }
 
 .playlist-track-editor-heading span {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -2739,7 +2783,7 @@ button.similar-chip:focus-visible {
 
 .favorite-button {
   background: transparent;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
 }
 
 .favorite-button.active {
@@ -2856,9 +2900,9 @@ button.similar-chip:focus-visible {
 }
 
 .about-commit-sha {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -2880,7 +2924,7 @@ button.similar-chip:focus-visible {
 .about-install-id-value code {
   overflow: hidden;
   min-width: 0;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   text-overflow: ellipsis;
@@ -2892,7 +2936,7 @@ button.similar-chip:focus-visible {
 }
 
 .settings-label {
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -2923,7 +2967,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.035);
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
@@ -2963,15 +3007,15 @@ button.similar-chip:focus-visible {
 }
 
 .theme-option-copy strong {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 12px;
   font-weight: 600;
 }
 
 .theme-option-copy small {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.54);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.54);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2983,7 +3027,7 @@ button.similar-chip:focus-visible {
 
 .update-check-status {
   margin: 0;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   line-height: 1.25;
   text-align: right;
@@ -3015,7 +3059,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 12px;
   font-weight: 600;
   text-decoration: none;
@@ -3032,7 +3076,7 @@ button.similar-chip:focus-visible {
 .settings-panel label {
   display: grid;
   gap: 8px;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 12px;
   font-weight: 500;
 }
@@ -3145,7 +3189,7 @@ button.similar-chip:focus-visible {
 
 .connection-status-row p:last-child {
   margin-top: 10px;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   line-height: 1.45;
 }
 
@@ -3171,7 +3215,7 @@ button.similar-chip:focus-visible {
   padding: 0 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 11px;
   font-weight: 500;
   text-transform: capitalize;
@@ -3236,7 +3280,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-tune-copy h3 {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 34px;
   font-weight: 650;
   line-height: 1.05;
@@ -3244,7 +3288,7 @@ button.similar-chip:focus-visible {
 
 .radio-tune-copy span {
   overflow-wrap: anywhere;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 14px;
 }
 
@@ -3304,7 +3348,7 @@ button.similar-chip:focus-visible {
 .radio-request-form input,
 .radio-request-form textarea {
   min-height: 36px;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 13px;
 }
 
@@ -3324,7 +3368,7 @@ button.similar-chip:focus-visible {
 
 .radio-request-status,
 .radio-request-receipt p {
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -3363,7 +3407,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-cover-card {
-  grid-row: 1;
+  grid-row: 2;
   align-self: start;
   aspect-ratio: 1;
   width: min(100%, 38vh, 320px);
@@ -3388,14 +3432,14 @@ button.similar-chip:focus-visible {
 .radio-cover-fallback {
   display: grid;
   place-items: center;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   background:
     radial-gradient(circle at 34% 24%, rgba(var(--prism-accent-rgb), 0.18), transparent 34%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
 }
 
 .radio-copy {
-  grid-row: 1;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   justify-content: start;
@@ -3414,7 +3458,7 @@ button.similar-chip:focus-visible {
   /* Three lines is the hard visual limit; the full title remains available to assistive tech. */
   -webkit-line-clamp: 3;
   margin-top: 10px;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: clamp(36px, 9cqw, 48px);
   font-weight: 650;
   line-height: 1;
@@ -3428,7 +3472,7 @@ button.similar-chip:focus-visible {
 
 .radio-copy h3 em {
   margin-top: 6px;
-  color: rgba(244, 241, 236, 0.64);
+  color: rgba(237, 242, 246, 0.64);
   font-size: 0.48em;
   font-style: italic;
   font-weight: 500;
@@ -3444,7 +3488,7 @@ button.similar-chip:focus-visible {
 
 .radio-album {
   margin-top: 7px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 14px;
   font-weight: 500;
 }
@@ -3475,9 +3519,9 @@ button.similar-chip:focus-visible {
 }
 
 .radio-dj-callout small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -3485,7 +3529,7 @@ button.similar-chip:focus-visible {
   max-height: 4.05em;
   overflow-y: auto;
   padding-right: 6px;
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
@@ -3538,7 +3582,7 @@ button.similar-chip:focus-visible {
 .radio-status {
   min-height: 18px;
   margin-top: 12px;
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 12px;
 }
 
@@ -3552,19 +3596,19 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 10px;
   max-width: 420px;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
 }
 
 .radio-channel-select select {
   min-height: 34px;
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
 }
 
 .radio-broadcast-details {
   display: grid;
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 3;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-self: end;
   gap: 24px;
@@ -3595,14 +3639,14 @@ button.similar-chip:focus-visible {
 
 .radio-broadcast-details strong {
   margin-top: 7px;
-  color: rgba(244, 241, 236, 0.84);
+  color: rgba(237, 242, 246, 0.84);
   font-size: 16px;
   font-weight: 600;
 }
 
 .radio-broadcast-details small {
   margin-top: 5px;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 13px;
   font-weight: 500;
 }
@@ -3624,7 +3668,7 @@ button.similar-chip:focus-visible {
 }
 
 .search-summary h4 {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 18px;
   font-weight: 500;
 }
@@ -3646,7 +3690,7 @@ button.similar-chip:focus-visible {
   padding: 5px 9px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 11px;
 }
 
@@ -3687,7 +3731,7 @@ button.similar-chip:focus-visible {
   background:
     linear-gradient(115deg, rgba(var(--prism-accent-rgb), 0.15), rgba(255, 255, 255, 0.035) 58%, transparent),
     rgba(8, 11, 13, 0.62);
-  color: rgba(244, 241, 236, 0.76);
+  color: rgba(237, 242, 246, 0.76);
   text-align: left;
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.18);
   cursor: pointer;
@@ -3729,7 +3773,7 @@ button.similar-chip:focus-visible {
 }
 
 .search-primary-copy small {
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: 12px;
 }
 
@@ -3738,7 +3782,7 @@ button.similar-chip:focus-visible {
   border-radius: 999px;
   background: rgba(var(--prism-accent-rgb), 0.15);
   color: var(--prism-accent-strong);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -3750,7 +3794,7 @@ button.similar-chip:focus-visible {
 }
 
 .search-section-label h4 {
-  color: rgba(244, 241, 236, 0.94);
+  color: rgba(237, 242, 246, 0.94);
   font-size: 15px;
   font-weight: 600;
 }
@@ -3761,7 +3805,7 @@ button.similar-chip:focus-visible {
   padding: 5px 9px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.84);
+  color: rgba(237, 242, 246, 0.84);
   font-size: 12px;
 }
 
@@ -3772,7 +3816,7 @@ button.similar-chip:focus-visible {
 }
 
 .section-label small {
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   font-size: 11px;
 }
 
@@ -3831,13 +3875,13 @@ button.similar-chip:focus-visible {
 }
 
 .search-playlist-row strong {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 13px;
   font-weight: 500;
 }
 
 .search-playlist-row small {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -3884,7 +3928,7 @@ button.similar-chip:focus-visible {
 
 .search-song-main small,
 .search-song-row > small {
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
 }
 
@@ -3912,7 +3956,7 @@ button.similar-chip:focus-visible {
 
 .alpha-heading {
   margin-bottom: 8px;
-  color: rgba(244, 241, 236, 0.44);
+  color: rgba(237, 242, 246, 0.44);
   font-size: 11px;
   font-weight: 500;
 }
@@ -3932,8 +3976,8 @@ button.similar-chip:focus-visible {
   height: 15px;
   border-radius: 4px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.58);
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -4002,7 +4046,7 @@ button.similar-chip:focus-visible {
 .album-list-row small,
 .playlist-row small {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4155,7 +4199,7 @@ button.similar-chip:focus-visible {
 
 .artist-main {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 92px;
+  grid-template-columns: 56px minmax(0, 1fr) 92px;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -4167,8 +4211,8 @@ button.similar-chip:focus-visible {
 
 .artist-list-cover {
   display: block;
-  width: 40px;
-  height: 40px;
+  width: 56px;
+  height: 56px;
   border-radius: 6px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.06);
@@ -4201,15 +4245,19 @@ button.similar-chip:focus-visible {
 }
 
 .artist-grid-cover .artist-initials {
-  font-size: clamp(28px, 4vw, 64px);
+  font-size: calc(clamp(28px, 4vw, 64px) * var(--initials-scale, 1));
 }
 
 .artist-list-cover .artist-initials {
-  font-size: 14px;
+  padding: 4px;
+  font-size: max(11px, calc(20px * var(--initials-scale, 1)));
+  overflow-wrap: anywhere;
+  text-align: center;
+  line-height: 1.15;
 }
 
 .artist-cover .artist-initials {
-  font-size: clamp(48px, 8vw, 96px);
+  font-size: calc(clamp(48px, 8vw, 96px) * var(--initials-scale, 1));
 }
 
 .empty-panel,
@@ -4225,7 +4273,7 @@ button.similar-chip:focus-visible {
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
     rgba(0, 0, 0, 0.08);
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   text-align: center;
 }
 
@@ -4239,7 +4287,7 @@ button.similar-chip:focus-visible {
 }
 
 .empty-view h3 {
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 22px;
   font-weight: 600;
 }
@@ -4307,7 +4355,7 @@ button.similar-chip:focus-visible {
   aspect-ratio: 1;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(244, 241, 236, 0.4);
+  color: rgba(237, 242, 246, 0.4);
 }
 
 .artist-about-photo img {
@@ -4322,7 +4370,7 @@ button.similar-chip:focus-visible {
 }
 
 .artist-about-copy > p {
-  color: rgba(244, 241, 236, 0.74);
+  color: rgba(237, 242, 246, 0.74);
   line-height: 1.65;
 }
 
@@ -4397,7 +4445,7 @@ button.similar-chip:focus-visible {
 
 .confirm-copy p:last-child,
 .confirm-status {
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   font-size: 13px;
   line-height: 1.42;
 }
@@ -4477,7 +4525,7 @@ button.similar-chip:focus-visible {
 .whats-new-copy,
 .wizard-status {
   margin-top: 10px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -4502,7 +4550,7 @@ button.similar-chip:focus-visible {
   display: grid;
   gap: 8px;
   padding-left: 19px;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 14px;
   line-height: 1.4;
 }
@@ -4523,7 +4571,7 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 8px;
   min-height: 42px;
-  color: rgba(244, 241, 236, 0.68);
+  color: rgba(237, 242, 246, 0.68);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -4560,7 +4608,7 @@ button.similar-chip:focus-visible {
   gap: 6px;
   margin: 0;
   padding-left: 18px;
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -4740,7 +4788,7 @@ button.similar-chip:focus-visible {
 .history-track-album {
   font-size: 12px;
   font-weight: 400;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
 }
 
 .radio-footer-title {
@@ -4755,7 +4803,7 @@ button.similar-chip:focus-visible {
 
 .track-album {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4780,13 +4828,13 @@ button.similar-chip:focus-visible {
 }
 
 .track-meta .track-link {
-  color: rgba(244, 241, 236, 0.56);
+  color: rgba(237, 242, 246, 0.56);
   font-size: inherit;
 }
 
 .track-meta .track-link:hover:not(:disabled),
 .track-meta .track-link:focus-visible:not(:disabled) {
-  color: rgba(244, 241, 236, 0.82);
+  color: rgba(237, 242, 246, 0.82);
 }
 
 .player-center {
@@ -4840,7 +4888,7 @@ button.similar-chip:focus-visible {
 
 .transport .playback-mode-button {
   border: 1px solid transparent;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   transition: background 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
 }
 
@@ -4872,7 +4920,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-transport button {
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
 }
 
 .radio-transport button.active {
@@ -4904,62 +4952,18 @@ button.similar-chip:focus-visible {
   background: var(--prism-accent-strong);
   color: #241d0c;
   font-size: 8px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
 }
 
-.radio-control-popover {
-  position: absolute;
-  bottom: calc(100% + 14px);
-  left: 50%;
-  z-index: 12;
-  display: grid;
-  gap: 12px;
-  width: min(360px, calc(100vw - 48px));
-  max-height: min(360px, calc(100vh - 230px));
-  padding: 16px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(50, 26, 26, 0.96), rgba(19, 18, 18, 0.96)),
-    rgba(10, 10, 10, 0.92);
-  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.42);
-  transform: translateX(-50%);
-  backdrop-filter: blur(18px);
+.radio-sidebar-content {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-.radio-control-popover.schedule-popover {
-  width: min(460px, calc(100vw - 48px));
+.radio-sidebar-content .radio-popover-list {
   max-height: none;
-}
-
-.radio-control-popover-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.radio-control-popover-title span {
-  color: rgba(var(--prism-highlight-rgb), 0.82);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.radio-control-popover-title button {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.58);
-}
-
-.radio-control-popover-title button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f4f1ec;
+  overflow: visible;
 }
 
 .radio-popover-list {
@@ -4991,9 +4995,9 @@ button.similar-chip:focus-visible {
 
 .radio-schedule-popover-row > span,
 .radio-booth-popover-row > span {
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
 }
 
@@ -5031,7 +5035,7 @@ button.similar-chip:focus-visible {
 
 .radio-schedule-popover-row strong {
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.88);
+  color: rgba(237, 242, 246, 0.88);
   font-size: 14px;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -5044,13 +5048,13 @@ button.similar-chip:focus-visible {
 
 .radio-schedule-popover-row small {
   margin-top: 3px;
-  color: rgba(244, 241, 236, 0.52);
+  color: rgba(237, 242, 246, 0.52);
   font-size: 12px;
 }
 
 .radio-schedule-popover-row p {
   margin: 6px 0 0;
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   font-size: 12px;
   line-height: 1.35;
   display: -webkit-box;
@@ -5082,7 +5086,7 @@ button.similar-chip:focus-visible {
 }
 
 .radio-booth-popover-row p {
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -5103,7 +5107,7 @@ button.similar-chip:focus-visible {
 
 .radio-popover-empty {
   padding: 18px 0 4px;
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 13px;
   text-align: center;
 }
@@ -5115,8 +5119,8 @@ button.similar-chip:focus-visible {
   gap: 10px;
   width: min(680px, 100%);
   height: 22px;
-  color: rgba(244, 241, 236, 0.48);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.48);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -5175,7 +5179,7 @@ button.similar-chip:focus-visible {
   grid-template-columns: 24px 132px;
   align-items: center;
   gap: 8px;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
 }
 
 .volume-mute-button {
@@ -5194,7 +5198,7 @@ button.similar-chip:focus-visible {
 }
 
 .volume-control.muted {
-  color: rgba(244, 241, 236, 0.32);
+  color: rgba(237, 242, 246, 0.32);
 }
 
 .volume-control .volume-slider:disabled {
@@ -5212,7 +5216,7 @@ button.similar-chip:focus-visible {
   padding: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
-  color: rgba(244, 241, 236, 0.66);
+  color: rgba(237, 242, 246, 0.66);
   cursor: pointer;
 }
 
@@ -5245,21 +5249,22 @@ button.similar-chip:focus-visible {
 }
 
 .queue-heading span {
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
 }
 
 .queue-heading button {
-  padding: 0;
+  min-height: 24px;
+  padding: 2px 4px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 11px;
   cursor: pointer;
 }
 
 .queue-heading button:hover:not(:disabled),
 .queue-heading button:focus-visible:not(:disabled) {
-  color: #f4f1ec;
+  color: #edf2f6;
 }
 
 .queue-list {
@@ -5341,8 +5346,8 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 6px;
   padding: 8px 8px 1px;
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
 }
@@ -5366,7 +5371,7 @@ button.similar-chip:focus-visible {
 }
 
 .queue-row > small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -5383,7 +5388,7 @@ button.similar-chip:focus-visible {
   padding: 0;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.42);
+  color: rgba(237, 242, 246, 0.42);
   cursor: grab;
   opacity: 0;
   touch-action: none;
@@ -5398,7 +5403,7 @@ button.similar-chip:focus-visible {
 .queue-row:focus-within .queue-drag-handle {
   opacity: 1;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
 }
 
 .queue-track {
@@ -5424,7 +5429,8 @@ button.similar-chip:focus-visible {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.3;
   font-weight: 500;
 }
 
@@ -5443,11 +5449,9 @@ button.similar-chip:focus-visible {
 }
 
 .radio-queue-meta small {
-  color: rgba(244, 241, 236, 0.46);
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  color: rgba(237, 242, 246, 0.46);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .radio-queue-meta small:nth-child(2) {
@@ -5456,8 +5460,8 @@ button.similar-chip:focus-visible {
 }
 
 .queue-row small {
-  color: rgba(244, 241, 236, 0.48);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.48);
+  font-size: 11px;
 }
 
 .queue-row-actions {
@@ -5475,7 +5479,7 @@ button.similar-chip:focus-visible {
   padding: 0;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.07);
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   cursor: pointer;
 }
 
@@ -5487,12 +5491,12 @@ button.similar-chip:focus-visible {
 .queue-row-actions button:hover:not(:disabled),
 .queue-row-actions button:focus-visible:not(:disabled) {
   background: rgba(255, 255, 255, 0.13);
-  color: #f4f1ec;
+  color: #edf2f6;
 }
 
 .queue-empty {
   padding: 14px 8px;
-  color: rgba(244, 241, 236, 0.52);
+  color: rgba(237, 242, 246, 0.52);
   font-size: 12px;
 }
 
@@ -5515,7 +5519,7 @@ button.similar-chip:focus-visible {
 }
 
 .queue-drag-ghost > svg {
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
 }
 
 .queue-drag-ghost div {
@@ -5537,8 +5541,8 @@ button.similar-chip:focus-visible {
 }
 
 .queue-drag-ghost small {
-  color: rgba(244, 241, 236, 0.62);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.62);
+  font-size: 11px;
 }
 
 .queue-drag-ghost > small {
@@ -5578,7 +5582,7 @@ button.similar-chip:focus-visible {
   display: block;
   overflow: hidden;
   margin-top: 3px;
-  color: #f4f1ec;
+  color: #edf2f6;
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -5616,7 +5620,7 @@ button.similar-chip:focus-visible {
   padding: 5px 7px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.78);
+  color: rgba(237, 242, 246, 0.78);
   text-align: left;
 }
 
@@ -5679,7 +5683,7 @@ button.similar-chip:focus-visible {
 .song-context-list small,
 .song-context-empty,
 .song-context-status {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
 }
 
@@ -5969,14 +5973,15 @@ button.similar-chip:focus-visible {
 }
 
 .workspace {
+  --workspace-gutter: 24px;
   gap: 0;
   padding: 0;
   background: transparent;
 }
 
 .topbar {
-  min-height: 70px;
-  padding: 12px 28px;
+  min-height: 56px;
+  padding: 8px var(--workspace-gutter);
   border-bottom: 0;
 }
 
@@ -5989,7 +5994,7 @@ button.similar-chip:focus-visible {
 }
 
 .workspace-viewport {
-  padding: 18px 28px 24px;
+  padding: 12px var(--workspace-gutter) 20px;
 }
 
 .library-view,
@@ -6048,15 +6053,16 @@ button.similar-chip:focus-visible {
   }
 
   .workspace {
+    --workspace-gutter: 16px;
     padding: 0;
   }
 
   .topbar {
-    padding-inline: 18px;
+    padding-inline: var(--workspace-gutter);
   }
 
   .workspace-viewport {
-    padding: 18px;
+    padding: 12px var(--workspace-gutter) 20px;
   }
 
   .player-bar {
@@ -6075,15 +6081,16 @@ button.similar-chip:focus-visible {
   }
 
   .workspace {
+    --workspace-gutter: 14px;
     padding: 0;
   }
 
   .topbar {
-    padding-inline: 14px;
+    padding-inline: var(--workspace-gutter);
   }
 
   .workspace-viewport {
-    padding: 14px;
+    padding: 10px var(--workspace-gutter) 16px;
   }
 
   .player-bar {
@@ -6117,8 +6124,8 @@ button.similar-chip:focus-visible {
 }
 
 .brand-wordmark p {
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 9px;
+  color: rgba(237, 242, 246, 0.42);
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -6189,8 +6196,8 @@ button.similar-chip:focus-visible {
 
 .album-type-label {
   margin-bottom: 9px;
-  color: rgba(244, 241, 236, 0.55);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.55);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -6221,6 +6228,8 @@ button.similar-chip:focus-visible {
 
 .album-artist-link,
 .album-artist-label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.86);
   font-size: 17px;
@@ -6229,7 +6238,7 @@ button.similar-chip:focus-visible {
 .album-description {
   max-width: 620px;
   margin-top: 14px;
-  color: rgba(244, 241, 236, 0.55);
+  color: rgba(237, 242, 246, 0.55);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -6276,7 +6285,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-tracks-heading span {
-  color: rgba(244, 241, 236, 0.43);
+  color: rgba(237, 242, 246, 0.43);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -6371,7 +6380,7 @@ button.similar-chip:focus-visible {
   min-height: 30px;
   padding: 0 8px 0 4px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.64);
+  color: rgba(237, 242, 246, 0.64);
   font-size: 12px;
   cursor: pointer;
 }
@@ -6400,7 +6409,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   background: rgba(6, 9, 11, 0.34);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   backdrop-filter: blur(14px);
   cursor: pointer;
 }
@@ -6450,7 +6459,7 @@ button.similar-chip:focus-visible {
   height: 28px;
   border-radius: 8px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.48);
+  color: rgba(237, 242, 246, 0.48);
   cursor: pointer;
 }
 
@@ -6489,7 +6498,7 @@ button.similar-chip:focus-visible {
 .topbar {
   position: relative;
   z-index: 5;
-  background: linear-gradient(180deg, rgba(7, 10, 12, 0.24), transparent);
+  background: transparent;
 }
 
 .workspace-viewport {
@@ -6498,7 +6507,7 @@ button.similar-chip:focus-visible {
 
 .browser-panel,
 .browser-panel.home-panel {
-  padding: 8px 10px 28px;
+  padding: 8px 0 20px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -6560,7 +6569,7 @@ button.similar-chip:focus-visible {
   padding: 0 13px;
   border-radius: 999px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.55);
+  color: rgba(237, 242, 246, 0.55);
   font-size: 12px;
   font-weight: 560;
   cursor: pointer;
@@ -6607,13 +6616,13 @@ button.similar-chip:focus-visible {
 }
 
 .home-dashboard {
-  gap: clamp(20px, 2.4vw, 30px);
-  padding: clamp(8px, 1.4vw, 18px) clamp(20px, 4.5vw, 64px) clamp(28px, 5vw, 72px);
+  gap: 24px;
+  padding: 8px 0 28px;
 }
 
 .home-dashboard-heading,
 .home-dashboard-lead {
-  width: min(100%, 1080px);
+  width: min(100%, 1280px);
   margin: 0 auto;
 }
 
@@ -6682,7 +6691,7 @@ button.similar-chip:focus-visible {
 .home-resume-copy > p:not(.eyebrow) {
   margin: 0;
   overflow: hidden;
-  color: rgba(244, 241, 236, 0.62);
+  color: rgba(237, 242, 246, 0.62);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6717,7 +6726,7 @@ button.similar-chip:focus-visible {
 }
 
 .home-album-shelf {
-  width: min(100%, 1080px);
+  width: min(100%, 1280px);
 }
 
 .home-album-row {
@@ -6779,6 +6788,8 @@ button.similar-chip:focus-visible {
 
 .radio-hero,
 .radio-tune-gate {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -6787,15 +6798,18 @@ button.similar-chip:focus-visible {
 
 .radio-hero {
   width: 100%;
-  padding: clamp(18px, 3vw, 36px);
+  padding: 12px var(--workspace-gutter) 20px;
 }
 
 .radio-view.radio-hero {
+  grid-template-rows: minmax(0, 1fr) auto minmax(min-content, 1fr);
+  overflow-y: auto;
   grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1fr);
   gap: clamp(18px, 3vw, 40px) clamp(36px, 6vw, 88px);
 }
 
 .radio-cover-card {
+  align-self: center;
   width: min(100%, 48vh, 460px);
   border-radius: 14px;
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.4);
@@ -6839,13 +6853,12 @@ button.similar-chip:focus-visible {
 @media (max-width: 1120px) {
   .radio-view.radio-hero {
     grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
-    grid-template-rows: minmax(0, auto) minmax(20px, 1fr) auto;
     gap: 12px 22px;
   }
 
   .radio-cover-card,
   .radio-copy {
-    grid-row: 1;
+    grid-row: 2;
   }
 
   .radio-cover-card {
@@ -6872,8 +6885,8 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-hero {
-  margin-left: -22px;
-  padding-left: 22px;
+  margin-left: -16px;
+  padding-left: 16px;
 }
 
 .album-detail-hero .detail-cover {
@@ -6884,7 +6897,7 @@ button.similar-chip:focus-visible {
 
 .cover-wash-backdrop {
   inset: -12%;
-  opacity: 0.62;
+  opacity: 0.52;
   mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.72) 10%, #000 24%, #000 78%, transparent 100%);
 }
 
@@ -6931,7 +6944,7 @@ button.similar-chip:focus-visible {
   padding: 0 12px;
   border-radius: 9px;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
@@ -6940,7 +6953,7 @@ button.similar-chip:focus-visible {
 .sidebar-collection-nav button:hover,
 .sidebar-collection-nav button:focus-visible {
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(244, 241, 236, 0.84);
+  color: rgba(237, 242, 246, 0.84);
 }
 
 .sidebar-collection-nav button.active {
@@ -6951,52 +6964,6 @@ button.similar-chip:focus-visible {
 
 .nav-collection-label {
   margin-top: 8px;
-}
-
-.player-queue-flyout {
-  position: absolute;
-  grid-column: auto;
-  grid-row: auto;
-  top: auto;
-  right: 190px;
-  bottom: 61px;
-  left: auto;
-  z-index: 12;
-  width: min(var(--right-sidebar-width, 338px), calc(100vw - var(--sidebar-width, 248px) - 36px));
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  height: min(510px, calc(100vh - 104px));
-  border-radius: 16px;
-  overflow: hidden;
-  background: linear-gradient(180deg, rgba(10, 14, 16, 0.91), rgba(7, 10, 12, 0.84));
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(34px) saturate(135%);
-  animation: queue-flyout-in 160ms ease-out;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 6px;
-  padding: 10px;
-}
-
-.player-queue-flyout .right-sidebar-heading h3 {
-  margin-top: 2px;
-  font-size: 16px;
-}
-
-.player-queue-flyout .queue-panel-section,
-.player-queue-flyout .lyrics-panel {
-  gap: 8px;
-}
-
-.sidebar-collapsed .player-queue-flyout {
-  width: min(var(--right-sidebar-width, 338px), calc(100vw - 36px));
-}
-
-.player-queue-flyout .right-sidebar-resize-handle {
-  left: -4px;
-}
-
-@keyframes queue-flyout-in {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* The mockup used a soft editorial display face with compact utility text. */
@@ -7011,6 +6978,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-page .track-title-stack,
+.artist-album-group .track-title-stack,
 .playlist-track-row .track-title-stack {
   display: grid;
   align-content: center;
@@ -7019,6 +6987,7 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-page .track-title-stack .track-name,
+.artist-album-group .track-title-stack .track-name,
 .playlist-track-row .track-title-stack .track-name {
   overflow: hidden;
   font-weight: 500;
@@ -7027,13 +6996,14 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-page .track-title-stack .track-artist,
+.artist-album-group .track-title-stack .track-artist,
 .playlist-track-row .track-title-stack .track-artist {
   font-size: 11px;
   line-height: 1.15;
 }
 
 .album-track-album {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
 }
 
 .playlist-track-editor .track-list {
@@ -7057,18 +7027,6 @@ button.similar-chip:focus-visible {
 }
 
 @media (max-width: 940px) {
-  .player-queue-flyout {
-    top: auto;
-    right: 142px;
-    bottom: 61px;
-    height: min(460px, calc(100vh - 96px));
-    width: min(var(--right-sidebar-width, 338px), calc(100vw - var(--sidebar-width, 248px) - 24px));
-  }
-
-  .sidebar-collapsed .player-queue-flyout {
-    width: min(var(--right-sidebar-width, 338px), calc(100vw - 24px));
-  }
-
   .track-row.playlist-track-row,
   .track-list > .track-row.playlist-track-row:nth-child(even) {
     grid-template-columns: 26px 24px minmax(170px, 2fr) minmax(110px, 1fr) 48px 28px 28px 28px;
@@ -7185,7 +7143,7 @@ button.similar-chip:focus-visible {
 
 .detail-page {
   min-height: 100%;
-  padding-inline: 22px 8px;
+  padding-inline: 16px 8px;
 }
 
 .detail-page-hero {
@@ -7194,8 +7152,8 @@ button.similar-chip:focus-visible {
   gap: clamp(28px, 4vw, 58px);
   min-height: min(36vh, 310px);
   margin: 0 0 clamp(30px, 4vh, 46px);
-  margin-left: -22px;
-  padding-left: 22px;
+  margin-left: -16px;
+  padding-left: 16px;
 }
 
 .detail-artwork-stage {
@@ -7226,6 +7184,7 @@ button.similar-chip:focus-visible {
 }
 
 .detail-hero-copy {
+  min-width: 0;
   display: grid;
   align-content: end;
   max-width: 760px;
@@ -7234,8 +7193,8 @@ button.similar-chip:focus-visible {
 
 .detail-type-label {
   margin-bottom: 9px;
-  color: rgba(244, 241, 236, 0.55);
-  font-size: 10px;
+  color: rgba(237, 242, 246, 0.55);
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -7266,16 +7225,17 @@ button.similar-chip:focus-visible {
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgba(244, 241, 236, 0.58);
+  color: rgba(237, 242, 246, 0.58);
 }
 
 .detail-page .detail-stats span + span::before {
   margin-right: 8px;
-  color: rgba(244, 241, 236, 0.28);
+  color: rgba(237, 242, 246, 0.28);
   content: "•";
 }
 
 .detail-page .detail-actions {
+  flex-wrap: wrap;
   align-items: center;
   margin: 20px 0 0;
 }
@@ -7301,7 +7261,7 @@ button.similar-chip:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
   background: rgba(6, 9, 11, 0.3);
-  color: rgba(244, 241, 236, 0.72);
+  color: rgba(237, 242, 246, 0.72);
   backdrop-filter: blur(14px);
 }
 
@@ -7319,7 +7279,7 @@ button.similar-chip:focus-visible {
 }
 
 .detail-tracks-heading span {
-  color: rgba(244, 241, 236, 0.43);
+  color: rgba(237, 242, 246, 0.43);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -7357,7 +7317,7 @@ button.similar-chip:focus-visible {
 }
 
 .artist-top-songs .section-label small {
-  color: rgba(244, 241, 236, 0.44);
+  color: rgba(237, 242, 246, 0.44);
   font-size: 11px;
 }
 
@@ -7440,7 +7400,7 @@ button.similar-chip:focus-visible {
 }
 
 .latest-release-main small {
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   font-size: 11px;
 }
 
@@ -7556,7 +7516,7 @@ button.similar-chip:focus-visible {
   background:
     radial-gradient(circle at 30% 24%, rgba(var(--prism-accent-rgb), 0.2), transparent 46%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(5, 8, 10, 0.45));
-  color: rgba(244, 241, 236, 0.5);
+  color: rgba(237, 242, 246, 0.5);
   box-shadow: 0 18px 46px rgba(0, 0, 0, 0.3);
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
@@ -7588,7 +7548,7 @@ button.similar-chip:focus-visible {
 }
 
 .playlist-card-copy small {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
 }
 
@@ -7673,7 +7633,7 @@ button.similar-chip:focus-visible {
 
 .artist-album-main small,
 .artist-album-empty {
-  color: rgba(244, 241, 236, 0.46);
+  color: rgba(237, 242, 246, 0.46);
   font-size: 11px;
 }
 
@@ -7772,12 +7732,6 @@ button.similar-chip:focus-visible {
   backdrop-filter: blur(24px) saturate(125%);
 }
 
-.radio-control-popover {
-  background:
-    linear-gradient(135deg, rgba(50, 26, 26, 0.28), rgba(19, 18, 18, 0.42)),
-    rgba(8, 10, 12, 0.9);
-}
-
 .search-suggestions {
   background:
     linear-gradient(145deg, rgba(var(--prism-glow-left-rgb), 0.09), transparent 58%),
@@ -7800,4 +7754,354 @@ button.similar-chip:focus-visible {
     gap: 12px;
   }
 
-  .search-primary-art {
+}
+
+/* Keep the current track visible without requiring a hover. */
+.track-row.active .track-index .track-number { opacity: 0; }
+.track-row.active .track-index .track-play {
+  opacity: 1;
+  color: var(--prism-accent-strong);
+  background: rgba(var(--prism-accent-rgb), 0.2);
+}
+.album-detail-page .disc-group > .album-track-row.active,
+.artist-album-group .disc-group > .album-track-row.active {
+  background: linear-gradient(90deg, rgba(var(--prism-accent-rgb), 0.24), rgba(var(--prism-accent-rgb), 0.07));
+  box-shadow: inset 3px 0 0 var(--prism-accent-strong);
+}
+
+.artist-about-cover {
+  width: 100%;
+  height: 100%;
+}
+
+.artist-about-cover .artist-initials {
+  font-size: calc(clamp(28px, 6vw, 64px) * var(--initials-scale, 1));
+}
+
+/* Keep secondary text readable over artwork without changing the theme. */
+.brand-wordmark p,
+.seek-row,
+.queue-row small,
+.radio-queue-section > p,
+.radio-queue-meta small,
+.radio-schedule-popover-row > span,
+.radio-booth-popover-row > span,
+.radio-dj-callout small,
+.radio-copy > .eyebrow,
+.player-bar .track-meta,
+.player-bar .track-album {
+  font-size: 11px;
+  color: rgba(237, 242, 246, 0.74);
+}
+
+.artist-row {
+  min-height: 64px;
+}
+
+.artist-list-mode .artist-hero {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 24px;
+  min-height: 0;
+  margin-bottom: 24px;
+  align-items: center;
+}
+
+.artist-list-mode .artist-hero h3 {
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.1;
+}
+
+.artist-list-mode .detail-artwork-stage {
+  align-self: center;
+}
+
+.artist-list-mode .detail-actions {
+  margin-top: 12px;
+}
+
+.artist-list-mode .artist-cover .artist-initials {
+  font-size: calc(40px * var(--initials-scale, 1));
+}
+
+.artist-list-mode .artist-latest-release {
+  margin-bottom: 20px;
+}
+
+.artist-list-mode .latest-release-card {
+  padding: 10px 14px;
+}
+
+.artist-list-mode .latest-release-cover {
+  width: 48px;
+  height: 48px;
+}
+
+.artist-list-mode .latest-release-main {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.artist-list-mode .latest-release-main strong {
+  font-size: 18px;
+}
+
+.radio-broadcast-details strong,
+.radio-broadcast-details small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+}
+
+/* React to the workspace left after either sidebar, rather than window width. */
+.workspace-viewport.radio-workspace {
+  container-type: inline-size;
+  container-name: radio-workspace;
+}
+
+@container radio-workspace (max-width: 700px) {
+  .radio-view.radio-hero {
+    grid-template-columns: minmax(112px, 0.6fr) minmax(0, 1fr);
+    gap: 18px;
+    overflow-y: auto;
+  }
+
+  .radio-cover-card {
+    width: min(100%, 180px);
+    align-self: center;
+  }
+
+  .radio-broadcast-details {
+    grid-row: 3;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .radio-broadcast-details div {
+    padding: 10px 12px;
+  }
+
+  .radio-copy h3 {
+    font-size: clamp(22px, 5cqw, 32px);
+  }
+}
+
+.about-font-license pre {
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Facet keeps the default frame charcoal; cover-derived artwork wash is unchanged. */
+.app-shell.theme-prism {
+  background: #131619;
+}
+
+.theme-prism .nav-item.active {
+  background: #282e32;
+  color: #adc8de;
+  position: relative;
+  box-shadow: none;
+}
+
+.theme-prism .lyrics-lines p.active {
+  border-left-color: #59a99e;
+}
+
+.theme-prism .cover-fallback,
+.theme-prism .setup-art {
+  background: #293d3b;
+  color: #adc8de;
+}
+
+.theme-prism .home-shortcut::before {
+  background: #898fbd;
+}
+
+.theme-prism .player-bar {
+  background: #11191b;
+}
+
+.theme-prism .transport .play-button {
+  box-shadow: none;
+}
+
+/* Use the available workspace width when a playback sidebar is open. */
+.home-dashboard {
+  container-type: inline-size;
+}
+
+@container (max-width: 680px) {
+  .home-dashboard-lead {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-album-row {
+    grid-auto-columns: calc((100% - 12px) / 2);
+  }
+
+  .home-album-row.home-album-row-art {
+    grid-auto-columns: calc((100% - 24px) / 3);
+  }
+}
+
+.theme-prism .nav-item.active::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  border-radius: 2px;
+  background: #59a99e;
+  content: "";
+}
+
+
+/* Library is a persistent disclosure; its destinations remain ordinary buttons. */
+.nav-library {
+  margin-top: 8px;
+}
+
+.nav-library > span {
+  flex: 1;
+}
+
+.nav-library > svg:last-child {
+  transform: rotate(-90deg);
+}
+
+.nav-library > svg.expanded {
+  transform: none;
+}
+
+.sidebar-collection-nav[hidden] {
+  display: none;
+}
+
+.sidebar-collection-nav button {
+  padding-left: 28px;
+}
+
+/* Keep the compact header above the list so only the artwork wash sits behind it. */
+.workspace-viewport.library-workspace {
+  padding-top: 4px;
+}
+
+.browser-panel.library-collection-panel {
+  display: flex;
+  flex-direction: column;
+  padding-block: 0;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.browser-content {
+  display: contents;
+}
+
+.library-browser-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 28px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.library-browser-content .alphabet-rail {
+  top: 0;
+}
+
+.library-browser-heading {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 4;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 58px;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  padding: 8px 4px 10px;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.library-browser-heading .heading-actions {
+  flex: 1 1 auto;
+  width: auto;
+  justify-content: flex-end;
+}
+
+.library-browser-heading h3 {
+  font-size: 32px;
+}
+
+.player-loading {
+  margin: 0;
+  color: var(--prism-accent);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* macOS draws native window controls over the webview; reserve their space even with navigation hidden. */
+.macos-titlebar .native-window-drag-region {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 3;
+  width: max(96px, var(--workspace-sidebar-width));
+  height: 48px;
+}
+
+.macos-titlebar .sidebar {
+  padding-top: 50px;
+}
+
+.macos-titlebar.sidebar-collapsed .topbar {
+  padding-inline: 104px;
+}
+
+.macos-titlebar [data-tauri-drag-region] {
+  user-select: none;
+}
+
+/* A visible divider also provides a forgiving pointer and keyboard resize target. */
+.playback-sidebar-panes {
+  display: grid;
+  min-height: 0;
+}
+
+.playback-pane-divider {
+  position: relative;
+  min-height: 0;
+  cursor: row-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.playback-pane-divider::before,
+.playback-pane-divider::after {
+  position: absolute;
+  top: 50%;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  content: "";
+}
+
+.playback-pane-divider::before {
+  inset-inline: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.playback-pane-divider::after {
+  left: calc(50% - 16px);
+  width: 32px;
+  height: 3px;
+  background: rgba(237, 242, 246, 0.4);
+}
+
+.playback-pane-divider:hover::after,
+.playback-pane-divider:focus-visible::after {
+  background: var(--prism-accent);
+}
