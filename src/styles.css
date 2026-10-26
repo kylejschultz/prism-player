@@ -5954,14 +5954,15 @@ button.similar-chip:focus-visible {
 }
 
 .workspace {
+  --workspace-gutter: 24px;
   gap: 0;
   padding: 0;
   background: transparent;
 }
 
 .topbar {
-  min-height: 70px;
-  padding: 12px 28px;
+  min-height: 56px;
+  padding: 8px var(--workspace-gutter);
   border-bottom: 0;
 }
 
@@ -5974,7 +5975,7 @@ button.similar-chip:focus-visible {
 }
 
 .workspace-viewport {
-  padding: 18px 28px 24px;
+  padding: 12px var(--workspace-gutter) 20px;
 }
 
 .library-view,
@@ -6033,15 +6034,16 @@ button.similar-chip:focus-visible {
   }
 
   .workspace {
+    --workspace-gutter: 16px;
     padding: 0;
   }
 
   .topbar {
-    padding-inline: 18px;
+    padding-inline: var(--workspace-gutter);
   }
 
   .workspace-viewport {
-    padding: 18px;
+    padding: 12px var(--workspace-gutter) 20px;
   }
 
   .player-bar {
@@ -6060,15 +6062,16 @@ button.similar-chip:focus-visible {
   }
 
   .workspace {
+    --workspace-gutter: 14px;
     padding: 0;
   }
 
   .topbar {
-    padding-inline: 14px;
+    padding-inline: var(--workspace-gutter);
   }
 
   .workspace-viewport {
-    padding: 14px;
+    padding: 10px var(--workspace-gutter) 16px;
   }
 
   .player-bar {
@@ -6206,6 +6209,8 @@ button.similar-chip:focus-visible {
 
 .album-artist-link,
 .album-artist-label {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.86);
   font-size: 17px;
@@ -6483,7 +6488,7 @@ button.similar-chip:focus-visible {
 
 .browser-panel,
 .browser-panel.home-panel {
-  padding: 8px 10px 28px;
+  padding: 8px 0 20px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -6592,13 +6597,13 @@ button.similar-chip:focus-visible {
 }
 
 .home-dashboard {
-  gap: clamp(20px, 2.4vw, 30px);
-  padding: clamp(8px, 1.4vw, 18px) clamp(20px, 4.5vw, 64px) clamp(28px, 5vw, 72px);
+  gap: 24px;
+  padding: 8px 0 28px;
 }
 
 .home-dashboard-heading,
 .home-dashboard-lead {
-  width: min(100%, 1080px);
+  width: min(100%, 1280px);
   margin: 0 auto;
 }
 
@@ -6702,7 +6707,7 @@ button.similar-chip:focus-visible {
 }
 
 .home-album-shelf {
-  width: min(100%, 1080px);
+  width: min(100%, 1280px);
 }
 
 .home-album-row {
@@ -6772,7 +6777,7 @@ button.similar-chip:focus-visible {
 
 .radio-hero {
   width: 100%;
-  padding: clamp(18px, 3vw, 36px);
+  padding: 12px var(--workspace-gutter) 20px;
 }
 
 .radio-view.radio-hero {
@@ -6857,8 +6862,8 @@ button.similar-chip:focus-visible {
 }
 
 .album-detail-hero {
-  margin-left: -22px;
-  padding-left: 22px;
+  margin-left: -16px;
+  padding-left: 16px;
 }
 
 .album-detail-hero .detail-cover {
@@ -7115,7 +7120,7 @@ button.similar-chip:focus-visible {
 
 .detail-page {
   min-height: 100%;
-  padding-inline: 22px 8px;
+  padding-inline: 16px 8px;
 }
 
 .detail-page-hero {
@@ -7124,8 +7129,8 @@ button.similar-chip:focus-visible {
   gap: clamp(28px, 4vw, 58px);
   min-height: min(36vh, 310px);
   margin: 0 0 clamp(30px, 4vh, 46px);
-  margin-left: -22px;
-  padding-left: 22px;
+  margin-left: -16px;
+  padding-left: 16px;
 }
 
 .detail-artwork-stage {
@@ -7156,6 +7161,7 @@ button.similar-chip:focus-visible {
 }
 
 .detail-hero-copy {
+  min-width: 0;
   display: grid;
   align-content: end;
   max-width: 760px;
@@ -7206,6 +7212,7 @@ button.similar-chip:focus-visible {
 }
 
 .detail-page .detail-actions {
+  flex-wrap: wrap;
   align-items: center;
   margin: 20px 0 0;
 }

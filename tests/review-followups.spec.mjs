@@ -1098,3 +1098,64 @@ test.describe('optional supplied FLAC in WebKit', () => {
     } finally { await browser.close(); }
   });
 });
+
+test('workspace spacing preserves usable content and controls at native window sizes', async ({ page }) => {
+  test.setTimeout(60000);
+  page.setDefaultTimeout(6000);
+  const { errors } = await fixture(page, { artwork: true });
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByLabel('Home shelves').selectOption('art');
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  const measurements = [];
+  for (const [width, height] of [[980, 640], [1440, 900], [1920, 1080]]) {
+    await page.setViewportSize({ width, height });
+    for (const sidebarOpen of [true, false]) {
+      if (await page.locator('#playback-sidebar').isVisible() !== sidebarOpen) {
+        await page.getByRole('group', { name: 'Player panels' }).getByRole('button', { name: sidebarOpen ? 'Open lyrics' : 'Close lyrics', exact: true }).click();
+      }
+      for (const screen of ['Home', 'Albums', 'Album detail', 'Radio']) {
+        if (screen === 'Album detail') await page.getByRole('button', { name: 'Open Album a', exact: true }).click({ position: { x: 12, y: 12 } });
+        else await page.locator('.sidebar').getByRole('button', { name: screen, exact: true }).click();
+        const content = page.locator(screen === 'Home' ? '.home-dashboard-heading' : screen === 'Albums' ? '.library-browser-heading' : screen === 'Album detail' ? '.detail-page-hero' : '.radio-view');
+        await expect(content).toBeVisible();
+        const workspace = await page.locator('.workspace').boundingBox();
+        const topbar = await page.locator('.topbar').boundingBox();
+        const search = await page.locator('.topbar .global-search').boundingBox();
+        const bounds = await content.boundingBox();
+        const bodyWidth = await page.locator('body').evaluate(el => el.scrollWidth);
+        if (screen === 'Album detail') {
+          for (const action of await page.locator('.detail-actions > button').all()) {
+            const box = await action.boundingBox();
+            expect(box.x).toBeGreaterThanOrEqual(workspace.x);
+            expect(box.x + box.width).toBeLessThanOrEqual(workspace.x + workspace.width);
+          }
+          const lastTrack = page.locator('.album-detail-page .track-row').last();
+          await lastTrack.scrollIntoViewIfNeeded();
+          await expect(lastTrack).toBeInViewport();
+          await page.locator('.detail-page-hero').scrollIntoViewIfNeeded();
+        }
+        measurements.push({ width, height, sidebarOpen, screen, workspaceWidth: workspace.width, topbarHeight: topbar.height, searchHeight: search.height, searchTopInset: search.y - topbar.y, searchBottomInset: topbar.y + topbar.height - search.y - search.height, contentLeftInset: bounds.x - workspace.x, contentRightInset: workspace.x + workspace.width - bounds.x - bounds.width, contentWidth: bounds.width, contentTop: bounds.y });
+        expect(bodyWidth).toBeLessThanOrEqual(width);
+        expect(bounds.x).toBeGreaterThanOrEqual(workspace.x);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(workspace.x + workspace.width + 1);
+        const footer = await page.locator('.player-bar').boundingBox();
+        expect(topbar.y + topbar.height).toBeLessThan(footer.y);
+        await expect(page.getByRole('slider', { name: 'Seek', exact: true })).toBeInViewport();
+        if (width !== 1920 && sidebarOpen) await page.screenshot({ path: test.info().outputPath(`spacing-${screen.replace(' ', '-')}-${width}.png`) });
+      }
+    }
+  }
+  writeFileSync(test.info().outputPath('spacing-metrics.json'), JSON.stringify(measurements, null, 2));
+  for (const entry of measurements) {
+    expect(entry.topbarHeight).toBeLessThanOrEqual(56);
+    expect(entry.searchHeight).toBeGreaterThanOrEqual(36);
+    expect(entry.searchTopInset).toBeLessThanOrEqual(10);
+    expect(entry.searchBottomInset).toBeLessThanOrEqual(10);
+    if (entry.screen === 'Home' && entry.width !== 1920) {
+      expect(entry.contentLeftInset).toBeLessThanOrEqual(entry.width <= 1120 ? 20 : 28);
+      expect(entry.contentRightInset).toBeLessThanOrEqual(entry.width <= 1120 ? 30 : 38);
+    }
+  }
+  expect(errors).toEqual([]);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+});
