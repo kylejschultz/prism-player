@@ -1355,3 +1355,58 @@ test('short-window unavailable lyrics stay within their lower pane', async ({ pa
   await page.screenshot({ path: test.info().outputPath('combined-radio-empty-980.png') });
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
 });
+
+test('playback sidebar toggle follows the volume control in visual and keyboard order', async ({ page, browserName }) => {
+  await fixture(page);
+  const volume = page.locator('.volume-control'), toggle = page.getByRole('group', { name: 'Player panels' });
+  const volumeBounds = await volume.boundingBox(), toggleBounds = await toggle.boundingBox();
+  expect(toggleBounds.x).toBeGreaterThanOrEqual(volumeBounds.x + volumeBounds.width);
+  await page.getByRole('slider', { name: 'Volume', exact: true }).focus();
+  // WebKit follows macOS's default Tab behavior; Option+Tab includes buttons.
+  await page.keyboard.press(process.platform === 'darwin' && browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+  await expect(toggle.getByRole('button')).toBeFocused();
+});
+
+test('playback divider resizes by pointer and keyboard, persists, and protects both panes through resizing', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  const { errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 24 }, (_, i) => ({ start: i * 4000, value: `Verse ${i}: keep the melody beside you` })) }] });
+  await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+  const sidebar = page.locator('#playback-sidebar'), upper = sidebar.locator('.queue-panel-section'), lower = sidebar.locator('.playback-lyrics-section');
+  const divider = sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true });
+  const lines = lower.locator('.lyrics-lines');
+  await expect(divider).toHaveAttribute('aria-orientation', 'horizontal');
+  await expect(lines.locator('p')).toHaveCount(24);
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('36');
+  await expectCenteredLyric(lines);
+  const initial = await upper.boundingBox(), grip = await divider.boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 100, { steps: 8 });
+  await page.mouse.up();
+  expect((await upper.boundingBox()).height).toBeGreaterThan(initial.height + 80);
+  await expectCenteredLyric(lines);
+  const dragged = Number(await divider.getAttribute('aria-valuenow'));
+  await divider.focus(); await page.keyboard.press('ArrowUp');
+  expect(Number(await divider.getAttribute('aria-valuenow'))).toBeLessThan(dragged);
+  const saved = await divider.getAttribute('aria-valuenow');
+  await sidebar.getByRole('button', { name: 'Close playback sidebar', exact: true }).click();
+  await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+  await expect(divider).toHaveAttribute('aria-valuenow', saved);
+  await page.reload();
+  await expect(divider).toHaveAttribute('aria-valuenow', saved);
+  await expect(lines.locator('p')).toHaveCount(24);
+  for (const [width, height] of [[980, 640], [1440, 900], [1440, 1200]]) {
+    await page.setViewportSize({ width, height });
+    for (const key of ['Home', 'End']) {
+      await divider.focus(); await page.keyboard.press(key);
+      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(139);
+      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(219);
+      const top = await upper.boundingBox(), bottom = await lower.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
+      expect(top.y + top.height).toBeLessThan(bottom.y);
+      expect(bottom.y + bottom.height).toBeLessThanOrEqual(footer.y);
+      await expectCenteredLyric(lines);
+      await page.screenshot({ path: test.info().outputPath(`divider-${width}-${height}-${key}.png`) });
+    }
+  }
+  expect(errors).toEqual([]);
+});

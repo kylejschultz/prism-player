@@ -525,6 +525,7 @@ const LAST_PLAYED_TRACK_KEY = "prism-player.lastPlayedTrack";
 const PLAYBACK_STATE_KEY = "prism-player.playbackState";
 const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
+const PLAYBACK_SPLIT_KEY = "prism-player.playbackSplit";
 const LIBRARY_EXPANDED_KEY = "prism-player.libraryExpanded";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
@@ -5445,18 +5446,6 @@ export function App() {
         </div>
 
         <div className="player-actions">
-          <div className="player-panel-buttons" role="group" aria-label="Player panels">
-            <button
-              className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
-              type="button"
-              aria-label={`${rightPanelOpen ? "Close" : "Open"} playback sidebar`}
-              aria-expanded={rightPanelOpen}
-              aria-controls="playback-sidebar"
-              onClick={() => setRightPanelState(!rightPanelOpen)}
-            >
-              {rightPanelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
-            </button>
-          </div>
           <div className={`volume-control ${isMuted ? "muted" : ""}`}>
             <button className="volume-mute-button" type="button" onClick={toggleMuted} aria-label={isMuted ? "Unmute volume" : "Mute volume"} aria-pressed={isMuted}>
               {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -5472,6 +5461,18 @@ export function App() {
               disabled={isMuted}
               aria-label={isMuted ? "Volume muted" : "Volume"}
             />
+          </div>
+          <div className="player-panel-buttons" role="group" aria-label="Player panels">
+            <button
+              className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
+              type="button"
+              aria-label={`${rightPanelOpen ? "Close" : "Open"} playback sidebar`}
+              aria-expanded={rightPanelOpen}
+              aria-controls="playback-sidebar"
+              onClick={() => setRightPanelState(!rightPanelOpen)}
+            >
+              {rightPanelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
+            </button>
           </div>
         </div>
       </footer>
@@ -5791,6 +5792,37 @@ function RightSidebar({
   onClose: () => void;
   onShowQueue: () => void;
 }) {
+  const panesRef = useRef<HTMLDivElement | null>(null);
+  const splitDragRef = useRef<{ pointerId: number; y: number; share: number; height: number } | null>(null);
+  const [paneHeight, setPaneHeight] = useState(0);
+  const [splitShare, setSplitShare] = useState(() => {
+    try {
+      const stored = localStorage.getItem(PLAYBACK_SPLIT_KEY);
+      const value = stored == null ? 0.375 : Number(stored);
+      return Number.isFinite(value) ? clampNumber(value, 0, 1) : 0.375;
+    } catch { return 0.375; }
+  });
+  // Keep usable queue and lyric space; the 12px row between them is the drag target.
+  const availablePaneHeight = Math.max(0, paneHeight - 12);
+  const minimumShare = availablePaneHeight ? Math.min(140, availablePaneHeight / 2) / availablePaneHeight : 0;
+  const maximumShare = availablePaneHeight ? 1 - Math.min(220, availablePaneHeight / 2) / availablePaneHeight : 1;
+  const effectiveShare = clampNumber(splitShare, minimumShare, maximumShare);
+
+  function updateSplit(nextShare: number) {
+    const bounded = clampNumber(nextShare, minimumShare, maximumShare);
+    setSplitShare(bounded);
+    try { localStorage.setItem(PLAYBACK_SPLIT_KEY, String(bounded)); } catch { /* Resizing still works without preference storage. */ }
+  }
+
+  useEffect(() => {
+    const panes = panesRef.current;
+    if (!panes) return;
+    const observer = new ResizeObserver(() => setPaneHeight(panes.clientHeight));
+    setPaneHeight(panes.clientHeight);
+    observer.observe(panes);
+    return () => observer.disconnect();
+  }, []);
+
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
@@ -5945,136 +5977,175 @@ function RightSidebar({
         </div>
       </div>
 
-      {tab === "queue" ? (
-        <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}`}>
-          {!isRadioSession ? (
-            <div className="queue-heading">
-              <p className="eyebrow">Now + Next</p>
-              <div className="queue-heading-actions">
-                <span>{displayedQueue.length ? `${displayedQueue.length} tracks` : "Empty"}</span>
-                <button type="button" onClick={onClearQueue} disabled={!queue.length}>
-                  Clear
-                </button>
-              </div>
-            </div>
-          ) : null}
-          <div className="queue-list right-queue-list">
-            {isRadioSession ? (
-              hasRadioQueuePayload ? (
-                <>
-                  {radioHistory.length ? (
-                    <div className="radio-queue-section">
-                      <p>Recently played</p>
-                      {recentRadioHistory.map((track, index) => (
-                        <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                      ))}
-                    </div>
-                  ) : null}
-                  {radioNowPlaying ? (
-                    <div className="radio-queue-section">
-                      <p className="radio-on-air-label">On air</p>
-                      <RadioQueueRow track={radioNowPlaying} tone="current" />
-                    </div>
-                  ) : null}
-                  {radioUpcoming.length ? (
-                    <div className="radio-queue-section">
-                      <p>Up next</p>
-                      {radioUpcoming.slice(0, 8).map((track, index) => (
-                        <RadioQueueRow track={track} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
-              )
-            ) : queue.length ? (
-              displayedQueue.map(({ song, index }) => (
-                <div
-                    className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""} ${dragOverQueueIndex === index ? "drop-before" : ""} ${dragOverQueueIndex === index + 1 ? "drop-after" : ""}`}
-                  key={`${song.id}-${index}`}
-                  data-queue-index={index}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                      setQueueDropTarget(index);
-                  }}
-                    onPointerMove={(event) => {
-                      if (draggedQueueIndex != null) {
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        setQueueDropTarget(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
-                      }
-                    }}
-                  onDrop={() => onDropQueueItem(dragOverQueueIndex ?? index, draggedQueueIndex ?? undefined)}
-                >
-                  <button
-                    className="queue-drag-handle"
-                    type="button"
-                    aria-label={`Move ${song.title}`}
-                    onPointerDown={(event) => startQueuePointerReorder(event, index)}
-                  >
-                    <Menu size={14} />
+      <div
+        className="playback-sidebar-panes"
+        ref={panesRef}
+        style={{ gridTemplateRows: `minmax(0, ${effectiveShare}fr) 12px minmax(0, ${1 - effectiveShare}fr)` }}
+      >
+        {tab === "queue" ? (
+          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}`}>
+            {!isRadioSession ? (
+              <div className="queue-heading">
+                <p className="eyebrow">Now + Next</p>
+                <div className="queue-heading-actions">
+                  <span>{displayedQueue.length ? `${displayedQueue.length} tracks` : "Empty"}</span>
+                  <button type="button" onClick={onClearQueue} disabled={!queue.length}>
+                    Clear
                   </button>
-                  <button className="queue-track" type="button" onClick={() => onSelectQueueTrack(index)}>
-                    <strong>{song.title}</strong>
-                    <small>{song.artist ?? "Unknown artist"}</small>
-                  </button>
-                  <small>{formatDuration(song.duration)}</small>
-                  <div className="queue-row-actions">
-                    <button type="button" aria-label={`Remove ${song.title}`} onClick={() => onRemoveQueueItem(index)}>
-                      <X size={13} />
-                    </button>
-                  </div>
                 </div>
-              ))
+              </div>
+            ) : null}
+            <div className="queue-list right-queue-list">
+              {isRadioSession ? (
+                hasRadioQueuePayload ? (
+                  <>
+                    {radioHistory.length ? (
+                      <div className="radio-queue-section">
+                        <p>Recently played</p>
+                        {recentRadioHistory.map((track, index) => (
+                          <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                        ))}
+                      </div>
+                    ) : null}
+                    {radioNowPlaying ? (
+                      <div className="radio-queue-section">
+                        <p className="radio-on-air-label">On air</p>
+                        <RadioQueueRow track={radioNowPlaying} tone="current" />
+                      </div>
+                    ) : null}
+                    {radioUpcoming.length ? (
+                      <div className="radio-queue-section">
+                        <p>Up next</p>
+                        {radioUpcoming.slice(0, 8).map((track, index) => (
+                          <RadioQueueRow track={track} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
+                )
+              ) : queue.length ? (
+                displayedQueue.map(({ song, index }) => (
+                  <div
+                      className={`queue-row ${index === currentIndex ? "active" : ""} ${index === draggedQueueIndex ? "dragging" : ""} ${dragOverQueueIndex === index ? "drop-before" : ""} ${dragOverQueueIndex === index + 1 ? "drop-after" : ""}`}
+                    key={`${song.id}-${index}`}
+                    data-queue-index={index}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                        setQueueDropTarget(index);
+                    }}
+                      onPointerMove={(event) => {
+                        if (draggedQueueIndex != null) {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setQueueDropTarget(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
+                        }
+                      }}
+                    onDrop={() => onDropQueueItem(dragOverQueueIndex ?? index, draggedQueueIndex ?? undefined)}
+                  >
+                    <button
+                      className="queue-drag-handle"
+                      type="button"
+                      aria-label={`Move ${song.title}`}
+                      onPointerDown={(event) => startQueuePointerReorder(event, index)}
+                    >
+                      <Menu size={14} />
+                    </button>
+                    <button className="queue-track" type="button" onClick={() => onSelectQueueTrack(index)}>
+                      <strong>{song.title}</strong>
+                      <small>{song.artist ?? "Unknown artist"}</small>
+                    </button>
+                    <small>{formatDuration(song.duration)}</small>
+                    <div className="queue-row-actions">
+                      <button type="button" aria-label={`Remove ${song.title}`} onClick={() => onRemoveQueueItem(index)}>
+                        <X size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="queue-empty">Play an album or song to build a queue.</p>
+              )}
+            </div>
+            {!isRadioSession && queue.length ? (
+              <p className="right-panel-footnote">
+                {formatDuration(visibleQueueDuration)} showing
+                {displayedQueue.length < queue.length ? ` · ${formatDuration(queueDuration)} total` : ""}
+                {upcomingCount ? ` · ${upcomingCount} up next` : ""}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
+        )}
+        <div
+          className="playback-pane-divider"
+          role="separator"
+          aria-label="Resize playback panes"
+          aria-orientation="horizontal"
+          aria-valuemin={Math.round(minimumShare * 100)}
+          aria-valuemax={Math.round(maximumShare * 100)}
+          aria-valuenow={Math.round(effectiveShare * 100)}
+          aria-valuetext={`${Math.round(effectiveShare * 100)}% ${headingLabel.toLowerCase()}, ${Math.round((1 - effectiveShare) * 100)}% lyrics`}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            if (event.button !== 0 || !availablePaneHeight) return;
+            event.preventDefault();
+            event.currentTarget.focus();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            splitDragRef.current = { pointerId: event.pointerId, y: event.clientY, share: effectiveShare, height: availablePaneHeight };
+          }}
+          onPointerMove={(event) => {
+            const drag = splitDragRef.current;
+            if (drag?.pointerId === event.pointerId) updateSplit(drag.share + (event.clientY - drag.y) / drag.height);
+          }}
+          onPointerUp={(event) => {
+            splitDragRef.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onPointerCancel={() => { splitDragRef.current = null; }}
+          onLostPointerCapture={() => { splitDragRef.current = null; }}
+          onKeyDown={(event) => {
+            if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            updateSplit(event.key === "Home" ? minimumShare : event.key === "End" ? maximumShare : effectiveShare + (event.key === "ArrowDown" ? 0.05 : -0.05));
+          }}
+        />
+        <section className="playback-lyrics-section" aria-labelledby="playback-lyrics-heading">
+          <h3 id="playback-lyrics-heading">Lyrics</h3>
+          <div className="right-panel-section lyrics-panel">
+            {isRadioSession || currentTrack ? (
+              <>
+                <div className="lyrics-track">
+                  <p className="eyebrow">{isRadioSession ? radioNowPlaying?.artist ?? "Radio" : currentTrack?.artist ?? "Unknown artist"}</p>
+                  <h3>{isRadioSession ? radioNowPlaying?.title ?? "Radio lyrics" : currentTrack?.title}</h3>
+                </div>
+                {lyricsStatus === "loading" ? (
+                  <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />
+                ) : lyricsLines.length ? (
+                  <div className={`lyrics-lines${lyricsLines.some(line => line.startMs != null) ? " synced" : ""}`} ref={lyricsScrollRef}>
+                    {lyricsLines.map((line, index) => (
+                      <p
+                        className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
+                        data-distance={line.startMs != null ? Math.min(3, Math.abs(index - lyricFocusIndex)) : undefined}
+                        aria-current={line.text && index === activeLyricIndex ? "true" : undefined}
+                        key={`${line.text}-${line.startMs ?? "plain"}-${index}`}
+                        ref={index === activeLyricIndex ? activeLyricRef : undefined}
+                      >
+                        {line.text}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyPanel icon={<Music2 size={20} />} text={lyricsMessage || "No lyrics loaded yet."} />
+                )}
+              </>
             ) : (
-              <p className="queue-empty">Play an album or song to build a queue.</p>
+              <EmptyPanel icon={<Music2 size={20} />} text="No active playback." />
             )}
           </div>
-          {!isRadioSession && queue.length ? (
-            <p className="right-panel-footnote">
-              {formatDuration(visibleQueueDuration)} showing
-              {displayedQueue.length < queue.length ? ` · ${formatDuration(queueDuration)} total` : ""}
-              {upcomingCount ? ` · ${upcomingCount} up next` : ""}
-            </p>
-          ) : null}
-        </div>
-      ) : (
-        <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
-      )}
-      <section className="playback-lyrics-section" aria-labelledby="playback-lyrics-heading">
-        <h3 id="playback-lyrics-heading">Lyrics</h3>
-        <div className="right-panel-section lyrics-panel">
-          {isRadioSession || currentTrack ? (
-            <>
-              <div className="lyrics-track">
-                <p className="eyebrow">{isRadioSession ? radioNowPlaying?.artist ?? "Radio" : currentTrack?.artist ?? "Unknown artist"}</p>
-                <h3>{isRadioSession ? radioNowPlaying?.title ?? "Radio lyrics" : currentTrack?.title}</h3>
-              </div>
-              {lyricsStatus === "loading" ? (
-                <EmptyPanel icon={<Loader2 size={20} className="spin" />} text="Loading lyrics..." />
-              ) : lyricsLines.length ? (
-                <div className={`lyrics-lines${lyricsLines.some(line => line.startMs != null) ? " synced" : ""}`} ref={lyricsScrollRef}>
-                  {lyricsLines.map((line, index) => (
-                    <p
-                      className={line.startMs != null && index === activeLyricIndex ? "active" : line.startMs == null ? "plain" : ""}
-                      data-distance={line.startMs != null ? Math.min(3, Math.abs(index - lyricFocusIndex)) : undefined}
-                      aria-current={line.text && index === activeLyricIndex ? "true" : undefined}
-                      key={`${line.text}-${line.startMs ?? "plain"}-${index}`}
-                      ref={index === activeLyricIndex ? activeLyricRef : undefined}
-                    >
-                      {line.text}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <EmptyPanel icon={<Music2 size={20} />} text={lyricsMessage || "No lyrics loaded yet."} />
-              )}
-            </>
-          ) : (
-            <EmptyPanel icon={<Music2 size={20} />} text="No active playback." />
-          )}
-        </div>
-      </section>
+        </section>
+      </div>
       {queueDragGhost ? (
         <div
           className="queue-drag-ghost"
