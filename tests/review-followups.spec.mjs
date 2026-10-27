@@ -9,7 +9,7 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState } = {}) {
   const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
   const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
@@ -71,7 +71,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
         await holdLyrics;
         return route.fulfill({ status: lyricsStatus, headers: lyricsStatus === 503 ? { 'Retry-After': '10' } : {}, json: lyricsResponse || {} });
       }
-      return route.fulfill({ json: url.pathname === '/api/state' || url.pathname === '/api/now-playing' ? { lyrics: lyricsEnabled === undefined ? undefined : { enabled: lyricsEnabled }, station: { name: 'A station with a meaningful long name' }, nowPlaying: { title: 'On air', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 }, upcoming: [{ title: 'Up next' }], history: [{ title: 'Previously played' }], streamOnline: true, listeners: 1 } : {} });
+      return route.fulfill({ json: url.pathname === '/api/state' || url.pathname === '/api/now-playing' ? { lyrics: lyricsEnabled === undefined ? undefined : { enabled: lyricsEnabled }, station: { name: 'A station with a meaningful long name' }, nowPlaying: { title: 'On air', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 }, upcoming: [{ title: 'Up next' }], history: [{ title: 'Previously played' }], streamOnline: true, listeners: 1, ...radioState } : {} });
     }
     if (url.hostname !== 'music.fixture.invalid') return route.fulfill({ json: {} });
     const endpoint = url.pathname.split('/').at(-1).replace('.view', ''), id = url.searchParams.get('id');
@@ -1164,8 +1164,8 @@ test('workspace spacing preserves usable content and controls at native window s
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
 });
 
-test('Radio listening content centers in the viewport without overlapping station details or a backdrop seam', async ({ page }) => {
-  await fixture(page, { artwork: true });
+test('Radio listening content centers above station details without overlap or a backdrop seam', async ({ page }) => {
+  await fixture(page, { artwork: true, radioState: { nowPlaying: { title: 'A song with a long title (Live Acoustic Sessions)', artist: 'Radio Artist', album: 'A late-night session', subsonic_id: 'heard', startedAt: Date.now() - 5000 } } });
   await page.locator('.sidebar').getByRole('button', { name: 'Radio', exact: true }).click();
   await page.getByRole('button', { name: 'Tune In', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
@@ -1185,8 +1185,8 @@ test('Radio listening content centers in the viewport without overlapping statio
         const availableTop = hero.top + parseFloat(css.paddingTop);
         const availableBottom = hero.bottom - parseFloat(css.paddingBottom);
         const contentHeight = Math.max(cover.height, copy.height);
-        const roomForCenter = availableBottom - availableTop >= contentHeight + 2 * (details.height + gap);
-        return { roomForCenter, detailsTop: details.top, contentBottom: Math.max(cover.bottom, copy.bottom), center: (availableTop + availableBottom) / 2, coverCenter: (cover.top + cover.bottom) / 2, copyCenter: (copy.top + copy.bottom) / 2, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, backdrop: css.backdropFilter, background: css.backgroundImage };
+        const roomForCenter = availableBottom - availableTop >= contentHeight + details.height + gap;
+        return { roomForCenter, detailsTop: details.top, contentBottom: Math.max(cover.bottom, copy.bottom), center: (availableTop + details.top - gap) / 2, coverCenter: (cover.top + cover.bottom) / 2, copyCenter: (copy.top + copy.bottom) / 2, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, backdrop: css.backdropFilter, background: css.backgroundImage };
       });
       if (layout.roomForCenter) {
         expect(Math.abs(layout.coverCenter - layout.center)).toBeLessThanOrEqual(2);
@@ -1200,6 +1200,9 @@ test('Radio listening content centers in the viewport without overlapping statio
       expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
       expect(layout.backdrop).toBe('none');
       expect(layout.background).toBe('none');
+      await expect(page.locator('.radio-dj-callout')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await expect(page.locator('.radio-dj-callout')).toHaveCSS('box-shadow', 'none');
+      await expect(page.locator('.radio-dj-callout')).toHaveCSS('backdrop-filter', 'none');
       expect(await page.locator('.topbar').evaluate(el => getComputedStyle(el).backgroundImage)).toBe('none');
       await page.screenshot({ path: test.info().outputPath(`radio-centered-${width}-${sidebarOpen ? 'with-sidebar' : 'full'}.png`) });
     }
@@ -1404,5 +1407,51 @@ test('playback divider resizes by pointer and keyboard, persists, and protects b
       await page.screenshot({ path: test.info().outputPath(`divider-${width}-${height}-${key}.png`) });
     }
   }
+  expect(errors).toEqual([]);
+});
+
+
+test('radio timeline keeps On air visible while upcoming and history scroll independently of lyrics', async ({ page }) => {
+  const { errors } = await fixture(page, {
+    lyricsEnabled: true,
+    lyricsResponse: { songId: 'heard', synced: false, offsetMs: 0, lines: Array.from({ length: 24 }, (_, i) => ({ text: `Plain radio verse ${i}`, startMs: null })) },
+    radioState: {
+      nowPlaying: { title: 'Current radio track', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 },
+      upcoming: Array.from({ length: 8 }, (_, i) => ({ title: `Upcoming ${i}`, artist: 'Radio Artist' })),
+      history: Array.from({ length: 8 }, (_, i) => ({ title: `Previous ${i}`, artist: 'Radio Artist' })),
+    },
+  });
+  const sidebar = await radioLyrics(page);
+  const current = sidebar.locator('.radio-timeline-current'), scroll = sidebar.getByRole('region', { name: 'Upcoming and recently played radio tracks', exact: true });
+  await expect(current.locator('.radio-queue-row.current')).toHaveCount(1);
+  await expect(current).toContainText('On air');
+  await expect(scroll.locator('.radio-queue-section > p').first()).toHaveText('Up next');
+  await expect(scroll.locator('.radio-queue-row.previous')).toHaveCount(5);
+  const lyrics = sidebar.locator('.lyrics-lines');
+  await expect(lyrics.locator('p')).toHaveCount(24);
+  await lyrics.evaluate(el => { el.scrollTop = 90; });
+  const lyricTop = await lyrics.evaluate(el => el.scrollTop), original = await current.boundingBox();
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-normal.png') });
+  await scroll.hover(); await page.mouse.wheel(0, 2000);
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  expect((await current.boundingBox()).y).toBe(original.y);
+  expect(await lyrics.evaluate(el => el.scrollTop)).toBe(lyricTop);
+  await scroll.focus(); await page.keyboard.press('Home');
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  await page.keyboard.press('End');
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport();
+  await expect(current).toBeInViewport();
+  await page.setViewportSize({ width: 980, height: 640 });
+  await sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true }).focus();
+  await page.keyboard.press('Home');
+  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(167);
+  await scroll.focus(); await page.keyboard.press('Home');
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  await expect(scroll.getByText('Upcoming 0', { exact: true })).toBeInViewport({ ratio: 1 });
+  const live = await current.boundingBox(), list = await scroll.boundingBox(), divider = await sidebar.locator('.playback-pane-divider').boundingBox();
+  expect(live.y + live.height).toBeLessThanOrEqual(list.y);
+  expect(list.y + list.height).toBeLessThanOrEqual(divider.y);
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-short.png') });
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
   expect(errors).toEqual([]);
 });

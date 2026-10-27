@@ -5792,6 +5792,7 @@ function RightSidebar({
   onClose: () => void;
   onShowQueue: () => void;
 }) {
+  const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const panesRef = useRef<HTMLDivElement | null>(null);
   const splitDragRef = useRef<{ pointerId: number; y: number; share: number; height: number } | null>(null);
   const [paneHeight, setPaneHeight] = useState(0);
@@ -5804,7 +5805,8 @@ function RightSidebar({
   });
   // Keep usable queue and lyric space; the 12px row between them is the drag target.
   const availablePaneHeight = Math.max(0, paneHeight - 12);
-  const minimumShare = availablePaneHeight ? Math.min(140, availablePaneHeight / 2) / availablePaneHeight : 0;
+  const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 168 : 140;
+  const minimumShare = availablePaneHeight ? Math.min(minimumUpperHeight, availablePaneHeight / 2) / availablePaneHeight : 0;
   const maximumShare = availablePaneHeight ? 1 - Math.min(220, availablePaneHeight / 2) / availablePaneHeight : 1;
   const effectiveShare = clampNumber(splitShare, minimumShare, maximumShare);
 
@@ -5827,7 +5829,6 @@ function RightSidebar({
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
   const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
-  const isRadioSession = isRadioPlaying || radioStatus === "checking";
   const recentRadioHistory = radioHistory.slice(0, 5).reverse();
   const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
@@ -5983,7 +5984,7 @@ function RightSidebar({
         style={{ gridTemplateRows: `minmax(0, ${effectiveShare}fr) 12px minmax(0, ${1 - effectiveShare}fr)` }}
       >
         {tab === "queue" ? (
-          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}`}>
+          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}${isRadioSession && radioNowPlaying ? " has-current-track" : ""}`}>
             {!isRadioSession ? (
               <div className="queue-heading">
                 <p className="eyebrow">Now + Next</p>
@@ -5995,29 +5996,40 @@ function RightSidebar({
                 </div>
               </div>
             ) : null}
-            <div className="queue-list right-queue-list">
+            {isRadioSession && radioNowPlaying ? (
+              <div className="radio-queue-section radio-timeline-current" role="group" aria-label="On air">
+                <p className="radio-on-air-label">On air</p>
+                <RadioQueueRow track={radioNowPlaying} tone="current" />
+              </div>
+            ) : null}
+            <div
+              className="queue-list right-queue-list"
+              role={isRadioSession ? "region" : undefined}
+              aria-label={isRadioSession ? "Upcoming and recently played radio tracks" : undefined}
+              tabIndex={isRadioSession ? 0 : undefined}
+              onKeyDown={(event) => {
+                if (!isRadioSession || (event.key !== "Home" && event.key !== "End")) return;
+                event.preventDefault();
+                event.stopPropagation();
+                event.currentTarget.scrollTop = event.key === "Home" ? 0 : event.currentTarget.scrollHeight;
+              }}
+            >
               {isRadioSession ? (
                 hasRadioQueuePayload ? (
                   <>
-                    {radioHistory.length ? (
-                      <div className="radio-queue-section">
-                        <p>Recently played</p>
-                        {recentRadioHistory.map((track, index) => (
-                          <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                        ))}
-                      </div>
-                    ) : null}
-                    {radioNowPlaying ? (
-                      <div className="radio-queue-section">
-                        <p className="radio-on-air-label">On air</p>
-                        <RadioQueueRow track={radioNowPlaying} tone="current" />
-                      </div>
-                    ) : null}
                     {radioUpcoming.length ? (
                       <div className="radio-queue-section">
                         <p>Up next</p>
                         {radioUpcoming.slice(0, 8).map((track, index) => (
                           <RadioQueueRow track={track} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                        ))}
+                      </div>
+                    ) : null}
+                    {radioHistory.length ? (
+                      <div className="radio-queue-section">
+                        <p>Recently played</p>
+                        {recentRadioHistory.map((track, index) => (
+                          <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
                         ))}
                       </div>
                     ) : null}
