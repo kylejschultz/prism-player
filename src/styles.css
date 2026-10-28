@@ -855,11 +855,15 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .radio-timeline-panel {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .radio-timeline-panel.has-current-track {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.radio-timeline-switch {
+  justify-self: start;
 }
 
 .radio-timeline-panel > .right-queue-list {

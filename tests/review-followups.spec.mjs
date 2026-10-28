@@ -1411,7 +1411,7 @@ test('playback divider resizes by pointer and keyboard, persists, and protects b
 });
 
 
-test('radio timeline keeps On air visible while upcoming and history scroll independently of lyrics', async ({ page }) => {
+test('radio timeline switches newest-first history and upcoming while On air and lyrics stay in place', async ({ page }) => {
   const { errors } = await fixture(page, {
     lyricsEnabled: true,
     lyricsResponse: { songId: 'heard', synced: false, offsetMs: 0, lines: Array.from({ length: 24 }, (_, i) => ({ text: `Plain radio verse ${i}`, startMs: null })) },
@@ -1422,10 +1422,15 @@ test('radio timeline keeps On air visible while upcoming and history scroll inde
     },
   });
   const sidebar = await radioLyrics(page);
-  const current = sidebar.locator('.radio-timeline-current'), scroll = sidebar.getByRole('region', { name: 'Upcoming and recently played radio tracks', exact: true });
+  const current = sidebar.locator('.radio-timeline-current');
+  let scroll = sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true });
+  const recent = sidebar.getByRole('button', { name: 'Recently played', exact: true });
+  const upcoming = sidebar.getByRole('button', { name: 'Up next', exact: true });
   await expect(current.locator('.radio-queue-row.current')).toHaveCount(1);
   await expect(current).toContainText('On air');
-  await expect(scroll.locator('.radio-queue-section > p').first()).toHaveText('Up next');
+  await expect(recent).toHaveAttribute('aria-pressed', 'true');
+  await expect(scroll.locator('.radio-queue-row strong')).toHaveText(Array.from({ length: 5 }, (_, i) => `Previous ${i}`));
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
   await expect(scroll.locator('.radio-queue-row.previous')).toHaveCount(5);
   const lyrics = sidebar.locator('.lyrics-lines');
   await expect(lyrics.locator('p')).toHaveCount(24);
@@ -1439,19 +1444,48 @@ test('radio timeline keeps On air visible while upcoming and history scroll inde
   await scroll.focus(); await page.keyboard.press('Home');
   await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
   await page.keyboard.press('End');
-  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport();
+  await expect(scroll.getByText('Previous 4', { exact: true })).toBeInViewport();
+  await upcoming.focus(); await page.keyboard.press('Enter');
+  scroll = sidebar.getByRole('region', { name: 'Upcoming radio tracks', exact: true });
+  await expect(upcoming).toHaveAttribute('aria-pressed', 'true');
+  await expect(recent).toHaveAttribute('aria-pressed', 'false');
+  await expect(scroll.locator('.radio-queue-row strong')).toHaveText(Array.from({ length: 8 }, (_, i) => `Upcoming ${i}`));
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  expect((await current.boundingBox()).y).toBe(original.y);
+  expect(await lyrics.evaluate(el => el.scrollTop)).toBe(lyricTop);
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-upcoming.png') });
+  await scroll.focus(); await page.keyboard.press('End');
+  await expect(scroll.getByText('Upcoming 7', { exact: true })).toBeInViewport();
+  await recent.click();
+  scroll = sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true });
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
   await expect(current).toBeInViewport();
   await page.setViewportSize({ width: 980, height: 640 });
   await sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true }).focus();
   await page.keyboard.press('Home');
-  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(167);
+  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(199);
   await scroll.focus(); await page.keyboard.press('Home');
   await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
-  await expect(scroll.getByText('Upcoming 0', { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
   const live = await current.boundingBox(), list = await scroll.boundingBox(), divider = await sidebar.locator('.playback-pane-divider').boundingBox();
   expect(live.y + live.height).toBeLessThanOrEqual(list.y);
   expect(list.y + list.height).toBeLessThanOrEqual(divider.y);
   await page.screenshot({ path: test.info().outputPath('radio-timeline-short.png') });
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  expect(errors).toEqual([]);
+});
+
+
+test('radio timeline switch explains missing upcoming tracks without hiding On air or history', async ({ page }) => {
+  const { errors } = await fixture(page, { radioState: { upcoming: [] } });
+  const sidebar = await radioLyrics(page);
+  await expect(sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true })).toContainText('Previously played');
+  await sidebar.getByRole('button', { name: 'Up next', exact: true }).click();
+  await expect(sidebar.getByRole('region', { name: 'Upcoming radio tracks', exact: true })).toHaveText('No upcoming tracks in the station payload yet.');
+  await expect(sidebar.locator('.radio-timeline-current')).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Recently played', exact: true }).click();
+  await expect(sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true })).toContainText('Previously played');
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
   expect(errors).toEqual([]);
 });

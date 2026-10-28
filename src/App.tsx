@@ -5793,6 +5793,7 @@ function RightSidebar({
   onShowQueue: () => void;
 }) {
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
+  const [radioTimelineView, setRadioTimelineView] = useState<"recent" | "upcoming">("recent");
   const panesRef = useRef<HTMLDivElement | null>(null);
   const splitDragRef = useRef<{ pointerId: number; y: number; share: number; height: number } | null>(null);
   const [paneHeight, setPaneHeight] = useState(0);
@@ -5805,7 +5806,7 @@ function RightSidebar({
   });
   // Keep usable queue and lyric space; the 12px row between them is the drag target.
   const availablePaneHeight = Math.max(0, paneHeight - 12);
-  const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 168 : 140;
+  const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 200 : 140;
   const minimumShare = availablePaneHeight ? Math.min(minimumUpperHeight, availablePaneHeight / 2) / availablePaneHeight : 0;
   const maximumShare = availablePaneHeight ? 1 - Math.min(220, availablePaneHeight / 2) / availablePaneHeight : 1;
   const effectiveShare = clampNumber(splitShare, minimumShare, maximumShare);
@@ -5828,8 +5829,7 @@ function RightSidebar({
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
-  const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
-  const recentRadioHistory = radioHistory.slice(0, 5).reverse();
+  const timelineTracks = radioTimelineView === "recent" ? radioHistory.slice(0, 5) : radioUpcoming.slice(0, 8);
   const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const latestDragOverQueueIndexRef = useRef<number | null>(dragOverQueueIndex);
@@ -6002,10 +6002,17 @@ function RightSidebar({
                 <RadioQueueRow track={radioNowPlaying} tone="current" />
               </div>
             ) : null}
+            {isRadioSession ? (
+              <div className="view-toggle radio-timeline-switch" role="group" aria-label="Radio timeline view">
+                <button type="button" className={radioTimelineView === "recent" ? "active" : ""} aria-pressed={radioTimelineView === "recent"} onClick={() => setRadioTimelineView("recent")}>Recently played</button>
+                <button type="button" className={radioTimelineView === "upcoming" ? "active" : ""} aria-pressed={radioTimelineView === "upcoming"} onClick={() => setRadioTimelineView("upcoming")}>Up next</button>
+              </div>
+            ) : null}
             <div
+              key={isRadioSession ? radioTimelineView : "local"}
               className="queue-list right-queue-list"
               role={isRadioSession ? "region" : undefined}
-              aria-label={isRadioSession ? "Upcoming and recently played radio tracks" : undefined}
+              aria-label={isRadioSession ? radioTimelineView === "recent" ? "Recently played radio tracks" : "Upcoming radio tracks" : undefined}
               tabIndex={isRadioSession ? 0 : undefined}
               onKeyDown={(event) => {
                 if (!isRadioSession || (event.key !== "Home" && event.key !== "End")) return;
@@ -6015,27 +6022,14 @@ function RightSidebar({
               }}
             >
               {isRadioSession ? (
-                hasRadioQueuePayload ? (
-                  <>
-                    {radioUpcoming.length ? (
-                      <div className="radio-queue-section">
-                        <p>Up next</p>
-                        {radioUpcoming.slice(0, 8).map((track, index) => (
-                          <RadioQueueRow track={track} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                        ))}
-                      </div>
-                    ) : null}
-                    {radioHistory.length ? (
-                      <div className="radio-queue-section">
-                        <p>Recently played</p>
-                        {recentRadioHistory.map((track, index) => (
-                          <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
+                timelineTracks.length ? (
+                  <div className="radio-queue-section">
+                    {timelineTracks.map((track, index) => (
+                      <RadioQueueRow track={track} tone={radioTimelineView === "recent" ? "previous" : undefined} key={`${radioTimelineView}-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                    ))}
+                  </div>
                 ) : (
-                  <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
+                  <p className="queue-empty">{radioTimelineView === "recent" ? "No recently played tracks yet." : "No upcoming tracks in the station payload yet."}</p>
                 )
               ) : queue.length ? (
                 displayedQueue.map(({ song, index }) => (
