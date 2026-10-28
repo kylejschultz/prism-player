@@ -904,6 +904,11 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   min-height: 0;
 }
 
+.lyrics-panel > .empty-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
 .lyrics-track {
   display: grid;
   gap: 4px;
@@ -6715,6 +6720,21 @@ button.similar-chip:focus-visible {
   color: rgba(237, 242, 246, 0.62);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.home-resume-card.home-start-card {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 174px;
+}
+
+.home-start-card h3,
+.home-start-card .home-resume-copy > p {
+  white-space: normal;
+}
+
+.home-start-card .home-resume-copy > p:not(.eyebrow) {
+  max-width: 52ch;
+  line-height: 1.45;
 }
 
 .home-radio-card {

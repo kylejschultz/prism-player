@@ -5566,7 +5566,7 @@ export function App() {
           onClose={() => setSetupOpen(false)}
         />
       ) : null}
-      {whatsNewOpen && whatsNewReleases.length ? (
+      {whatsNewOpen && !setupOpen && whatsNewReleases.length ? (
         <WhatsNewDialog releases={whatsNewReleases} onClose={dismissWhatsNew} />
       ) : null}
       {playlistCreatorOpen ? (
@@ -7922,7 +7922,18 @@ function OverviewHome({
               )}
             </div>
           </section>
-        ) : null}
+        ) : (
+          <section className="home-resume-card home-start-card" aria-labelledby="home-start-title">
+            <div className="home-resume-copy">
+              <p className="eyebrow">Start listening</p>
+              <h3 id="home-start-title">{config ? "Choose your first album" : "Connect your music"}</h3>
+              <p>{config ? "Pick something from your library. Your last listen will appear here." : "Add your Navidrome server to browse and play your library."}</p>
+              <button className="connect-button home-continue-button" type="button" onClick={() => onSelectView(config ? "albums" : "settings")}>
+                {config ? "Browse albums" : "Connect library"}
+              </button>
+            </div>
+          </section>
+        )}
         <section className="home-radio-card" aria-labelledby="home-radio-title">
           <div className="home-radio-mark"><RadioTower size={20} /></div>
           <div>

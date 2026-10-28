@@ -1,4 +1,4 @@
-/* global window, localStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
+/* global window, localStorage, sessionStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
 import process from 'node:process';
@@ -9,7 +9,7 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false } = {}) {
   const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
   const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
@@ -17,10 +17,13 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists }) => {
-    localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
-    localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
-    localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
+  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread }) => {
+    if (!firstRun || !sessionStorage.getItem('prism-fixture-first-run-seeded')) {
+      if (!firstRun) localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
+      localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: firstRun || unread ? '' : '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
+      if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
+      if (firstRun) sessionStorage.setItem('prism-fixture-first-run-seeded', 'true');
+    }
     const library = { albums: [albums[0]], recentAlbums: [], recentlyPlayedAlbums: [], frequentAlbums: [], artists, playlists, favorites: { artists: [], albums: [], songs: [] } };
     window.fixtureReady = new Promise(resolve => {
       const request = indexedDB.open('prism-player-library-catalog', 1);
@@ -46,7 +49,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -1487,5 +1490,68 @@ test('radio timeline switch explains missing upcoming tracks without hiding On a
   await sidebar.getByRole('button', { name: 'Recently played', exact: true }).click();
   await expect(sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true })).toContainText('Previously played');
   await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  expect(errors).toEqual([]);
+});
+
+
+for (const finish of ['connect', 'close']) {
+  test(`first run shows setup before release notes when users ${finish} setup`, async ({ page }) => {
+    const { errors } = await fixture(page, { firstRun: true, unplayed: true });
+    await page.screenshot({ path: test.info().outputPath('first-run-setup.png') });
+    await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+    const setup = page.getByRole('dialog', { name: 'Connect Prism to Navidrome', exact: true });
+    await expect(setup).toBeVisible();
+    await expect(page.locator('.whats-new-modal')).toHaveCount(0);
+    if (finish === 'connect') {
+      await setup.getByPlaceholder('https://music.example.com').fill('music.fixture.invalid');
+      await setup.getByPlaceholder('Username', { exact: true }).fill('fixture');
+      await setup.getByPlaceholder('Password', { exact: true }).fill('synthetic-only');
+      await setup.getByRole('button', { name: 'Connect Library', exact: true }).click();
+    } else {
+      await setup.getByRole('button', { name: 'Close setup', exact: true }).click();
+    }
+    await expect(page.locator('.whats-new-modal')).toBeVisible();
+    await expect(page.locator('.setup-modal')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Got it', exact: true }).click();
+    await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0);
+    await expect(page.locator('.home-start-card')).toBeVisible();
+    if (finish === 'close') {
+      await page.getByRole('button', { name: 'Connect library', exact: true }).click();
+      await expect(page.locator('.settings-layout')).toBeVisible();
+    }
+    await page.reload();
+    if (finish === 'connect') await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0);
+    else await expect(page.getByRole('dialog', { name: 'Connect Prism to Navidrome', exact: true })).toBeVisible();
+    await expect(page.locator('.whats-new-modal')).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('unplayed Home fills the listening slot with a working library action', async ({ page }) => {
+  const { errors } = await fixture(page, { unplayed: true });
+  await page.screenshot({ path: test.info().outputPath('unplayed-home-initial.png') });
+  const start = page.locator('.home-start-card'), radio = page.locator('.home-dashboard-lead .home-radio-card');
+  await expect(start.getByRole('heading', { name: 'Choose your first album', exact: true })).toBeVisible();
+  for (const [width, height] of [[1440, 900], [980, 640]]) {
+    await page.setViewportSize({ width, height });
+    const lead = await page.locator('.home-dashboard-lead').boundingBox(), primary = await start.boundingBox(), secondary = await radio.boundingBox();
+    expect(Math.abs(primary.x - lead.x)).toBeLessThan(1);
+    expect(secondary.y >= primary.y + primary.height || secondary.x >= primary.x + primary.width).toBe(true);
+    expect(await start.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`unplayed-home-${width}.png`) });
+  }
+  await start.getByRole('button', { name: 'Browse albums', exact: true }).click();
+  await expect(page.locator('.library-browser-heading').getByRole('button', { name: 'Albums', exact: true })).toHaveClass(/active/);
+  expect(errors).toEqual([]);
+});
+
+test('returning users still see unread release notes without setup', async ({ page }) => {
+  const { errors } = await fixture(page, { unread: true });
+  await expect(page.locator('.whats-new-modal')).toBeVisible();
+  await expect(page.locator('.setup-modal')).toHaveCount(0);
+  await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Got it', exact: true }).click();
+  await expect(page.locator('.home-resume-card:not(.home-start-card)')).toBeVisible();
   expect(errors).toEqual([]);
 });
