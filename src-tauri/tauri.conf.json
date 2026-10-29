@@ -17,7 +17,15 @@
         "height": 780,
         "minWidth": 980,
         "minHeight": 640,
-        "resizable": true
+        "resizable": true,
+        "backgroundColor": "#111111",
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 24
+        }
       }
     ],
     "security": {
@@ -53,6 +61,9 @@
           "y": 315
         }
       }
+    },
+    "resources": {
+      "../src/assets/fonts/OFL.txt": "licenses/instrument-sans-OFL.txt"
     }
   }
 }

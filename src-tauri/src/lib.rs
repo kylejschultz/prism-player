@@ -1,8 +1,13 @@
+#[cfg(target_os = "linux")]
+mod linux_credentials;
+mod window_placement;
+
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, PhysicalPosition};
+use tauri_plugin_window_state::StateFlags;
 
 const DISCORD_CLIENT_ID: &str = "1537904664740364418";
 const KEYRING_SERVICE: &str = "com.kylejschultz.prism-player";
@@ -22,10 +27,19 @@ fn get_navidrome_password() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn set_navidrome_password(password: String) -> Result<(), String> {
-    navidrome_password_entry()?
-        .set_password(&password)
-        .map_err(|error| error.to_string())
+async fn set_navidrome_password(password: String) -> Result<(), String> {
+    // The system keyring may show a create/unlock dialog. Keep the app responsive
+    // while its blocking credential API waits for the user's response.
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        linux_credentials::ensure_default_collection()?;
+
+        navidrome_password_entry()?
+            .set_password(&password)
+            .map_err(|error| format!("Could not save the Navidrome password securely. {error}"))
+    })
+    .await
+    .map_err(|_| "Password storage could not finish. Please try connecting again.".to_string())?
 }
 
 #[tauri::command]
@@ -161,13 +175,59 @@ fn clear_discord_presence_in_background(app: &tauri::AppHandle) {
     }
 }
 
+/// Validate restored state after the window-state plugin has applied it and
+/// before showing the window. Use work areas so the titlebar avoids system UI.
+fn ensure_main_window_is_visible(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false) {
+        return;
+    }
+    let (Ok(position), Ok(size), Ok(monitors)) = (
+        window.outer_position(),
+        window.outer_size(),
+        window.available_monitors(),
+    ) else {
+        return;
+    };
+    let primary = window.primary_monitor().ok().flatten();
+    let work_areas: Vec<_> = primary
+        .iter()
+        .chain(monitors.iter())
+        .map(|monitor| {
+            let area = monitor.work_area();
+            window_placement::Bounds {
+                x: area.position.x,
+                y: area.position.y,
+                width: area.size.width,
+                height: area.size.height,
+            }
+        })
+        .collect();
+    let bounds = window_placement::Bounds {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+    if let Some((x, y)) = window_placement::corrected_position(bounds, &work_areas) {
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Keep the window hidden until Ready validates its restored placement.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                .build(),
+        )
         .setup(|_app| {
             #[cfg(target_os = "macos")]
             {
@@ -176,7 +236,9 @@ pub fn run() {
                     .expect("main Prism webview should exist during setup");
                 main_webview.with_webview(|webview| unsafe {
                     let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
-                    view.setAllowsBackForwardNavigationGestures(true);
+                    // Prism converts completed trackpad wheel gestures into
+                    // history navigation without letting WebKit drag the page.
+                    view.setAllowsBackForwardNavigationGestures(false);
                 })?;
             }
 
@@ -191,6 +253,15 @@ pub fn run() {
             clear_navidrome_password,
             get_native_architecture
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Prism Player");
+        .build(tauri::generate_context!())
+        .expect("error while building Prism Player")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Ready) {
+                ensure_main_window_is_visible(app);
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

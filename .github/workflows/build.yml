@@ -27,6 +27,7 @@ on:
           - all
           - macos
           - windows
+          - linux
 
 permissions:
   contents: write
@@ -38,7 +39,7 @@ concurrency:
 jobs:
   macos:
     name: macOS DMG
-    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'windows')
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform == 'all' || inputs.platform == 'macos')
     runs-on: macos-latest
 
     steps:
@@ -219,7 +220,7 @@ jobs:
 
   windows:
     name: Windows installer
-    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform != 'macos')
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform == 'all' || inputs.platform == 'windows')
     runs-on: windows-latest
     # Azure's federated credential is scoped to this protected GitHub
     # environment, rather than a branch or release tag.
@@ -327,9 +328,144 @@ jobs:
             gh release upload "$RELEASE_TAG" "$installer" --clobber
           done
 
+  linux:
+    name: Linux packages
+    if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform == 'all' || inputs.platform == 'linux')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
+
+      - name: Resolve artifact name
+        id: artifact
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            suffix="$RELEASE_TAG"
+          else
+            suffix="${GITHUB_REF_NAME}"
+          fi
+          suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build Linux packages
+        run: npm run tauri:build -- --bundles appimage,deb
+
+      - name: Upload Linux package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: prism-player-${{ steps.artifact.outputs.suffix }}-linux-packages
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'release' && 90 || 14 }}
+
+      - name: Attach Linux packages to GitHub release
+        if: github.event_name == 'release' || inputs.ref != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            src-tauri/target/release/bundle/appimage/*.AppImage \
+            src-tauri/target/release/bundle/deb/*.deb \
+            --clobber
+
+  checksums:
+    name: Release checksums
+    needs: [macos, windows, linux]
+    if: always() && inputs.announce_only != true && (github.event_name == 'release' || inputs.ref != '' || inputs.source_ref != '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Resolve artifact name
+        id: artifact
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || inputs.source_ref }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            suffix="$RELEASE_TAG"
+          else
+            suffix="${GITHUB_REF_NAME}"
+          fi
+          suffix="$(echo "$suffix" | tr '/\\:*?\"<>|' '-')"
+          echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: prism-player-*-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create checksum manifest
+        id: manifest
+        env:
+          ARTIFACT_SUFFIX: ${{ steps.artifact.outputs.suffix }}
+        run: |
+          cd release-artifacts
+          manifest="Prism-player-${ARTIFACT_SUFFIX}-checksums.txt"
+          mapfile -d '' assets < <(find . -type f \( \
+            -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \
+          \) -print0 | sort -z)
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo "::error::No release assets were downloaded for checksumming."
+            exit 1
+          fi
+          shasum -a 256 "${assets[@]}" > "$manifest"
+          echo "path=release-artifacts/$manifest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: prism-player-${{ steps.artifact.outputs.suffix }}-checksums
+          path: ${{ steps.manifest.outputs.path }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Attach checksum manifest to GitHub release
+        if: github.event_name == 'release' || inputs.ref != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+        run: gh release upload "$RELEASE_TAG" "${{ steps.manifest.outputs.path }}" --clobber
+
   announce-discord:
     name: Discord release announcement
-    needs: [macos, windows]
+    needs: [macos, windows, linux, checksums]
     if: always() && (github.event_name == 'release' || inputs.ref != '') && vars.DISABLE_DISCORD_RELEASE_ANNOUNCEMENT != 'true'
     runs-on: ubuntu-latest
     permissions:

@@ -25,3 +25,6 @@ tauri-plugin-window-state = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-web-kit = "0.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+secret-service = { version = "5.1.0", features = ["crypto-rust"] }

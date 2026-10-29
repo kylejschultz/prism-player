@@ -6,7 +6,6 @@ import type {
   ArtistInfo,
   FavoriteKind,
   LibraryData,
-  LyricsPayload,
   NavidromeConfig,
   Playlist,
   PlaylistDetail,
@@ -14,6 +13,50 @@ import type {
   SearchResults,
   Song,
 } from "../App";
+
+export type LyricLine = { text: string; startMs: number | null };
+type LyricsPayload = {
+  lyrics?: string | { value?: string; line?: Array<string | { value?: string; start?: number | string; startMs?: number | string }> };
+};
+
+/** OpenSubsonic songLyrics v1: starts and offsets are milliseconds, never seconds. */
+export function normalizeStructuredLyrics(payload: unknown): LyricLine[] {
+  const entries = (payload as { lyricsList?: { structuredLyrics?: unknown } } | null)?.lyricsList?.structuredLyrics;
+  if (!Array.isArray(entries)) return [];
+  let plain: LyricLine[] = [];
+  for (const entry of entries) {
+    if (!entry || !Array.isArray(entry.line)) continue;
+    const offset = typeof entry.offset === "number" && Number.isFinite(entry.offset) ? entry.offset : 0;
+    const lines: LyricLine[] = [];
+    for (const line of entry.line) {
+      if (!line || typeof line.value !== "string") continue;
+      const text = line.value.trim();
+      const startMs = entry.synced === true && typeof line.start === "number" && Number.isFinite(line.start) && line.start >= 0
+        ? Math.max(0, line.start - offset) : null;
+      // Empty timed lines mark instrumental gaps and clear the preceding highlight.
+      if (text || startMs != null) lines.push({ text, startMs });
+    }
+    if (!lines.some(line => line.text)) continue;
+    if (entry.synced === true && lines.every(line => line.startMs != null)) {
+      return lines.sort((a, b) => a.startMs! - b.startMs!);
+    }
+    if (!plain.length) plain = lines.filter(line => line.text).map(line => ({ text: line.text, startMs: null }));
+  }
+  return plain;
+}
+
+function normalizeLegacyLyrics(payload: LyricsPayload): LyricLine[] {
+  const lyrics = payload.lyrics;
+  const value = typeof lyrics === "string" ? lyrics : lyrics?.value;
+  if (typeof value === "string") return value.split(/\r?\n/).map(text => text.trim()).filter(Boolean).map(text => ({ text, startMs: null }));
+  if (!lyrics || typeof lyrics === "string" || !Array.isArray(lyrics.line)) return [];
+  return lyrics.line.map(line => {
+    if (typeof line === "string") return { text: line.trim(), startMs: null };
+    const raw = line.startMs ?? line.start;
+    const start = raw == null || raw === "" ? NaN : Number(raw);
+    return { text: typeof line.value === "string" ? line.value.trim() : "", startMs: Number.isFinite(start) ? start : null };
+  }).filter(line => line.text);
+}
 
 const API_VERSION = "1.16.1";
 const CLIENT_ID = "PrismPlayer";
@@ -39,9 +82,12 @@ function buildUrl(config: NavidromeConfig, endpoint: string, params: Record<stri
   return url;
 }
 
-async function request<T>(config: NavidromeConfig, endpoint: string, params: Record<string, string | string[]> = {}): Promise<T> {
+async function request<T>(config: NavidromeConfig, endpoint: string, params: Record<string, string | string[]> = {}, signal?: AbortSignal): Promise<T> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 10_000);
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  const timeout = window.setTimeout(abort, 10_000);
   try {
     const response = await fetch(buildUrl(config, endpoint, params), { signal: controller.signal });
     if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
@@ -52,6 +98,7 @@ async function request<T>(config: NavidromeConfig, endpoint: string, params: Rec
     return subsonic as T;
   } finally {
     window.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -71,6 +118,7 @@ export const navidromeKeys = {
   library: (config: NavidromeConfig) => [...navidromeKeys.root(config), "library"] as const,
   album: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "album", id] as const,
   artist: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "artist", id] as const,
+  artistInfo: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "artistInfo", id] as const,
   playlist: (config: NavidromeConfig, id: string) => [...navidromeKeys.root(config), "playlist", id] as const,
   search: (config: NavidromeConfig, query: string) => [...navidromeKeys.root(config), "search", query] as const,
 };
@@ -79,8 +127,8 @@ export const navidromeClient = {
   buildCoverArtUrl(config: NavidromeConfig, coverArt?: string, size = "420") {
     return coverArt ? buildUrl(config, "getCoverArt", { id: coverArt, size }).toString() : null;
   },
-  buildStreamUrl(config: NavidromeConfig, songId: string) {
-    return buildUrl(config, "stream", { id: songId }).toString();
+  buildStreamUrl(config: NavidromeConfig, songId: string, original = false) {
+    return buildUrl(config, "stream", { id: songId, ...(original ? { format: "raw" } : {}) }).toString();
   },
   async resolveConfig(config: NavidromeConfig) {
     const normalized = normalizeServerUrl(config.serverUrl);
@@ -91,32 +139,58 @@ export const navidromeClient = {
     }
     throw lastError instanceof Error ? lastError : new Error("Could not reach Navidrome.");
   },
-  async profileName(config: NavidromeConfig) {
-    const response = await fetch(`${normalizeServerUrl(config.serverUrl)}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: config.username, password: config.password }) });
-    if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
-    return ((await response.json()) as { name?: string }).name?.trim() ?? "";
+  async profileName(config: NavidromeConfig, signal?: AbortSignal) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+    const timeout = window.setTimeout(abort, 10_000);
+    try {
+      const response = await fetch(`${normalizeServerUrl(config.serverUrl)}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: config.username, password: config.password }), signal: controller.signal });
+      if (!response.ok) throw new Error(`Server returned HTTP ${response.status}.`);
+      return ((await response.json()) as { name?: string }).name?.trim() ?? "";
+    } finally {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
+    }
   },
   async scanStatus(config: NavidromeConfig) {
     return (await request<{ scanStatus?: { scanning?: boolean; lastScan?: string | number } }>(config, "getScanStatus")).scanStatus ?? null;
   },
   async library(config: NavidromeConfig): Promise<LibraryData> {
-    const [albums, newest, recent, artists, playlists, starred] = await Promise.all([
+    const [albums, newest, recent, frequent, artists, playlists, starred] = await Promise.all([
       fetchAlbums(config),
       request<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", { type: "newest", size: "60" }),
       request<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", { type: "recent", size: "60" }),
+      request<{ albumList2?: { album?: Album[] } }>(config, "getAlbumList2", { type: "frequent", size: "60" }),
       request<{ artists?: { index?: Array<{ artist?: Artist[] }> } }>(config, "getArtists"),
       request<{ playlists?: { playlist?: Playlist[] } }>(config, "getPlaylists").catch(() => null),
       request<{ starred2?: { artist?: Artist[]; album?: Album[]; song?: Song[] } }>(config, "getStarred2").catch(() => null),
     ]);
-    return { albums, recentAlbums: newest.albumList2?.album ?? [], recentlyPlayedAlbums: recent.albumList2?.album ?? [], artists: artists.artists?.index?.flatMap((index) => index.artist ?? []) ?? [], playlists: playlists?.playlists?.playlist ?? [], favorites: { artists: starred?.starred2?.artist ?? [], albums: starred?.starred2?.album ?? [], songs: starred?.starred2?.song ?? [] } };
+    return { albums, recentAlbums: newest.albumList2?.album ?? [], recentlyPlayedAlbums: recent.albumList2?.album ?? [], frequentAlbums: frequent.albumList2?.album ?? [], artists: artists.artists?.index?.flatMap((index) => index.artist ?? []) ?? [], playlists: playlists?.playlists?.playlist ?? [], favorites: { artists: starred?.starred2?.artist ?? [], albums: starred?.starred2?.album ?? [], songs: starred?.starred2?.song ?? [] } };
   },
   async album(config: NavidromeConfig, id: string) { return (await request<{ album: AlbumDetail }>(config, "getAlbum", { id })).album; },
   async artist(config: NavidromeConfig, id: string): Promise<ArtistDetail> {
     const [artist, info] = await Promise.all([request<{ artist: ArtistDetail }>(config, "getArtist", { id }), request<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id }).catch(() => null)]);
-    return { ...artist.artist, info: info?.artistInfo2 ?? null };
+    const topSongs = await request<{ topSongs?: { song?: Song[] } }>(config, "getTopSongs", { artist: artist.artist.name, count: "20" }).catch(() => null);
+    return { ...artist.artist, info: info?.artistInfo2 ?? null, topSong: topSongs?.topSongs?.song ?? [] };
+  },
+  async artistInfo(config: NavidromeConfig, id: string): Promise<ArtistInfo | null> {
+    return (await request<{ artistInfo2?: ArtistInfo }>(config, "getArtistInfo2", { id })).artistInfo2 ?? null;
   },
   async playlist(config: NavidromeConfig, id: string) { return (await request<{ playlist: PlaylistDetail }>(config, "getPlaylist", { id })).playlist; },
-  async lyrics(config: NavidromeConfig, song: Song) { return request<LyricsPayload>(config, "getLyrics", { artist: song.artist ?? "", title: song.title }); },
+  async lyrics(config: NavidromeConfig, song: Song, signal?: AbortSignal): Promise<LyricLine[]> {
+    try {
+      const response = await request<unknown>(config, "getLyricsBySongId", { id: song.id }, signal);
+      const lines = normalizeStructuredLyrics(response);
+      if (lines.length) return lines;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Older servers, missing entries and optional endpoint failures can still have plain lyrics.
+    }
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    return normalizeLegacyLyrics(await request<LyricsPayload>(config, "getLyrics", { artist: song.artist ?? "", title: song.title }, signal));
+  },
   async search(config: NavidromeConfig, query: string): Promise<SearchResults> {
     const [results, playlists] = await Promise.all([request<{ searchResult3?: { artist?: Artist[]; album?: Album[]; song?: Song[] } }>(config, "search3", { query, artistCount: "12", albumCount: "18", songCount: "40" }), request<{ playlists?: { playlist?: Playlist[] } }>(config, "getPlaylists").catch(() => null)]);
     const normalized = query.toLocaleLowerCase();

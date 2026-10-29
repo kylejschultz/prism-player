@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 288" fill="none">
+  <defs>
+    <clipPath id="facet-silhouette">
+      <path fill-rule="evenodd" clip-rule="evenodd" d="M55 7Q66 1 78 8L252 110Q266 118 266 135V155Q266 172 252 180L78 282Q65 290 52 281L27 262Q14 253 14 238V50Q14 34 27 25L55 7ZM77 67V221L204 144L77 67Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#facet-silhouette)">
+    <path fill="#898FBD" d="M0 0H288V288H0Z"/>
+    <path fill="#ADC8DE" d="M54 0H288V107L204 144L77 67Z"/>
+    <path fill="#59A99E" d="M0 0H54L77 67V221L52 288H0Z"/>
+  </g>
+</svg>
