@@ -2868,6 +2868,7 @@ dependencies = [
  "discord-rich-presence",
  "keyring",
  "objc2-web-kit",
+ "secret-service",
  "serde",
  "serde_json",
  "tauri",

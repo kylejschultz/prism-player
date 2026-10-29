@@ -1,3 +1,5 @@
+#[cfg(target_os = "linux")]
+mod linux_credentials;
 mod window_placement;
 
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
@@ -25,10 +27,19 @@ fn get_navidrome_password() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn set_navidrome_password(password: String) -> Result<(), String> {
-    navidrome_password_entry()?
-        .set_password(&password)
-        .map_err(|error| error.to_string())
+async fn set_navidrome_password(password: String) -> Result<(), String> {
+    // The system keyring may show a create/unlock dialog. Keep the app responsive
+    // while its blocking credential API waits for the user's response.
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        linux_credentials::ensure_default_collection()?;
+
+        navidrome_password_entry()?
+            .set_password(&password)
+            .map_err(|error| format!("Could not save the Navidrome password securely. {error}"))
+    })
+    .await
+    .map_err(|_| "Password storage could not finish. Please try connecting again.".to_string())?
 }
 
 #[tauri::command]
