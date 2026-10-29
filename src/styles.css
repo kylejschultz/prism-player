@@ -855,7 +855,28 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
 }
 
 .radio-timeline-panel {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.radio-timeline-panel.has-current-track {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.radio-timeline-switch {
+  justify-self: start;
+}
+
+.radio-timeline-panel > .right-queue-list {
+  margin-inline: 0;
+  scrollbar-gutter: stable;
+  scroll-padding-block: 6px;
+  padding-bottom: 8px;
+}
+
+.radio-timeline-panel > .right-queue-list:focus-visible {
+  outline: 2px solid rgba(var(--prism-accent-rgb), 0.7);
+  outline-offset: -2px;
+  border-radius: 8px;
 }
 
 .right-queue-list {
@@ -881,6 +902,11 @@ body.right-sidebar-resizing .right-sidebar-resize-handle::after {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
+}
+
+.lyrics-panel > .empty-panel {
+  min-height: 0;
+  overflow: auto;
 }
 
 .lyrics-track {
@@ -6696,6 +6722,21 @@ button.similar-chip:focus-visible {
   white-space: nowrap;
 }
 
+.home-resume-card.home-start-card {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 174px;
+}
+
+.home-start-card h3,
+.home-start-card .home-resume-copy > p {
+  white-space: normal;
+}
+
+.home-start-card .home-resume-copy > p:not(.eyebrow) {
+  max-width: 52ch;
+  line-height: 1.45;
+}
+
 .home-radio-card {
   grid-template-columns: auto minmax(0, 1fr);
   align-content: center;
@@ -6802,13 +6843,14 @@ button.similar-chip:focus-visible {
 }
 
 .radio-view.radio-hero {
-  grid-template-rows: minmax(0, 1fr) auto minmax(min-content, 1fr);
+  grid-template-rows: minmax(min-content, 1fr) auto;
   overflow-y: auto;
   grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1fr);
   gap: clamp(18px, 3vw, 40px) clamp(36px, 6vw, 88px);
 }
 
 .radio-cover-card {
+  grid-row: 1;
   align-self: center;
   width: min(100%, 48vh, 460px);
   border-radius: 14px;
@@ -6817,6 +6859,8 @@ button.similar-chip:focus-visible {
 }
 
 .radio-copy {
+  grid-row: 1;
+  align-self: center;
   justify-content: center;
   transform: none;
 }
@@ -6827,15 +6871,18 @@ button.similar-chip:focus-visible {
 }
 
 .radio-dj-callout {
-  border: 1px solid var(--glass-border);
-  border-left: 3px solid rgba(var(--prism-highlight-rgb), 0.82);
-  border-radius: 12px;
-  background: rgba(7, 10, 12, 0.46);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(22px) saturate(125%);
+  padding: 0 0 0 14px;
+  border: 0;
+  border-left: 2px solid rgba(var(--prism-highlight-rgb), 0.82);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .radio-broadcast-details {
+  grid-row: 2;
   gap: 12px;
   padding-top: 0;
   border-top: 0;
@@ -6858,7 +6905,7 @@ button.similar-chip:focus-visible {
 
   .radio-cover-card,
   .radio-copy {
-    grid-row: 2;
+    grid-row: 1;
   }
 
   .radio-cover-card {
@@ -6866,7 +6913,7 @@ button.similar-chip:focus-visible {
   }
 
   .radio-broadcast-details {
-    grid-row: 3;
+    grid-row: 2;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -7870,7 +7917,7 @@ button.similar-chip:focus-visible {
   }
 
   .radio-broadcast-details {
-    grid-row: 3;
+    grid-row: 2;
     grid-template-columns: 1fr;
     gap: 10px;
   }

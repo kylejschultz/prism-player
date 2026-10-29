@@ -5566,7 +5566,7 @@ export function App() {
           onClose={() => setSetupOpen(false)}
         />
       ) : null}
-      {whatsNewOpen && whatsNewReleases.length ? (
+      {whatsNewOpen && !setupOpen && whatsNewReleases.length ? (
         <WhatsNewDialog releases={whatsNewReleases} onClose={dismissWhatsNew} />
       ) : null}
       {playlistCreatorOpen ? (
@@ -5792,6 +5792,8 @@ function RightSidebar({
   onClose: () => void;
   onShowQueue: () => void;
 }) {
+  const isRadioSession = isRadioPlaying || radioStatus === "checking";
+  const [radioTimelineView, setRadioTimelineView] = useState<"recent" | "upcoming">("recent");
   const panesRef = useRef<HTMLDivElement | null>(null);
   const splitDragRef = useRef<{ pointerId: number; y: number; share: number; height: number } | null>(null);
   const [paneHeight, setPaneHeight] = useState(0);
@@ -5804,7 +5806,8 @@ function RightSidebar({
   });
   // Keep usable queue and lyric space; the 12px row between them is the drag target.
   const availablePaneHeight = Math.max(0, paneHeight - 12);
-  const minimumShare = availablePaneHeight ? Math.min(140, availablePaneHeight / 2) / availablePaneHeight : 0;
+  const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 200 : 140;
+  const minimumShare = availablePaneHeight ? Math.min(minimumUpperHeight, availablePaneHeight / 2) / availablePaneHeight : 0;
   const maximumShare = availablePaneHeight ? 1 - Math.min(220, availablePaneHeight / 2) / availablePaneHeight : 1;
   const effectiveShare = clampNumber(splitShare, minimumShare, maximumShare);
 
@@ -5826,9 +5829,7 @@ function RightSidebar({
   const queueDuration = queue.reduce((total, song) => total + (song.duration ?? 0), 0);
   const visibleQueueDuration = displayedQueue.reduce((total, item) => total + (item.song.duration ?? 0), 0);
   const upcomingCount = Math.max(displayedQueue.length - 1, 0);
-  const hasRadioQueuePayload = Boolean(radioHistory.length || radioNowPlaying || radioUpcoming.length);
-  const isRadioSession = isRadioPlaying || radioStatus === "checking";
-  const recentRadioHistory = radioHistory.slice(0, 5).reverse();
+  const timelineTracks = radioTimelineView === "recent" ? radioHistory.slice(0, 5) : radioUpcoming.slice(0, 8);
   const lyricsScrollRef = useRef<HTMLDivElement | null>(null);
   const activeLyricRef = useRef<HTMLParagraphElement | null>(null);
   const latestDragOverQueueIndexRef = useRef<number | null>(dragOverQueueIndex);
@@ -5983,7 +5984,7 @@ function RightSidebar({
         style={{ gridTemplateRows: `minmax(0, ${effectiveShare}fr) 12px minmax(0, ${1 - effectiveShare}fr)` }}
       >
         {tab === "queue" ? (
-          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}`}>
+          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}${isRadioSession && radioNowPlaying ? " has-current-track" : ""}`}>
             {!isRadioSession ? (
               <div className="queue-heading">
                 <p className="eyebrow">Now + Next</p>
@@ -5995,35 +5996,40 @@ function RightSidebar({
                 </div>
               </div>
             ) : null}
-            <div className="queue-list right-queue-list">
+            {isRadioSession && radioNowPlaying ? (
+              <div className="radio-queue-section radio-timeline-current" role="group" aria-label="On air">
+                <p className="radio-on-air-label">On air</p>
+                <RadioQueueRow track={radioNowPlaying} tone="current" />
+              </div>
+            ) : null}
+            {isRadioSession ? (
+              <div className="view-toggle radio-timeline-switch" role="group" aria-label="Radio timeline view">
+                <button type="button" className={radioTimelineView === "recent" ? "active" : ""} aria-pressed={radioTimelineView === "recent"} onClick={() => setRadioTimelineView("recent")}>Recently played</button>
+                <button type="button" className={radioTimelineView === "upcoming" ? "active" : ""} aria-pressed={radioTimelineView === "upcoming"} onClick={() => setRadioTimelineView("upcoming")}>Up next</button>
+              </div>
+            ) : null}
+            <div
+              key={isRadioSession ? radioTimelineView : "local"}
+              className="queue-list right-queue-list"
+              role={isRadioSession ? "region" : undefined}
+              aria-label={isRadioSession ? radioTimelineView === "recent" ? "Recently played radio tracks" : "Upcoming radio tracks" : undefined}
+              tabIndex={isRadioSession ? 0 : undefined}
+              onKeyDown={(event) => {
+                if (!isRadioSession || (event.key !== "Home" && event.key !== "End")) return;
+                event.preventDefault();
+                event.stopPropagation();
+                event.currentTarget.scrollTop = event.key === "Home" ? 0 : event.currentTarget.scrollHeight;
+              }}
+            >
               {isRadioSession ? (
-                hasRadioQueuePayload ? (
-                  <>
-                    {radioHistory.length ? (
-                      <div className="radio-queue-section">
-                        <p>Recently played</p>
-                        {recentRadioHistory.map((track, index) => (
-                          <RadioQueueRow track={track} tone="previous" key={`history-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                        ))}
-                      </div>
-                    ) : null}
-                    {radioNowPlaying ? (
-                      <div className="radio-queue-section">
-                        <p className="radio-on-air-label">On air</p>
-                        <RadioQueueRow track={radioNowPlaying} tone="current" />
-                      </div>
-                    ) : null}
-                    {radioUpcoming.length ? (
-                      <div className="radio-queue-section">
-                        <p>Up next</p>
-                        {radioUpcoming.slice(0, 8).map((track, index) => (
-                          <RadioQueueRow track={track} key={`upcoming-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
+                timelineTracks.length ? (
+                  <div className="radio-queue-section">
+                    {timelineTracks.map((track, index) => (
+                      <RadioQueueRow track={track} tone={radioTimelineView === "recent" ? "previous" : undefined} key={`${radioTimelineView}-${track.title ?? "track"}-${track.artist ?? "artist"}-${index}`} />
+                    ))}
+                  </div>
                 ) : (
-                  <p className="queue-empty">No upcoming tracks in the station payload yet.</p>
+                  <p className="queue-empty">{radioTimelineView === "recent" ? "No recently played tracks yet." : "No upcoming tracks in the station payload yet."}</p>
                 )
               ) : queue.length ? (
                 displayedQueue.map(({ song, index }) => (
@@ -7916,7 +7922,18 @@ function OverviewHome({
               )}
             </div>
           </section>
-        ) : null}
+        ) : (
+          <section className="home-resume-card home-start-card" aria-labelledby="home-start-title">
+            <div className="home-resume-copy">
+              <p className="eyebrow">Start listening</p>
+              <h3 id="home-start-title">{config ? "Choose your first album" : "Connect your music"}</h3>
+              <p>{config ? "Pick something from your library. Your last listen will appear here." : "Add your Navidrome server to browse and play your library."}</p>
+              <button className="connect-button home-continue-button" type="button" onClick={() => onSelectView(config ? "albums" : "settings")}>
+                {config ? "Browse albums" : "Connect library"}
+              </button>
+            </div>
+          </section>
+        )}
         <section className="home-radio-card" aria-labelledby="home-radio-title">
           <div className="home-radio-mark"><RadioTower size={20} /></div>
           <div>

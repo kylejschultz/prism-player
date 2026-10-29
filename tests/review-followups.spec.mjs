@@ -1,4 +1,4 @@
-/* global window, localStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
+/* global window, localStorage, sessionStorage, indexedDB, HTMLMediaElement, Event, URL, getComputedStyle, document */
 import { test, expect } from '@playwright/test';
 import { Buffer } from 'node:buffer';
 import process from 'node:process';
@@ -9,7 +9,7 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false } = {}) {
   const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
   const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
@@ -17,10 +17,13 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists }) => {
-    localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
-    localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
-    localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
+  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread }) => {
+    if (!firstRun || !sessionStorage.getItem('prism-fixture-first-run-seeded')) {
+      if (!firstRun) localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
+      localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: firstRun || unread ? '' : '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
+      if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
+      if (firstRun) sessionStorage.setItem('prism-fixture-first-run-seeded', 'true');
+    }
     const library = { albums: [albums[0]], recentAlbums: [], recentlyPlayedAlbums: [], frequentAlbums: [], artists, playlists, favorites: { artists: [], albums: [], songs: [] } };
     window.fixtureReady = new Promise(resolve => {
       const request = indexedDB.open('prism-player-library-catalog', 1);
@@ -46,7 +49,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -71,7 +74,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
         await holdLyrics;
         return route.fulfill({ status: lyricsStatus, headers: lyricsStatus === 503 ? { 'Retry-After': '10' } : {}, json: lyricsResponse || {} });
       }
-      return route.fulfill({ json: url.pathname === '/api/state' || url.pathname === '/api/now-playing' ? { lyrics: lyricsEnabled === undefined ? undefined : { enabled: lyricsEnabled }, station: { name: 'A station with a meaningful long name' }, nowPlaying: { title: 'On air', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 }, upcoming: [{ title: 'Up next' }], history: [{ title: 'Previously played' }], streamOnline: true, listeners: 1 } : {} });
+      return route.fulfill({ json: url.pathname === '/api/state' || url.pathname === '/api/now-playing' ? { lyrics: lyricsEnabled === undefined ? undefined : { enabled: lyricsEnabled }, station: { name: 'A station with a meaningful long name' }, nowPlaying: { title: 'On air', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 }, upcoming: [{ title: 'Up next' }], history: [{ title: 'Previously played' }], streamOnline: true, listeners: 1, ...radioState } : {} });
     }
     if (url.hostname !== 'music.fixture.invalid') return route.fulfill({ json: {} });
     const endpoint = url.pathname.split('/').at(-1).replace('.view', ''), id = url.searchParams.get('id');
@@ -1164,8 +1167,8 @@ test('workspace spacing preserves usable content and controls at native window s
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
 });
 
-test('Radio listening content centers in the viewport without overlapping station details or a backdrop seam', async ({ page }) => {
-  await fixture(page, { artwork: true });
+test('Radio listening content centers above station details without overlap or a backdrop seam', async ({ page }) => {
+  await fixture(page, { artwork: true, radioState: { nowPlaying: { title: 'A song with a long title (Live Acoustic Sessions)', artist: 'Radio Artist', album: 'A late-night session', subsonic_id: 'heard', startedAt: Date.now() - 5000 } } });
   await page.locator('.sidebar').getByRole('button', { name: 'Radio', exact: true }).click();
   await page.getByRole('button', { name: 'Tune In', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Stop radio', exact: true })).toBeVisible();
@@ -1185,8 +1188,8 @@ test('Radio listening content centers in the viewport without overlapping statio
         const availableTop = hero.top + parseFloat(css.paddingTop);
         const availableBottom = hero.bottom - parseFloat(css.paddingBottom);
         const contentHeight = Math.max(cover.height, copy.height);
-        const roomForCenter = availableBottom - availableTop >= contentHeight + 2 * (details.height + gap);
-        return { roomForCenter, detailsTop: details.top, contentBottom: Math.max(cover.bottom, copy.bottom), center: (availableTop + availableBottom) / 2, coverCenter: (cover.top + cover.bottom) / 2, copyCenter: (copy.top + copy.bottom) / 2, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, backdrop: css.backdropFilter, background: css.backgroundImage };
+        const roomForCenter = availableBottom - availableTop >= contentHeight + details.height + gap;
+        return { roomForCenter, detailsTop: details.top, contentBottom: Math.max(cover.bottom, copy.bottom), center: (availableTop + details.top - gap) / 2, coverCenter: (cover.top + cover.bottom) / 2, copyCenter: (copy.top + copy.bottom) / 2, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, backdrop: css.backdropFilter, background: css.backgroundImage };
       });
       if (layout.roomForCenter) {
         expect(Math.abs(layout.coverCenter - layout.center)).toBeLessThanOrEqual(2);
@@ -1200,6 +1203,9 @@ test('Radio listening content centers in the viewport without overlapping statio
       expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
       expect(layout.backdrop).toBe('none');
       expect(layout.background).toBe('none');
+      await expect(page.locator('.radio-dj-callout')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await expect(page.locator('.radio-dj-callout')).toHaveCSS('box-shadow', 'none');
+      await expect(page.locator('.radio-dj-callout')).toHaveCSS('backdrop-filter', 'none');
       expect(await page.locator('.topbar').evaluate(el => getComputedStyle(el).backgroundImage)).toBe('none');
       await page.screenshot({ path: test.info().outputPath(`radio-centered-${width}-${sidebarOpen ? 'with-sidebar' : 'full'}.png`) });
     }
@@ -1404,5 +1410,148 @@ test('playback divider resizes by pointer and keyboard, persists, and protects b
       await page.screenshot({ path: test.info().outputPath(`divider-${width}-${height}-${key}.png`) });
     }
   }
+  expect(errors).toEqual([]);
+});
+
+
+test('radio timeline switches newest-first history and upcoming while On air and lyrics stay in place', async ({ page }) => {
+  const { errors } = await fixture(page, {
+    lyricsEnabled: true,
+    lyricsResponse: { songId: 'heard', synced: false, offsetMs: 0, lines: Array.from({ length: 24 }, (_, i) => ({ text: `Plain radio verse ${i}`, startMs: null })) },
+    radioState: {
+      nowPlaying: { title: 'Current radio track', artist: 'Radio Artist', subsonic_id: 'heard', startedAt: Date.now() - 5000 },
+      upcoming: Array.from({ length: 8 }, (_, i) => ({ title: `Upcoming ${i}`, artist: 'Radio Artist' })),
+      history: Array.from({ length: 8 }, (_, i) => ({ title: `Previous ${i}`, artist: 'Radio Artist' })),
+    },
+  });
+  const sidebar = await radioLyrics(page);
+  const current = sidebar.locator('.radio-timeline-current');
+  let scroll = sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true });
+  const recent = sidebar.getByRole('button', { name: 'Recently played', exact: true });
+  const upcoming = sidebar.getByRole('button', { name: 'Up next', exact: true });
+  await expect(current.locator('.radio-queue-row.current')).toHaveCount(1);
+  await expect(current).toContainText('On air');
+  await expect(recent).toHaveAttribute('aria-pressed', 'true');
+  await expect(scroll.locator('.radio-queue-row strong')).toHaveText(Array.from({ length: 5 }, (_, i) => `Previous ${i}`));
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(scroll.locator('.radio-queue-row.previous')).toHaveCount(5);
+  const lyrics = sidebar.locator('.lyrics-lines');
+  await expect(lyrics.locator('p')).toHaveCount(24);
+  await lyrics.evaluate(el => { el.scrollTop = 90; });
+  const lyricTop = await lyrics.evaluate(el => el.scrollTop), original = await current.boundingBox();
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-normal.png') });
+  await scroll.hover(); await page.mouse.wheel(0, 2000);
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  expect((await current.boundingBox()).y).toBe(original.y);
+  expect(await lyrics.evaluate(el => el.scrollTop)).toBe(lyricTop);
+  await scroll.focus(); await page.keyboard.press('Home');
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  await page.keyboard.press('End');
+  await expect(scroll.getByText('Previous 4', { exact: true })).toBeInViewport();
+  await upcoming.focus(); await page.keyboard.press('Enter');
+  scroll = sidebar.getByRole('region', { name: 'Upcoming radio tracks', exact: true });
+  await expect(upcoming).toHaveAttribute('aria-pressed', 'true');
+  await expect(recent).toHaveAttribute('aria-pressed', 'false');
+  await expect(scroll.locator('.radio-queue-row strong')).toHaveText(Array.from({ length: 8 }, (_, i) => `Upcoming ${i}`));
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  expect((await current.boundingBox()).y).toBe(original.y);
+  expect(await lyrics.evaluate(el => el.scrollTop)).toBe(lyricTop);
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-upcoming.png') });
+  await scroll.focus(); await page.keyboard.press('End');
+  await expect(scroll.getByText('Upcoming 7', { exact: true })).toBeInViewport();
+  await recent.click();
+  scroll = sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true });
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(current).toBeInViewport();
+  await page.setViewportSize({ width: 980, height: 640 });
+  await sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true }).focus();
+  await page.keyboard.press('Home');
+  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(199);
+  await scroll.focus(); await page.keyboard.press('Home');
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
+  await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
+  const live = await current.boundingBox(), list = await scroll.boundingBox(), divider = await sidebar.locator('.playback-pane-divider').boundingBox();
+  expect(live.y + live.height).toBeLessThanOrEqual(list.y);
+  expect(list.y + list.height).toBeLessThanOrEqual(divider.y);
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-short.png') });
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  expect(errors).toEqual([]);
+});
+
+
+test('radio timeline switch explains missing upcoming tracks without hiding On air or history', async ({ page }) => {
+  const { errors } = await fixture(page, { radioState: { upcoming: [] } });
+  const sidebar = await radioLyrics(page);
+  await expect(sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true })).toContainText('Previously played');
+  await sidebar.getByRole('button', { name: 'Up next', exact: true }).click();
+  await expect(sidebar.getByRole('region', { name: 'Upcoming radio tracks', exact: true })).toHaveText('No upcoming tracks in the station payload yet.');
+  await expect(sidebar.locator('.radio-timeline-current')).toBeVisible();
+  await sidebar.getByRole('button', { name: 'Recently played', exact: true }).click();
+  await expect(sidebar.getByRole('region', { name: 'Recently played radio tracks', exact: true })).toContainText('Previously played');
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  expect(errors).toEqual([]);
+});
+
+
+for (const finish of ['connect', 'close']) {
+  test(`first run shows setup before release notes when users ${finish} setup`, async ({ page }) => {
+    const { errors } = await fixture(page, { firstRun: true, unplayed: true });
+    await page.screenshot({ path: test.info().outputPath('first-run-setup.png') });
+    await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+    const setup = page.getByRole('dialog', { name: 'Connect Prism to Navidrome', exact: true });
+    await expect(setup).toBeVisible();
+    await expect(page.locator('.whats-new-modal')).toHaveCount(0);
+    if (finish === 'connect') {
+      await setup.getByPlaceholder('https://music.example.com').fill('music.fixture.invalid');
+      await setup.getByPlaceholder('Username', { exact: true }).fill('fixture');
+      await setup.getByPlaceholder('Password', { exact: true }).fill('synthetic-only');
+      await setup.getByRole('button', { name: 'Connect Library', exact: true }).click();
+    } else {
+      await setup.getByRole('button', { name: 'Close setup', exact: true }).click();
+    }
+    await expect(page.locator('.whats-new-modal')).toBeVisible();
+    await expect(page.locator('.setup-modal')).toHaveCount(0);
+    await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Got it', exact: true }).click();
+    await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0);
+    await expect(page.locator('.home-start-card')).toBeVisible();
+    if (finish === 'close') {
+      await page.getByRole('button', { name: 'Connect library', exact: true }).click();
+      await expect(page.locator('.settings-layout')).toBeVisible();
+    }
+    await page.reload();
+    if (finish === 'connect') await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(0);
+    else await expect(page.getByRole('dialog', { name: 'Connect Prism to Navidrome', exact: true })).toBeVisible();
+    await expect(page.locator('.whats-new-modal')).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('unplayed Home fills the listening slot with a working library action', async ({ page }) => {
+  const { errors } = await fixture(page, { unplayed: true });
+  await page.screenshot({ path: test.info().outputPath('unplayed-home-initial.png') });
+  const start = page.locator('.home-start-card'), radio = page.locator('.home-dashboard-lead .home-radio-card');
+  await expect(start.getByRole('heading', { name: 'Choose your first album', exact: true })).toBeVisible();
+  for (const [width, height] of [[1440, 900], [980, 640]]) {
+    await page.setViewportSize({ width, height });
+    const lead = await page.locator('.home-dashboard-lead').boundingBox(), primary = await start.boundingBox(), secondary = await radio.boundingBox();
+    expect(Math.abs(primary.x - lead.x)).toBeLessThan(1);
+    expect(secondary.y >= primary.y + primary.height || secondary.x >= primary.x + primary.width).toBe(true);
+    expect(await start.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`unplayed-home-${width}.png`) });
+  }
+  await start.getByRole('button', { name: 'Browse albums', exact: true }).click();
+  await expect(page.locator('.library-browser-heading').getByRole('button', { name: 'Albums', exact: true })).toHaveClass(/active/);
+  expect(errors).toEqual([]);
+});
+
+test('returning users still see unread release notes without setup', async ({ page }) => {
+  const { errors } = await fixture(page, { unread: true });
+  await expect(page.locator('.whats-new-modal')).toBeVisible();
+  await expect(page.locator('.setup-modal')).toHaveCount(0);
+  await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Got it', exact: true }).click();
+  await expect(page.locator('.home-resume-card:not(.home-start-card)')).toBeVisible();
   expect(errors).toEqual([]);
 });
