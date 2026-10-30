@@ -4360,7 +4360,7 @@ button.similar-chip:focus-visible {
 }
 
 .whats-new-modal {
-  width: min(500px, calc(100vw - 56px));
+  width: min(620px, calc(100vw - 56px));
 }
 
 .artist-about-modal {
@@ -4575,10 +4575,24 @@ button.similar-chip:focus-visible {
 .whats-new-release ul {
   display: grid;
   gap: 8px;
+  margin: 0;
   padding-left: 19px;
   color: rgba(237, 242, 246, 0.78);
   font-size: 14px;
   line-height: 1.4;
+}
+
+.release-notes-heading {
+  margin-top: 6px;
+  color: var(--prism-accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.whats-new-release .release-notes-additional {
+  gap: 6px;
+  color: rgba(237, 242, 246, 0.68);
+  font-size: 13px;
 }
 
 .whats-new-actions {

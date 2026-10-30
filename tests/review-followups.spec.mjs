@@ -4,6 +4,8 @@ import { Buffer } from 'node:buffer';
 import process from 'node:process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
+const appVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
 const artist = { id: 'artist', name: 'Brigham Young University Vocal Point', albumCount: 2 };
 const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, artist: artist.name, artistId: artist.id, songCount: 4, year: 2026 - index }));
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
@@ -17,10 +19,10 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
   const requests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread }) => {
+  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion }) => {
     if (!firstRun || !sessionStorage.getItem('prism-fixture-first-run-seeded')) {
       if (!firstRun) localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
-      localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: firstRun || unread ? '' : '1.0.0', radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
+      localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: firstRun || unread ? '' : appVersion, radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
       if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
       if (firstRun) sessionStorage.setItem('prism-fixture-first-run-seeded', 'true');
     }
@@ -44,12 +46,12 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     window.__TAURI_INTERNALS__ = { transformCallback: () => 1, invoke: async command => {
       if (command === 'get_navidrome_password') { await window.fixtureReady; return 'fixture-only'; }
       if (command === 'get_native_architecture') return 'arm64';
-      if (command === 'plugin:app|version') return '1.0.0';
+      if (command === 'plugin:app|version') return appVersion;
       if (command === 'plugin:event|listen') return 1;
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -1546,12 +1548,29 @@ test('unplayed Home fills the listening slot with a working library action', asy
   expect(errors).toEqual([]);
 });
 
-test('returning users still see unread release notes without setup', async ({ page }) => {
+test('returning users can read grouped release notes in short windows and About without setup', async ({ page }) => {
   const { errors } = await fixture(page, { unread: true });
-  await expect(page.locator('.whats-new-modal')).toBeVisible();
+  const modal = page.locator('.whats-new-modal');
+  await expect(modal).toBeVisible();
   await expect(page.locator('.setup-modal')).toHaveCount(0);
   await expect(page.getByRole('dialog', { includeHidden: true })).toHaveCount(1);
+  await expect(modal.getByText('The highlights', { exact: true })).toBeVisible();
+  await modal.screenshot({ path: test.info().outputPath('release-highlights.png') });
+  await page.setViewportSize({ width: 980, height: 640 });
+  await modal.getByText('Optional macOS FLAC compatibility', { exact: false }).scrollIntoViewIfNeeded();
+  await expect(modal.getByText('Also in this update', { exact: true })).toBeVisible();
+  await expect(modal.getByText('using extra startup time and memory', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Got it', exact: true }).scrollIntoViewIfNeeded();
+  await modal.screenshot({ path: test.info().outputPath('release-additional-short-window.png') });
   await page.getByRole('button', { name: 'Got it', exact: true }).click();
   await expect(page.locator('.home-resume-card:not(.home-start-card)')).toBeVisible();
+  await page.locator('.sidebar').getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByText('Changelog', { exact: true }).click();
+  const current = page.locator('.about-changelog article').filter({ has: page.getByRole('heading', { name: `Prism ${appVersion}`, exact: true }) });
+  await expect(current.getByText('The highlights', { exact: true })).toBeVisible();
+  await current.getByText('Also in this update', { exact: true }).scrollIntoViewIfNeeded();
+  await expect(current.getByText('Also in this update', { exact: true })).toBeVisible();
+  const previous = page.locator('.about-changelog article').filter({ has: page.getByRole('heading', { name: 'Prism 1.0.0', exact: true }) });
+  await expect(previous.getByText('The highlights', { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
