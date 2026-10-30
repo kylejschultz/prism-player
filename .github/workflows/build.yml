@@ -425,11 +425,23 @@ jobs:
           echo "suffix=$suffix" >> "$GITHUB_OUTPUT"
 
       - name: Download release artifacts
+        if: github.event_name != 'release' && inputs.ref == ''
         uses: actions/download-artifact@v8
         with:
           pattern: prism-player-*-*
           path: release-artifacts
           merge-multiple: true
+
+      - name: Download published installers
+        if: github.event_name == 'release' || inputs.ref != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir release-artifacts \
+            --pattern '*.dmg' --pattern '*.exe' \
+            --pattern '*.AppImage' --pattern '*.deb'
 
       - name: Create checksum manifest
         id: manifest
@@ -461,7 +473,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
-        run: gh release upload "$RELEASE_TAG" "${{ steps.manifest.outputs.path }}" --clobber
+        run: gh release upload "$RELEASE_TAG" "${{ steps.manifest.outputs.path }}" --repo "$GITHUB_REPOSITORY" --clobber
 
   announce-discord:
     name: Discord release announcement
