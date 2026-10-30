@@ -13,15 +13,15 @@
 
 Prism connects to Navidrome and other Subsonic-compatible servers, so you can play your library, manage the queue, and keep your playlists in one proper desktop app. If you use Subwave too, radio lives right there with the rest of your music.
 
-Prism Player 1.0 is available for macOS and Windows.
+Prism Player 1.1 is available for macOS, Windows and Linux (AppImage/DEB).
 
-![Prism Player home screen](docs/images/home.png)
+![Prism 1.1 Home with album artwork, queue and synced lyrics](docs/images/home.png)
 
 > **Need help or want to talk about Prism?** [Join the Discord](https://discord.gg/hzeAqu7EwF). It is the quickest place for questions, ideas, and bug reports.
 
 ## Get Prism
 
-Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Prism's macOS installer is signed and notarized, and its Windows installer is code-signed. Windows SmartScreen may still show a warning while Prism's new signing certificate establishes its reputation; download only from the official releases page and verify the publisher before opening it.
+Grab the installer for your platform from the [latest GitHub release](https://github.com/kylejschultz/prism-player/releases/latest). Prism's macOS installer is signed and notarized, its Windows installer is code-signed, and Linux downloads are provided as AppImage and DEB packages. SHA-256 checksums are included with the downloads. Windows SmartScreen may still show a warning while Prism's new signing certificate establishes its reputation; download only from the official releases page and verify the publisher before opening it.
 
 ## First connection
 
@@ -33,7 +33,7 @@ Grab the installer for your platform from the [latest GitHub release](https://gi
 
 Once you're connected, Prism gives you a simple place to browse the artists, albums, and music already on your server.
 
-![Prism artist view](docs/images/artist.png)
+![Prism 1.1 album view with the current track highlighted](docs/images/album.png)
 
 ## Subwave Radio
 
@@ -59,11 +59,9 @@ Want to work on Prism? Development setup, branches, tests, and release notes are
 
 Click any screenshot to open it full size.
 
-<a href="docs/images/album.png"><img src="docs/images/album.png" alt="Prism album view" height="180"></a>
-<a href="docs/images/subwave-stations.png"><img src="docs/images/subwave-stations.png" alt="Adding a Subwave station" height="180"></a>
-<a href="docs/images/subwave-tune-in.png"><img src="docs/images/subwave-tune-in.png" alt="Choosing a Subwave station" height="180"></a>
-<a href="docs/images/subwave-radio.png"><img src="docs/images/subwave-radio.png" alt="Subwave radio in Prism" height="180"></a>
-<a href="docs/images/subwave-request.png"><img src="docs/images/subwave-request.png" alt="Subwave song request" height="180"></a>
+<a href="docs/images/album.png"><img src="docs/images/album.png" alt="Prism 1.1 album and track list" height="180"></a>
+<a href="docs/images/lyrics.png"><img src="docs/images/lyrics.png" alt="Synced lyrics below the queue in Prism's adjustable sidebar" height="180"></a>
+<a href="docs/images/subwave-radio.png"><img src="docs/images/subwave-radio.png" alt="Subwave radio in Prism 1.1" height="180"></a>
 
 </details>
 
@@ -75,8 +73,8 @@ Click any screenshot to open it full size.
 - Search for artists, albums, songs, and playlists.
 - Playlist editing and favorites.
 - Subwave radio with now-playing, schedules, requests, likes, and booth updates.
-- Queue, now-playing details, and lyrics in the sidebar.
-- Synced library lyrics follow playback and seeking when your server supplies timestamps, with plain lyrics as a fallback. See [lyrics support](docs/LYRICS.md).
+- Queue or Radio timeline above lyrics in one sidebar, with an adjustable divider.
+- Synced lyrics follow library playback and supported Subwave stations when the server or station supplies timestamps, with plain lyrics as a fallback. See [lyrics support](docs/LYRICS.md).
 
 
 ## Privacy
