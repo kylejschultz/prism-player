@@ -6406,6 +6406,25 @@ function UpdateBanner({ update, onDismiss }: { update: AvailableUpdate; onDismis
   );
 }
 
+function ReleaseHighlights({ release }: { release: WhatsNewRelease }) {
+  return (
+    <>
+      {release.additionalChanges?.length ? <p className="release-notes-heading">The highlights</p> : null}
+      <ul>
+        {release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
+      </ul>
+      {release.additionalChanges?.length ? (
+        <>
+          <p className="release-notes-heading">Also in this update</p>
+          <ul className="release-notes-additional">
+            {release.additionalChanges.map((change) => <li key={change}>{change}</li>)}
+          </ul>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; onClose: () => void }) {
   const latestRelease = releases[0];
 
@@ -6427,9 +6446,7 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
           {releases.map((release) => (
             <section className="whats-new-release" key={release.version}>
               {releases.length > 1 ? <h3>Prism {release.version}</h3> : null}
-              <ul>
-                {release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}
-              </ul>
+              <ReleaseHighlights release={release} />
             </section>
           ))}
         </div>
@@ -6583,7 +6600,7 @@ function SettingsView({
               .map((release) => (
                 <article key={release.version}>
                   <h4>Prism {release.displayVersion ?? release.version}</h4>
-                  <ul>{release.highlights.map((highlight) => <li key={highlight}>{highlight}</li>)}</ul>
+                  <ReleaseHighlights release={release} />
                 </article>
               ))}
             </div>
