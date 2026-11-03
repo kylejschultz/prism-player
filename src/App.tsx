@@ -95,6 +95,7 @@ type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type HomeShelfViewMode = "art" | "list";
 type RightPanelTab = "queue" | "schedule" | "request" | "booth";
+type PlaybackPanes = "both" | "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
@@ -527,6 +528,7 @@ const PLAYBACK_STATE_KEY = "prism-player.playbackState";
 const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
 const PLAYBACK_SPLIT_KEY = "prism-player.playbackSplit";
+const PLAYBACK_PANES_KEY = "prism-player.playbackPanes";
 const LIBRARY_EXPANDED_KEY = "prism-player.libraryExpanded";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
@@ -2098,6 +2100,13 @@ export function App() {
   const [volume, setVolume] = useState(() => loadStoredSettings().lastVolume);
   const [rightPanelOpen, setRightPanelOpen] = useState(() => loadStoredBoolean(RIGHT_PANEL_OPEN_KEY, false));
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("queue");
+  const [playbackPanes, setPlaybackPanes] = useState<PlaybackPanes>(() => {
+    try {
+      const stored = localStorage.getItem(PLAYBACK_PANES_KEY);
+      return stored === "queue" || stored === "lyrics" ? stored : "both";
+    } catch { return "both"; }
+  });
+  const rightPanelToggleRef = useRef<HTMLButtonElement | null>(null);
   const [lyricsStatus, setLyricsStatus] = useState<LyricsStatus>("idle");
   const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
   const [lyricsMessage, setLyricsMessage] = useState("");
@@ -2754,11 +2763,28 @@ export function App() {
 
   function setRightPanelState(open: boolean) {
     setRightPanelOpen(open);
-    localStorage.setItem(RIGHT_PANEL_OPEN_KEY, String(open));
+    try { localStorage.setItem(RIGHT_PANEL_OPEN_KEY, String(open)); } catch { /* The sidebar still works without storage. */ }
+    if (!open) rightPanelToggleRef.current?.focus();
+  }
+
+  function setPlaybackPanesState(panes: PlaybackPanes) {
+    setPlaybackPanes(panes);
+    try { localStorage.setItem(PLAYBACK_PANES_KEY, panes); } catch { /* Keep the session preference when storage is unavailable. */ }
+  }
+
+  function togglePlaybackPane(pane: "queue" | "lyrics") {
+    if (playbackPanes === pane) {
+      // Retain this last pane so reopening restores only the pane just closed.
+      setRightPanelState(false);
+    } else {
+      const remainingPane = pane === "queue" ? "lyrics" : "queue";
+      setPlaybackPanesState(playbackPanes === "both" ? remainingPane : "both");
+    }
   }
 
   function selectRightPanelTab(tab: RightPanelTab) {
-    setRightPanelTab(rightPanelOpen && rightPanelTab === tab ? "queue" : tab);
+    if (playbackPanes === "lyrics") setPlaybackPanesState("both");
+    setRightPanelTab(rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === tab ? "queue" : tab);
     setRightPanelState(true);
   }
 
@@ -5335,10 +5361,10 @@ export function App() {
             {isRadioPlaying ? (
               <>
                 <button
-                  className={rightPanelOpen && rightPanelTab === "schedule" ? "active" : ""}
+                  className={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "schedule" ? "active" : ""}
                   type="button"
                   aria-label="Show radio schedule"
-                  aria-expanded={rightPanelOpen && rightPanelTab === "schedule"}
+                  aria-expanded={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "schedule"}
                   aria-controls="playback-sidebar"
                   onClick={() => selectRightPanelTab("schedule")}
                   title="Schedule"
@@ -5346,10 +5372,10 @@ export function App() {
                   <CalendarDays size={15} />
                 </button>
                 <button
-                  className={rightPanelOpen && rightPanelTab === "request" ? "active" : ""}
+                  className={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "request" ? "active" : ""}
                   type="button"
                   aria-label="Request a song"
-                  aria-expanded={rightPanelOpen && rightPanelTab === "request"}
+                  aria-expanded={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "request"}
                   aria-controls="playback-sidebar"
                   onClick={() => selectRightPanelTab("request")}
                   title="Request"
@@ -5371,10 +5397,10 @@ export function App() {
                   {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
                 </button>
                 <button
-                  className={rightPanelOpen && rightPanelTab === "booth" ? "active" : ""}
+                  className={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "booth" ? "active" : ""}
                   type="button"
                   aria-label="Show booth feed"
-                  aria-expanded={rightPanelOpen && rightPanelTab === "booth"}
+                  aria-expanded={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "booth"}
                   aria-controls="playback-sidebar"
                   onClick={() => selectRightPanelTab("booth")}
                   title="Booth feed"
@@ -5462,6 +5488,7 @@ export function App() {
           <div className="player-panel-buttons" role="group" aria-label="Player panels">
             <button
               className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
+              ref={rightPanelToggleRef}
               type="button"
               aria-label={`${rightPanelOpen ? "Close" : "Open"} playback sidebar`}
               aria-expanded={rightPanelOpen}
@@ -5476,6 +5503,8 @@ export function App() {
 
       {rightPanelOpen ? (
         <RightSidebar
+          panes={playbackPanes}
+          onTogglePane={togglePlaybackPane}
           tab={rightPanelTab}
           radioContent={isRadioPlaying ? (
             <>
@@ -5731,6 +5760,8 @@ export function App() {
 }
 
 function RightSidebar({
+  panes,
+  onTogglePane,
   tab,
   radioContent,
   queue,
@@ -5760,6 +5791,8 @@ function RightSidebar({
   onClose,
   onShowQueue,
 }: {
+  panes: PlaybackPanes;
+  onTogglePane: (pane: "queue" | "lyrics") => void;
   tab: RightPanelTab;
   radioContent: ReactNode;
   queue: Song[];
@@ -5790,6 +5823,8 @@ function RightSidebar({
   onShowQueue: () => void;
 }) {
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
+  const queueVisible = panes !== "lyrics";
+  const lyricsVisible = panes !== "queue";
   const [radioTimelineView, setRadioTimelineView] = useState<"recent" | "upcoming">("recent");
   const panesRef = useRef<HTMLDivElement | null>(null);
   const splitDragRef = useRef<{ pointerId: number; y: number; share: number; height: number } | null>(null);
@@ -5804,8 +5839,9 @@ function RightSidebar({
   // Keep usable queue and lyric space; the 12px row between them is the drag target.
   const availablePaneHeight = Math.max(0, paneHeight - 12);
   const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 200 : 140;
-  const minimumShare = availablePaneHeight ? Math.min(minimumUpperHeight, availablePaneHeight / 2) / availablePaneHeight : 0;
-  const maximumShare = availablePaneHeight ? 1 - Math.min(220, availablePaneHeight / 2) / availablePaneHeight : 1;
+  const minimumScale = Math.min(1, availablePaneHeight / (minimumUpperHeight + 220));
+  const minimumShare = availablePaneHeight ? minimumUpperHeight * minimumScale / availablePaneHeight : 0;
+  const maximumShare = availablePaneHeight ? 1 - 220 * minimumScale / availablePaneHeight : 1;
   const effectiveShare = clampNumber(splitShare, minimumShare, maximumShare);
 
   function updateSplit(nextShare: number) {
@@ -5962,15 +5998,34 @@ function RightSidebar({
     >
       <div className="right-sidebar-heading">
         <div>
-          <p className="eyebrow">Player</p>
-          <h3>{headingLabel}</h3>
+          <h3>{queueVisible ? headingLabel : "Lyrics"}</h3>
+          <div className="playback-pane-controls" role="group" aria-label="Visible playback panes">
+            <button
+              type="button"
+              aria-pressed={queueVisible}
+              aria-label={`${queueVisible ? "Close" : "Show"} ${isRadioSession ? "timeline" : "queue"} pane`}
+              title={`${queueVisible ? "Close" : "Show"} ${isRadioSession ? "timeline" : "queue"} pane`}
+              onClick={() => onTogglePane("queue")}
+            >
+              <ListMusic size={14} /> {isRadioSession ? "Timeline" : "Queue"}
+            </button>
+            <button
+              type="button"
+              aria-pressed={lyricsVisible}
+              aria-label={`${lyricsVisible ? "Close" : "Show"} lyrics pane`}
+              title={`${lyricsVisible ? "Close" : "Show"} lyrics pane`}
+              onClick={() => onTogglePane("lyrics")}
+            >
+              <Music2 size={14} /> Lyrics
+            </button>
+          </div>
         </div>
         <div className="right-sidebar-heading-actions">
           {isRadioSession && tab !== "queue" ? (
             <button className="icon-button" type="button" aria-label="Show timeline" onClick={onShowQueue}><ListMusic size={16} /></button>
           ) : null}
-          <button className="icon-button right-sidebar-close" type="button" aria-label="Close playback sidebar" onClick={onClose}>
-            <X size={16} />
+          <button className="icon-button right-sidebar-close" type="button" aria-label="Close playback sidebar" title="Close playback sidebar" onClick={onClose}>
+            <PanelRightClose size={16} />
           </button>
         </div>
       </div>
@@ -5978,10 +6033,10 @@ function RightSidebar({
       <div
         className="playback-sidebar-panes"
         ref={panesRef}
-        style={{ gridTemplateRows: `minmax(0, ${effectiveShare}fr) 12px minmax(0, ${1 - effectiveShare}fr)` }}
+        style={{ gridTemplateRows: panes === "both" ? `minmax(0, ${effectiveShare}fr) 12px minmax(0, ${1 - effectiveShare}fr)` : "minmax(0, 1fr)" }}
       >
         {tab === "queue" ? (
-          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}${isRadioSession && radioNowPlaying ? " has-current-track" : ""}`}>
+          <div hidden={!queueVisible} className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}${isRadioSession && radioNowPlaying ? " has-current-track" : ""}`}>
             {!isRadioSession ? (
               <div className="queue-heading">
                 <p className="eyebrow">Now + Next</p>
@@ -6079,10 +6134,11 @@ function RightSidebar({
             ) : null}
           </div>
         ) : (
-          <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
+          <div hidden={!queueVisible} className="right-panel-section radio-sidebar-content">{radioContent}</div>
         )}
         <div
           className="playback-pane-divider"
+          hidden={panes !== "both"}
           role="separator"
           aria-label="Resize playback panes"
           aria-orientation="horizontal"
@@ -6114,7 +6170,7 @@ function RightSidebar({
             updateSplit(event.key === "Home" ? minimumShare : event.key === "End" ? maximumShare : effectiveShare + (event.key === "ArrowDown" ? 0.05 : -0.05));
           }}
         />
-        <section className="playback-lyrics-section" aria-labelledby="playback-lyrics-heading">
+        <section hidden={!lyricsVisible} className={`playback-lyrics-section${queueVisible ? "" : " single-pane"}`} aria-labelledby="playback-lyrics-heading">
           <h3 id="playback-lyrics-heading">Lyrics</h3>
           <div className="right-panel-section lyrics-panel">
             {isRadioSession || currentTrack ? (

@@ -8132,6 +8132,55 @@ button.similar-chip:focus-visible {
   min-height: 0;
 }
 
+/* Keep hidden panes mounted so lyric position, radio tools and queue scroll survive. */
+.playback-sidebar-panes > [hidden] {
+  display: none;
+}
+
+.right-sidebar-heading h3 {
+  margin-top: 0;
+}
+
+.playback-lyrics-section.single-pane {
+  grid-template-rows: minmax(0, 1fr);
+  padding-top: 0;
+}
+
+.playback-lyrics-section.single-pane > h3 {
+  display: none;
+}
+
+.playback-pane-controls {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.playback-pane-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(237, 242, 246, 0.64);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.playback-pane-controls button[aria-pressed="true"],
+.playback-pane-controls button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #edf2f6;
+}
+
+.playback-pane-controls button:focus-visible {
+  outline: 2px solid var(--prism-accent);
+  outline-offset: 2px;
+}
+
 .playback-pane-divider {
   position: relative;
   min-height: 0;
