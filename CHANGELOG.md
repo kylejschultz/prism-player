@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.0](https://github.com/kylejschultz/prism-player/compare/v1.0.0...v1.1.0) (2026-10-29)
+
+
+### Features
+
+* Publish Linux installers with release checksums ([#168](https://github.com/kylejschultz/prism-player/issues/168)) ([b27cd0c](https://github.com/kylejschultz/prism-player/commit/b27cd0ca93f9e69501e71f14742f3e2090764988))
+* redesign Prism and integrate playback cleanup ([#200](https://github.com/kylejschultz/prism-player/issues/200)) ([3676efa](https://github.com/kylejschultz/prism-player/commit/3676efa13921af0fe5b88126006ca43619f6c6e1))
+* refresh Prism library, playback and desktop experience ([#231](https://github.com/kylejschultz/prism-player/issues/231)) ([6a21d4f](https://github.com/kylejschultz/prism-player/commit/6a21d4f4b5f61b3621b34498fe5acfe36f069ca3))
+* refresh radio, playback navigation, and artist artwork ([#206](https://github.com/kylejschultz/prism-player/issues/206)) ([8c459e6](https://github.com/kylejschultz/prism-player/commit/8c459e60f5408f7ab024cf60a923b2594b506d2d))
+
+
+### Bug Fixes
+
+* initialize Linux password storage on first connection ([#234](https://github.com/kylejschultz/prism-player/issues/234)) ([f032edf](https://github.com/kylejschultz/prism-player/commit/f032edf727101d72ea4fb81f6554072ea299eef9))
+* polish Radio and first-run Home ([#233](https://github.com/kylejschultz/prism-player/issues/233)) ([70a678e](https://github.com/kylejschultz/prism-player/commit/70a678e6222dee8f0b1bd290052e8f9519555c2b))
+
+
+### Performance Improvements
+
+* improve artwork loading and macOS swipes ([#205](https://github.com/kylejschultz/prism-player/issues/205)) ([bcece3c](https://github.com/kylejschultz/prism-player/commit/bcece3c90b57f988e8ae39c3ef17f5a81b533771))
+
 ## [1.0.0](https://github.com/kylejschultz/prism-player/compare/v0.5.0...v1.0.0) (2026-08-27)
 
 

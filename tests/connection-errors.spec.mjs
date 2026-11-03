@@ -1,9 +1,12 @@
 /* global window, localStorage, URL */
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+const appVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 test('native credential failure stays visible and retry preserves first-run form', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: '1.0.0' }));
+  await page.addInitScript(appVersion => {
+    localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: appVersion }));
     let saves = 0;
     window.__TAURI_INTERNALS__ = { transformCallback: () => 1, invoke: async command => {
       if (command === 'get_navidrome_password') return null;
@@ -13,7 +16,7 @@ test('native credential failure stays visible and retry preserves first-run form
       }
       return null;
     } };
-  });
+  }, appVersion);
   await page.route('https://music.fixture.invalid/**', route => {
     const endpoint = new URL(route.request().url()).pathname.split('/').pop()?.replace('.view', '');
     const payload = {
