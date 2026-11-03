@@ -5999,28 +5999,29 @@ function RightSidebar({
       <div className="right-sidebar-heading">
         <div>
           <h3>{queueVisible ? headingLabel : "Lyrics"}</h3>
-          <div className="playback-pane-controls" role="group" aria-label="Visible playback panes">
-            <button
-              type="button"
-              aria-pressed={queueVisible}
-              aria-label={`${queueVisible ? "Close" : "Show"} ${isRadioSession ? "timeline" : "queue"} pane`}
-              title={`${queueVisible ? "Close" : "Show"} ${isRadioSession ? "timeline" : "queue"} pane`}
-              onClick={() => onTogglePane("queue")}
-            >
-              <ListMusic size={14} /> {isRadioSession ? "Timeline" : "Queue"}
-            </button>
-            <button
-              type="button"
-              aria-pressed={lyricsVisible}
-              aria-label={`${lyricsVisible ? "Close" : "Show"} lyrics pane`}
-              title={`${lyricsVisible ? "Close" : "Show"} lyrics pane`}
-              onClick={() => onTogglePane("lyrics")}
-            >
-              <Music2 size={14} /> Lyrics
-            </button>
-          </div>
+
         </div>
         <div className="right-sidebar-heading-actions">
+          {panes !== "both" ? (
+            <button
+              className="playback-pane-restore"
+              type="button"
+              aria-label={`Show ${queueVisible ? "lyrics" : isRadioSession ? "timeline" : "queue"} pane`}
+              title={`Show ${queueVisible ? "lyrics" : isRadioSession ? "timeline" : "queue"} pane`}
+              onClick={() => onTogglePane(queueVisible ? "lyrics" : "queue")}
+            >
+              <Plus size={14} /> {queueVisible ? "Lyrics" : isRadioSession ? "Timeline" : "Queue"}
+            </button>
+          ) : null}
+          <button
+            className="icon-button playback-pane-close"
+            type="button"
+            aria-label={`Close ${queueVisible ? isRadioSession ? "timeline" : "queue" : "lyrics"} pane`}
+            title={`Close ${queueVisible ? isRadioSession ? "timeline" : "queue" : "lyrics"} pane`}
+            onClick={() => onTogglePane(queueVisible ? "queue" : "lyrics")}
+          >
+            <X size={14} />
+          </button>
           {isRadioSession && tab !== "queue" ? (
             <button className="icon-button" type="button" aria-label="Show timeline" onClick={onShowQueue}><ListMusic size={16} /></button>
           ) : null}
@@ -6171,7 +6172,12 @@ function RightSidebar({
           }}
         />
         <section hidden={!lyricsVisible} className={`playback-lyrics-section${queueVisible ? "" : " single-pane"}`} aria-labelledby="playback-lyrics-heading">
-          <h3 id="playback-lyrics-heading">Lyrics</h3>
+          <div className="playback-lyrics-heading">
+            <h3 id="playback-lyrics-heading">Lyrics</h3>
+            <button className="icon-button playback-pane-close" type="button" aria-label="Close lyrics pane" title="Close lyrics pane" onClick={() => onTogglePane("lyrics")}>
+              <X size={14} />
+            </button>
+          </div>
           <div className="right-panel-section lyrics-panel">
             {isRadioSession || currentTrack ? (
               <>

@@ -1,6 +1,6 @@
 # Combined playback sidebar
 
-The single sidebar button to the right of volume opens or closes the playback sidebar. It retains the saved open state and width. Both panes are visible by default; the former Queue/Lyrics tab preference is ignored. The labelled Queue/Timeline and Lyrics controls in the shared header independently show or close their pane. The pressed state marks a visible pane, and the tooltip names the action. A single visible pane fills the available content height.
+The single sidebar button to the right of volume opens or closes the playback sidebar. It retains the saved open state and width. Both panes are visible by default; the former Queue/Lyrics tab preference is ignored. Each pane heading has its own close control. A quiet + Queue/Timeline or + Lyrics action restores a hidden pane from the shared header; the separate sidebar icon closes the whole sidebar. A single visible pane fills the available content height.
 
 Closing the last visible pane closes the sidebar; reopening restores only that last-closed pane. Closing the entire sidebar with its header/footer sidebar icon or Escape instead preserves the current one/two-pane layout. Closing returns focus to the footer sidebar toggle. Pane visibility survives relaunch and library/Radio switches. Hidden panes stay mounted to retain lyric position, queue scroll and Radio tool state. The divider is available only with both panes visible; restoring both restores its saved split.
 
@@ -27,3 +27,7 @@ Search suggestions activate on completed clicks, not mouse-down. Focus can move 
 - Hold a mouse press on an album search suggestion: it must not navigate until release. Complete the click and activate a suggestion with Enter: the album opens in the main view and existing playback stays intact.
 
 The separate Now Playing page redesign tracked in #226 remains deferred; this change controls the existing sidebar panes independently.
+
+## Player bar surface
+
+The bottom player bar uses a 50%-opaque charcoal surface over the shared artwork wash, with background blur and fully opaque content/controls. The artwork wash extends behind the footer; switching off artwork wash or visual effects retains the theme background instead. This changes the surface, not playback, layout or volume behavior.

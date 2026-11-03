@@ -1733,3 +1733,41 @@ for (const mode of ['plain', 'loading', 'missing']) {
     expect(errors).toEqual([]);
   });
 }
+
+
+for (const [tone, colors] of [['bright', ['#f5df60', '#df6a74']], ['dark', ['#16272d', '#283e50']]]) {
+  test(`player bar shares the artwork wash with ${tone} covers while controls stay readable`, async ({ page }) => {
+    const { errors } = await fixture(page, { artwork: true });
+    await page.route('**/rest/getCoverArt*', route => route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="300" height="600" fill="${colors[0]}"/><rect x="300" width="300" height="600" fill="${colors[1]}"/></svg>` }));
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    const bar = page.locator('.player-bar'), wash = page.locator('.cover-wash-backdrop');
+    await expect(wash).toBeVisible();
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar = page.locator('#playback-sidebar');
+    await expect(sidebar.locator('.playback-pane-controls')).toHaveCount(0);
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    const restore = sidebar.getByRole('button', { name: 'Show queue pane', exact: true });
+    await expect(restore).toBeVisible();
+    await expect(sidebar.locator('.right-sidebar-heading').getByRole('button', { name: 'Close lyrics pane', exact: true })).toBeVisible();
+    for (const [width, height] of [[980, 640], [1440, 900]]) {
+      await page.setViewportSize({ width, height });
+      const footer = await bar.boundingBox(), backdrop = await wash.boundingBox();
+      expect(backdrop.y + backdrop.height).toBeGreaterThanOrEqual(footer.y + footer.height - 1);
+      const opacity = await bar.evaluate(node => getComputedStyle(node).opacity);
+      expect(opacity).toBe('1'); // Only the surface is translucent, not its contents.
+      for (const name of ['Pause', 'Close playback sidebar']) {
+        const control = bar.getByRole('button', { name, exact: true });
+        await expect(control).toBeVisible();
+        const bounds = await control.boundingBox();
+        expect(bounds.y).toBeGreaterThanOrEqual(footer.y);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(footer.y + footer.height);
+      }
+      await page.mouse.move(450, 40);
+      await page.screenshot({ path: test.info().outputPath(`player-glass-${tone}-${width}.png`) });
+    }
+    await restore.click();
+    await expect(sidebar.locator('.playback-lyrics-heading').getByRole('button', { name: 'Close lyrics pane', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    expect(errors).toEqual([]);
+  });
+}

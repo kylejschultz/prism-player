@@ -6062,11 +6062,10 @@ button.similar-chip:focus-visible {
   gap: 18px;
   padding: 10px 22px 12px;
   border-top-color: rgba(255, 255, 255, 0.14);
-  background:
-    linear-gradient(90deg, rgba(var(--prism-accent-rgb), 0.09), transparent 30%, rgba(var(--prism-glow-left-rgb), 0.08)),
-    rgba(7, 10, 12, 0.76);
-  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(34px) saturate(135%);
+  background: rgba(7, 10, 12, 0.5);
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+  backdrop-filter: blur(24px) saturate(120%);
 }
 
 .player-cover,
@@ -7101,7 +7100,7 @@ button.similar-chip:focus-visible {
   inset:
     0
     min(0px, calc(var(--workspace-right-sidebar-width) - var(--workspace-sidebar-width)))
-    var(--player-bar-height)
+    0
     min(0px, calc(var(--workspace-sidebar-width) - var(--workspace-right-sidebar-width)));
   z-index: 0;
   opacity: 0.78;
@@ -7982,7 +7981,7 @@ button.similar-chip:focus-visible {
 }
 
 .theme-prism .player-bar {
-  background: #11191b;
+  background: rgba(17, 25, 27, 0.5);
 }
 
 .theme-prism .transport .play-button {
@@ -8146,39 +8145,41 @@ button.similar-chip:focus-visible {
   padding-top: 0;
 }
 
-.playback-lyrics-section.single-pane > h3 {
+.playback-lyrics-section.single-pane > .playback-lyrics-heading {
   display: none;
 }
 
-.playback-pane-controls {
+.playback-lyrics-heading {
   display: flex;
-  gap: 4px;
-  margin-top: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.playback-pane-controls button {
+.playback-lyrics-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.playback-pane-restore {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 4px 7px;
-  border: 0;
-  border-radius: 6px;
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 4px;
   background: transparent;
-  color: rgba(237, 242, 246, 0.64);
+  color: rgba(237, 242, 246, 0.72);
   font-size: 12px;
   cursor: pointer;
 }
 
-.playback-pane-controls button[aria-pressed="true"],
-.playback-pane-controls button:hover {
-  background: rgba(255, 255, 255, 0.08);
+.playback-pane-restore:hover {
   color: #edf2f6;
 }
 
-.playback-pane-controls button:focus-visible {
-  outline: 2px solid var(--prism-accent);
-  outline-offset: 2px;
+.playback-pane-close {
+  color: rgba(237, 242, 246, 0.64);
 }
 
 .playback-pane-divider {
