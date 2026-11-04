@@ -13,3 +13,12 @@ The current README images were captured from the released Prism frontend at tag 
 These are browser captures of the real app frontend with a mocked native bridge and intercepted server/media requests. They show the shared app interface rather than operating-system window chrome. The demo account, library, station, lyrics and geometric cover art are fictional. No personal credentials, real library data, commercial artwork or live radio playback was used.
 
 The illustration assets and demo content are reused from the approved Prism website fixture. Future replacements should retain that privacy boundary and record the app version/source used. The older images that are no longer linked from the README remain available in repository history and this directory.
+
+## Artist appearance preview
+
+`artist-appearances.png` is a cropped Chromium screenshot from app source
+`587106032f4c45071b1e969744fd5409e87db054`, captured by
+`tests/artist-discography.spec.mjs` at 1440 × 900 with the playback sidebar open.
+It shows the compact Appears on section for a fictional artist/library using a
+mocked native bridge and intercepted server/media requests. It contains no real
+library data, credentials, commercial artwork or live Radio.

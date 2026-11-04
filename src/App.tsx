@@ -11,7 +11,8 @@ import { isFlac } from "./flacCompatibility";
 import { useFlacCompatibility } from "./useFlacCompatibility";
 import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
-import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
+import { sortArtistAlbums, sortAlbumSongs, loadArtistDiscography, type ArtistAlbumOrder, type ArtistPlaybackScope, type DiscographyStart } from "./artistDiscography";
+import { matchesArtist, matchesTrackArtist, getArtistAlbums, getArtistAppearances, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
 import type { ComponentProps, CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -664,16 +665,6 @@ function getViewLabel(view: View) {
   };
 
   return labels[view];
-}
-
-function sortAlbumsNewestFirst(albums: Album[]) {
-  return [...albums].sort((a, b) => {
-    const yearDifference = (b.year ?? Number.MIN_SAFE_INTEGER) - (a.year ?? Number.MIN_SAFE_INTEGER);
-    if (yearDifference) return yearDifference;
-
-    const changedDifference = (b.changed ?? b.created ?? "").localeCompare(a.changed ?? a.created ?? "");
-    return changedDifference || a.name.localeCompare(b.name);
-  });
 }
 
 function getArtistImageUrl(info?: ArtistInfo | null) {
@@ -1982,21 +1973,6 @@ function getSongTrack(song: Song) {
   return song.track ?? Number.MAX_SAFE_INTEGER;
 }
 
-function sortAlbumSongs(songs: Song[]) {
-  return [...songs].sort((a, b) => {
-    const discA = getSongDisc(a);
-    const discB = getSongDisc(b);
-    const trackA = getSongTrack(a);
-    const trackB = getSongTrack(b);
-
-    return (
-      discA - discB ||
-      trackA - trackB ||
-      a.title.localeCompare(b.title)
-    );
-  });
-}
-
 type DiscGroup = {
   discNumber: number | null;
   songs: Song[];
@@ -2056,6 +2032,31 @@ export function App() {
   const [listeningHistory, setListeningHistory] = useState<ListeningHistoryEntry[]>(() => loadListeningHistory());
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
+  const [artistAlbumOrder, setArtistAlbumOrder] = useState<ArtistAlbumOrder>(() => {
+    try { return localStorage.getItem("prism-player.artistAlbumOrder") === "oldest" ? "oldest" : "newest"; } catch { return "newest"; }
+  });
+  const artistPlaybackRequestRef = useRef(0);
+  const artistPlaybackRetryRef = useRef<(() => void) | null>(null);
+  const [artistPlaybackNotice, setArtistPlaybackNotice] = useState<{ loading: boolean; message: string } | null>(null);
+
+  function cancelArtistPlayback() {
+    artistPlaybackRequestRef.current += 1;
+    artistPlaybackRetryRef.current = null;
+    setArtistPlaybackNotice(null);
+  }
+
+  function changeArtistAlbumOrder(order: ArtistAlbumOrder) {
+    cancelArtistPlayback();
+    setArtistAlbumOrder(order);
+    try { localStorage.setItem("prism-player.artistAlbumOrder", order); } catch { /* Retain the session preference. */ }
+  }
+
+  useEffect(() => {
+    artistPlaybackRequestRef.current += 1;
+    artistPlaybackRetryRef.current = null;
+    setArtistPlaybackNotice(null);
+  }, [config, activeView, detailSelection]);
+
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailMessage, setDetailMessage] = useState("");
   const [backStack, setBackStack] = useState<BrowserSnapshot[]>([]);
@@ -2705,6 +2706,7 @@ export function App() {
   }
 
   async function tuneInRadio(nextUrl?: string) {
+    cancelArtistPlayback();
     const origin = normalizeStationUrl(nextUrl || radioStationInput || appSettings.radioStationUrl);
     const radioAudio = radioAudioRef.current;
     if (!origin || !radioAudio) {
@@ -3045,6 +3047,7 @@ export function App() {
   }
 
   async function saveConnection(event?: FormEvent<HTMLFormElement>) {
+    cancelArtistPlayback();
     event?.preventDefault();
 
     const nextConfig = {
@@ -3072,6 +3075,7 @@ export function App() {
   }
 
   async function openAlbumById(albumId: string, label = "album") {
+    cancelArtistPlayback();
     if (!config) return;
     const origin = { activeView, detailSelection };
 
@@ -3097,6 +3101,7 @@ export function App() {
   }
 
   async function openArtistById(artistId: string, label = "artist") {
+    cancelArtistPlayback();
     if (!config) return;
     const origin = { activeView, detailSelection };
 
@@ -3122,6 +3127,7 @@ export function App() {
   }
 
   async function openPlaylistById(playlistId: string, label = "playlist", editAfterOpen = false) {
+    cancelArtistPlayback();
     if (!config) return;
     const origin = { activeView, detailSelection };
 
@@ -3154,6 +3160,7 @@ export function App() {
   }
 
   async function playAlbum(album: Album) {
+    cancelArtistPlayback();
     if (!config) return;
 
     try {
@@ -3165,24 +3172,30 @@ export function App() {
     }
   }
 
-  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false) {
+  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false, start?: DiscographyStart, scope: ArtistPlaybackScope = "albums") {
     if (!config) return;
-
+    const requestId = ++artistPlaybackRequestRef.current;
+    const isCurrent = () => requestId === artistPlaybackRequestRef.current;
+    artistPlaybackRetryRef.current = () => { void playArtist(artist, shuffleTracks, start, scope); };
+    setArtistPlaybackNotice({ loading: true, message: `Preparing ${artist.name}’s ${scope === "appearances" ? "appearances" : "discography"}…` });
     try {
       const artistDetail = "album" in artist ? artist : await loadArtistDetail(config, artist.id);
-      const albums = getArtistAlbums(artistDetail, libraryData.albums, songLibrary);
-      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => loadAlbumDetail(config, album.id)));
-      const songs = albumDetails.flatMap((album) => (album.song ?? []).filter((song) =>
-        matchesArtist(song, artistDetail) || matchesArtist(album, artistDetail),
-      ));
-      replaceQueue(shuffleTracks ? shuffled(songs) : songs);
+      if (!isCurrent()) return;
+      const releases = scope === "appearances"
+        ? getArtistAppearances(artistDetail, libraryData.albums, songLibrary)
+        : getArtistAlbums(artistDetail, libraryData.albums);
+      const albums = sortArtistAlbums(releases, artistAlbumOrder);
+      const result = await loadArtistDiscography(albums, id => loadAlbumDetail(config, id), isCurrent, start,
+        scope === "appearances" ? song => matchesTrackArtist(song, artistDetail) : undefined);
+      if (!result || !isCurrent()) return;
+      replaceQueue(shuffleTracks ? shuffled(result.songs) : result.songs, shuffleTracks ? 0 : result.startIndex);
     } catch (error) {
-      setDetailStatus("error");
-      setDetailMessage(getErrorMessage(error));
+      if (isCurrent()) setArtistPlaybackNotice({ loading: false, message: `Could not prepare ${scope === "appearances" ? "appearances" : "discography"}. ${getErrorMessage(error)}` });
     }
   }
 
   async function playPlaylist(playlist: Playlist) {
+    cancelArtistPlayback();
     if (!config) return;
 
     try {
@@ -3486,6 +3499,7 @@ export function App() {
   }
 
   function selectView(view: View) {
+    cancelArtistPlayback();
     if (["artists", "albums", "songs", "playlists"].includes(view)) setLibraryExpandedState(true);
     const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null };
     if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
@@ -3532,6 +3546,7 @@ export function App() {
   }
 
   function replaceQueue(songs: Song[], startIndex = 0, playlistSource: Playlist | null = null) {
+    cancelArtistPlayback();
     if (!songs.length) return;
     const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
     stopTrackTransition(songs[safeStartIndex]?.id !== currentTrack?.id);
@@ -3574,6 +3589,7 @@ export function App() {
   }
 
   function playSong(song: Song) {
+    cancelArtistPlayback();
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     stopTrackTransition(existingIndex !== currentIndex);
     recordListeningHistory();
@@ -3603,6 +3619,7 @@ export function App() {
   }
 
   function playNext(fromTrackEnd = false) {
+    if (!fromTrackEnd) cancelArtistPlayback();
     if (!queue.length) return;
     if (!fromTrackEnd) stopTrackTransition();
     recordListeningHistory(fromTrackEnd, fromTrackEnd ? playerDuration || currentTrack?.duration || position : position);
@@ -3771,6 +3788,7 @@ export function App() {
   }
 
   function playPrevious() {
+    cancelArtistPlayback();
     if (!queue.length) return;
     stopTrackTransition();
     recordListeningHistory();
@@ -3874,6 +3892,7 @@ export function App() {
   }
 
   function selectQueueTrack(index: number) {
+    cancelArtistPlayback();
     tuneOutRadio();
     setSuppressLocalFooter(false);
     stopTrackTransition();
@@ -3969,6 +3988,7 @@ export function App() {
   }
 
   function clearQueue() {
+    cancelArtistPlayback();
     stopTrackTransition();
     getActiveAudio()?.pause();
     setQueue([]);
@@ -4000,6 +4020,7 @@ export function App() {
   }
 
   function togglePlayback() {
+    cancelArtistPlayback();
     if (activePlaybackSource === "radio" && radioStationUrl) {
       const radioAudio = radioAudioRef.current;
       if (isRadioPlaying) {
@@ -4068,6 +4089,7 @@ export function App() {
   }
 
   async function resetConnection() {
+    cancelArtistPlayback();
     try {
       await clearNativePassword();
     } catch (error) {
@@ -4859,6 +4881,7 @@ export function App() {
 
     navigator.mediaSession.playbackState = controlsRadio ? (isRadioPlaying ? "playing" : "paused") : isPlaying ? "playing" : "paused";
     navigator.mediaSession.setActionHandler("play", () => {
+      cancelArtistPlayback();
       if (controlsRadio) {
         const radioAudio = radioAudioRef.current;
         if (radioAudio?.src) {
@@ -4874,6 +4897,7 @@ export function App() {
       setIsPlaying(true);
     });
     navigator.mediaSession.setActionHandler("pause", () => {
+      cancelArtistPlayback();
       if (controlsRadio) {
         radioAudioRef.current?.pause();
         setRadioMessage("Radio paused.");
@@ -5178,6 +5202,16 @@ export function App() {
             />
           ) : (
             <LibraryView
+              artistAlbumOrder={artistAlbumOrder}
+              onArtistAlbumOrderChange={changeArtistAlbumOrder}
+              artistPlaybackNotice={artistPlaybackNotice ? <div className="artist-playback-notice" role="status"><StateNotice
+                tone={artistPlaybackNotice.loading ? "neutral" : "bad"}
+                icon={artistPlaybackNotice.loading ? <Loader2 size={16} className="spin" /> : <AlertCircle size={16} />}
+                title={artistPlaybackNotice.loading ? "Preparing playback" : "Playback could not start"}
+                text={artistPlaybackNotice.message}
+                actionLabel={artistPlaybackNotice.loading ? "Cancel" : "Retry"}
+                onAction={() => artistPlaybackNotice.loading ? cancelArtistPlayback() : artistPlaybackRetryRef.current?.()}
+              /></div> : null}
               activeView={activeView}
               config={config}
               listenerName={listenerName}
@@ -5236,7 +5270,7 @@ export function App() {
               onOpenArtist={(artist) => void openArtist(artist)}
               onOpenPlaylist={openPlaylist}
               onPlayAlbum={(album) => void playAlbum(album)}
-              onPlayArtist={(artist, shuffleTracks) => void playArtist(artist, shuffleTracks)}
+              onPlayArtist={(artist, shuffleTracks, start, scope) => void playArtist(artist, shuffleTracks, start, scope)}
               onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
               onSavePlaylistDetails={savePlaylistDetails}
               onDeletePlaylist={deletePlaylistAndReturn}
@@ -7454,6 +7488,9 @@ function RadioView({
 }
 
 function LibraryView({
+  artistAlbumOrder,
+  onArtistAlbumOrderChange,
+  artistPlaybackNotice,
   activeView,
   config,
   listenerName,
@@ -7520,6 +7557,9 @@ function LibraryView({
   onQueueSong,
   onRetryLibrary,
 }: {
+  artistAlbumOrder: ArtistAlbumOrder;
+  onArtistAlbumOrderChange: (order: ArtistAlbumOrder) => void;
+  artistPlaybackNotice: ReactNode;
   activeView: View;
   config: NavidromeConfig | null;
   listenerName: string;
@@ -7574,7 +7614,7 @@ function LibraryView({
   onOpenArtist: (artist: Artist) => void;
   onOpenPlaylist: (playlist: Playlist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart, scope?: ArtistPlaybackScope) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -7652,8 +7692,11 @@ function LibraryView({
       className={`browser-panel ${isCollectionView && !detailSelection ? "library-collection-panel" : ""} view-${activeView} ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
       onScroll={activeView === "overview" || activeView === "nowPlaying" ? revealHomeScrollbar : undefined}
     >
+      {artistPlaybackNotice}
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
+          artistAlbumOrder={artistAlbumOrder}
+          onArtistAlbumOrderChange={onArtistAlbumOrderChange}
           config={config}
           albums={albums}
           songs={songs}
@@ -10204,15 +10247,17 @@ function ArtistOptions({
 
 // Album tracks must not depend on completion of the optional full-library sync.
 function ArtistDiscographyAlbum({
-  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue,
+  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue, onPlayTrack, appearancesOnly = false,
   currentTrack, favoriteIds, favoriteBusyKey, onToggleFavorite, onOpenArtist, onSongContextMenu,
 }: Pick<ComponentProps<typeof TrackList>, "currentTrack" | "favoriteIds" | "favoriteBusyKey" | "onToggleFavorite" | "onOpenArtist" | "onSongContextMenu"> & {
+  appearancesOnly?: boolean;
   album: Album;
   artist: Artist;
   config: NavidromeConfig | null;
   librarySongs: Song[];
   onOpenAlbum: (album: Album) => void;
   onPlayAlbum: (album: Album) => void;
+  onPlayTrack: (start: DiscographyStart) => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
 }) {
   const groupRef = useRef<HTMLElement>(null);
@@ -10234,14 +10279,16 @@ function ArtistDiscographyAlbum({
     queryFn: () => navidromeClient.album(config!, album.id),
     enabled: Boolean(config) && nearViewport,
   });
-  const albumSongs = sortAlbumSongs(tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
+  const releaseSongs = tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
     song.albumId === album.id ||
     (!song.albumId && song.album === album.name && (song.artistId === artist.id || song.artist === artist.name)),
-  ));
+  );
+  const albumSongs = sortAlbumSongs(appearancesOnly ? releaseSongs.filter(song => matchesTrackArtist(song, artist)) : releaseSongs);
   const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+  if (appearancesOnly && tracks.isSuccess && !albumSongs.length) return null;
   return (
-    <section className="artist-album-group" ref={groupRef} data-context-kind="album" data-context-id={album.id}>
-      <div className="artist-album-heading">
+    <section className={`artist-album-group${appearancesOnly ? " artist-appearance-group" : ""}`} ref={groupRef} data-context-kind="album" data-context-id={album.id}>
+      {!appearancesOnly ? <div className="artist-album-heading">
         <button className="artist-album-main" type="button" onClick={() => onOpenAlbum(album)}>
           <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
           <span>
@@ -10252,8 +10299,8 @@ function ArtistDiscographyAlbum({
         <button
           className="track-play"
           type="button"
-          onClick={() => albumSongs.length ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
-          aria-label={"Play " + album.name}
+          onClick={() => onPlayAlbum(album)}
+          aria-label={`Play ${album.name}`}
         >
           <Play size={15} strokeWidth={1.6} />
         </button>
@@ -10263,18 +10310,19 @@ function ArtistDiscographyAlbum({
           label={album.name}
           onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
         />
-      </div>
+      </div> : null}
       {tracks.isError ? <p className="artist-album-empty" role="status">Could not load tracks. <button type="button" onClick={() => void tracks.refetch()}>Retry</button></p> : null}
       {albumSongs.length ? (
         <TrackList
           songs={albumSongs}
           albumName={album.name}
+          inlineAlbum={appearancesOnly ? { album, coverUrl: albumCover, onOpen: () => onOpenAlbum(album), onPlay: tracks.isSuccess ? () => onReplaceQueue(albumSongs) : undefined } : undefined}
           currentTrack={currentTrack}
           favoriteIds={favoriteIds}
           favoriteBusyKey={favoriteBusyKey}
           onToggleFavorite={onToggleFavorite}
           onOpenArtist={onOpenArtist}
-          onPlaySong={(song) => onReplaceQueue(albumSongs, Math.max(0, albumSongs.findIndex((albumSong) => albumSong.id === song.id)))}
+          onPlaySong={(song) => onPlayTrack({ albumId: album.id, songId: song.id, trackIndex: albumSongs.indexOf(song) })}
           onSongContextMenu={onSongContextMenu}
         />
       ) : !tracks.isError ? (
@@ -10285,6 +10333,8 @@ function ArtistDiscographyAlbum({
 }
 
 function DetailPanel({
+  artistAlbumOrder,
+  onArtistAlbumOrderChange,
   config,
   albums,
   songs: librarySongs,
@@ -10312,6 +10362,8 @@ function DetailPanel({
   onQueueSong,
   onSongContextMenu,
 }: {
+  artistAlbumOrder: ArtistAlbumOrder;
+  onArtistAlbumOrderChange: (order: ArtistAlbumOrder) => void;
   config: NavidromeConfig | null;
   albums: Album[];
   songs: Song[];
@@ -10328,7 +10380,7 @@ function DetailPanel({
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean) => void;
+  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart, scope?: ArtistPlaybackScope) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -10357,14 +10409,15 @@ function DetailPanel({
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
-    const artistAlbums = sortAlbumsNewestFirst(getArtistAlbums(artist, albums, librarySongs));
+    const artistAlbums = sortArtistAlbums(getArtistAlbums(artist, albums), artistAlbumOrder);
+    const appearances = sortArtistAlbums(getArtistAppearances(artist, albums, librarySongs), artistAlbumOrder);
     const artistInfo = artist.info;
     const artistImage = getArtistImageUrl(artistInfo);
     const serverArtistCover = config ? buildCoverArtUrl(config, artist.coverArt, "420") : null;
     const biography = cleanBiography(artistInfo?.biography);
     const similarArtists = artistInfo?.similarArtist?.slice(0, 8) ?? [];
     const topSongs = getArtistTopSongs(artist, librarySongs, listeningHistory);
-    const latestRelease = artistAlbums[0];
+    const latestRelease = sortArtistAlbums(artistAlbums)[0];
     const latestReleaseCover = config && latestRelease ? buildCoverArtUrl(config, latestRelease.coverArt, "320") : null;
     const lastFmUrl = getSafeExternalUrl(artistInfo?.lastFmUrl);
     const musicBrainzUrl = getMusicBrainzArtistUrl(artistInfo?.musicBrainzId ?? artist.musicBrainzId);
@@ -10377,7 +10430,7 @@ function DetailPanel({
       <section className={`detail-panel detail-page artist-detail-page ${albumViewMode === "list" ? "artist-list-mode" : ""}`}>
         <div className="album-hero detail-page-hero artist-hero">
           <div className="detail-artwork-stage">
-            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
+            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" disabled={!artistAlbums.length} rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
           </div>
           <div className="detail-hero-copy">
             <p className="detail-type-label">Artist</p>
@@ -10471,13 +10524,19 @@ function DetailPanel({
         ) : null}
         <div className="section-label">
           <h4>Albums</h4>
-          <div className="view-toggle" aria-label="Artist album view">
-            <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
-              Art
-            </button>
-            <button className={albumViewMode === "list" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("list")}>
-              List
-            </button>
+          <div className="artist-discography-controls">
+            <select aria-label="Release order" value={artistAlbumOrder} onChange={event => onArtistAlbumOrderChange(event.target.value as ArtistAlbumOrder)}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <div className="view-toggle" aria-label="Artist album view">
+              <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
+                Art
+              </button>
+              <button className={albumViewMode === "list" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("list")}>
+                List
+              </button>
+            </div>
           </div>
         </div>
         {albumViewMode === "art" ? (
@@ -10491,12 +10550,14 @@ function DetailPanel({
             onOpenAlbum={onOpenAlbum}
             onPlayAlbum={onPlayAlbum}
             withAlphabetRail={false}
+            emptyText="No albums credited to this artist."
           />
         ) : (
           <div className="artist-discography-list">
             {artistAlbums.map((album) => (
               <ArtistDiscographyAlbum
                 key={album.id}
+                onPlayTrack={start => onPlayArtist(artist, false, start)}
                 album={album}
                 artist={artist}
                 config={config}
@@ -10514,6 +10575,46 @@ function DetailPanel({
             ))}
           </div>
         )}
+        {appearances.length ? (
+          <section className="artist-appearances" aria-labelledby="artist-appearances-heading">
+            <div className="section-label">
+              <div>
+                <h4 id="artist-appearances-heading">Appears on</h4>
+                <small>Featured tracks on other artists’ releases</small>
+              </div>
+              <div className="artist-discography-controls">
+                <button className="secondary-button compact-button" type="button" onClick={() => onPlayArtist(artist, false, undefined, "appearances")}>
+                  <Play size={14} fill="currentColor" /> Play appearances
+                </button>
+                <button className="secondary-button compact-button" type="button" onClick={() => onPlayArtist(artist, true, undefined, "appearances")}>
+                  <Shuffle size={14} /> Shuffle appearances
+                </button>
+              </div>
+            </div>
+            <div className="artist-discography-list">
+              {appearances.map(album => (
+                <ArtistDiscographyAlbum
+                  key={album.id}
+                  appearancesOnly
+                  album={album}
+                  artist={artist}
+                  config={config}
+                  librarySongs={librarySongs}
+                  currentTrack={currentTrack}
+                  favoriteIds={favoriteIds}
+                  favoriteBusyKey={favoriteBusyKey}
+                  onToggleFavorite={onToggleFavorite}
+                  onOpenArtist={onOpenArtist}
+                  onOpenAlbum={onOpenAlbum}
+                  onPlayAlbum={onPlayAlbum}
+                  onReplaceQueue={onReplaceQueue}
+                  onPlayTrack={start => onPlayArtist(artist, false, start, "appearances")}
+                  onSongContextMenu={onSongContextMenu}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
     );
   }
@@ -10700,6 +10801,7 @@ function ArtistTopSongsList({
 function TrackList({
   songs,
   albumName,
+  inlineAlbum,
   currentTrack,
   favoriteIds,
   favoriteBusyKey,
@@ -10711,6 +10813,7 @@ function TrackList({
 }: {
   songs: Song[];
   albumName: string;
+  inlineAlbum?: { album: Album; coverUrl: string | null; onOpen: () => void; onPlay?: () => void };
   currentTrack: Song | null;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
@@ -10727,7 +10830,7 @@ function TrackList({
   }
 
   const discGroups = groupSongsByDisc(songs);
-  const showDiscHeaders = discGroups.length > 1;
+  const showDiscHeaders = !inlineAlbum && discGroups.length > 1;
 
   return (
     <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
@@ -10744,7 +10847,7 @@ function TrackList({
 
             return (
             <div
-              className={`track-row album-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
+              className={`track-row album-track-row ${inlineAlbum ? "appearance-track-row" : ""} ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
               aria-current={currentTrack?.id === song.id ? "true" : undefined}
               onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
@@ -10752,7 +10855,7 @@ function TrackList({
               onDoubleClick={() => onPlaySong(song)}
             >
               <span className="track-index">
-                <span className="track-number">{song.track ?? index + 1}</span>
+                {inlineAlbum ? <CoverArt src={inlineAlbum.coverUrl} label={inlineAlbum.album.name} className="appearance-track-cover" /> : <span className="track-number">{song.track ?? index + 1}</span>}
                 <button
                   className="track-play"
                   type="button"
@@ -10771,12 +10874,20 @@ function TrackList({
                   className="track-name"
                   type="button"
                   aria-label={`Select ${song.title}`}
+                  title={inlineAlbum ? song.title : undefined}
                 >
                   {song.title}
                 </button>
                 <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
               </div>
-              <span className="track-album album-track-album">{song.album || albumName}</span>
+              {inlineAlbum ? <span className="album-track-album appearance-album-context">
+                <button type="button" className="appearance-album-link" title={[inlineAlbum.album.name, inlineAlbum.album.year].filter(Boolean).join(" · ")} aria-label={`Open ${inlineAlbum.album.name}`} onClick={event => { event.stopPropagation(); inlineAlbum.onOpen(); }} onDoubleClick={event => event.stopPropagation()}>
+                  {inlineAlbum.album.name}{inlineAlbum.album.year ? ` · ${inlineAlbum.album.year}` : ""}
+                </button>
+                <button type="button" className="appearance-release-play" disabled={!inlineAlbum.onPlay} title={`Play appearances from ${inlineAlbum.album.name}`} aria-label={`Play appearances from ${inlineAlbum.album.name}`} onClick={event => { event.stopPropagation(); inlineAlbum.onPlay?.(); }} onDoubleClick={event => event.stopPropagation()}>
+                  <Play size={13} />
+                </button>
+              </span> : <span className="track-album album-track-album">{song.album || albumName}</span>}
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}

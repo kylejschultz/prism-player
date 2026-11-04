@@ -8292,3 +8292,98 @@ button.similar-chip:focus-visible {
 .playback-lyrics-section.compact .lyrics-panel {
   grid-template-rows: minmax(0, 1fr);
 }
+
+.artist-discography-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.artist-discography-controls select {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 24px 4px 8px;
+  font-size: 13px;
+}
+
+.artist-playback-notice {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-shrink: 0;
+}
+.artist-playback-notice .state-notice {
+  margin: 0;
+  background: var(--prism-surface, #17201f);
+}
+
+.artist-appearances {
+  margin-top: 36px;
+}
+.artist-appearances > .section-label {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Guest appearances are individual tracks, not full discography album groups. */
+.artist-appearances .artist-discography-list { gap: 0; }
+.artist-appearance-group { padding-bottom: 0; border-bottom: 0; }
+.artist-appearance-group .disc-group > .appearance-track-row,
+.artist-appearance-group .disc-group > .appearance-track-row:nth-child(even) {
+  grid-template-columns: 32px minmax(0, 1.6fr) minmax(0, 1fr) 40px 28px 28px;
+  height: 44px;
+  min-height: 44px;
+  padding-block: 4px;
+}
+.appearance-track-cover {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.appearance-track-row:hover .appearance-track-cover,
+.appearance-track-row:focus-within .appearance-track-cover { opacity: 0.25; }
+.artist-appearance-group .appearance-track-row .track-title-stack {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.appearance-track-row .track-title-stack .track-name { flex: 1; min-width: 0; }
+.appearance-track-row .track-title-stack .track-artist { flex: 0 1 auto; max-width: 40%; min-width: 0; }
+.artist-appearance-group .appearance-album-context {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.appearance-album-link {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.appearance-release-play {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+}
+.appearance-track-row:hover .appearance-release-play,
+.appearance-track-row:focus-within .appearance-release-play { opacity: 1; }
+.artist-appearance-group .artist-album-empty { margin: 8px; }
+.appearance-track-cover { pointer-events: none; }
+.appearance-track-row .track-index .track-play { width: 32px; height: 32px; z-index: 1; }
