@@ -1403,8 +1403,10 @@ test('playback divider resizes by pointer and keyboard, persists, and protects b
     await page.setViewportSize({ width, height });
     for (const key of ['Home', 'End']) {
       await divider.focus(); await page.keyboard.press(key);
-      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(139);
-      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(219);
+      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(95);
+      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(111);
+      if (key === 'Home') await expect.poll(async () => (await upper.boundingBox()).height).toBeLessThan(110);
+      if (key === 'End') await expect.poll(async () => (await lower.boundingBox()).height).toBeLessThan(125);
       const top = await upper.boundingBox(), bottom = await lower.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
       expect(top.y + top.height).toBeLessThan(bottom.y);
       expect(bottom.y + bottom.height).toBeLessThanOrEqual(footer.y);
@@ -1469,7 +1471,7 @@ test('radio timeline switches newest-first history and upcoming while On air and
   await page.setViewportSize({ width: 980, height: 640 });
   await sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true }).focus();
   await page.keyboard.press('Home');
-  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(199);
+  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(159);
   await scroll.focus(); await page.keyboard.press('Home');
   await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
   await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
@@ -1771,3 +1773,69 @@ for (const [tone, colors] of [['bright', ['#f5df60', '#df6a74']], ['dark', ['#16
     expect(errors).toEqual([]);
   });
 }
+
+
+for (const collapsed of ['queue', 'lyrics']) {
+  test(`dragging the divider to the ${collapsed === 'queue' ? 'top' : 'bottom'} collapses ${collapsed} and preserves the usable split`, async ({ page }) => {
+    await installTimingFixture(page, 120);
+    const { requests, errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 24 }, (_, i) => ({ start: i * 4000, value: `Verse ${i}: beside you` })) }] });
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar=page.locator('#playback-sidebar'), divider=sidebar.getByRole('separator', { name:'Resize playback panes', exact:true });
+    await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(24);
+    await divider.focus(); await divider.press('ArrowDown');
+    const saved=await divider.getAttribute('aria-valuenow');
+    const stored=await page.evaluate(()=>localStorage.getItem('prism-player.playbackSplit'));
+    const grip=await divider.boundingBox(), stack=await sidebar.locator('.playback-sidebar-panes').boundingBox();
+    await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2); await page.mouse.down();
+    await page.mouse.move(grip.x+grip.width/2, collapsed==='queue' ? stack.y+8 : stack.y+stack.height-8,{steps:8});
+    await expect(sidebar.getByRole('status')).toHaveText(`Release to hide ${collapsed === 'queue' ? 'Queue' : 'Lyrics'}`);
+    expect(await page.evaluate(()=>localStorage.getItem('prism-player.playbackSplit'))).toBe(stored);
+    await page.mouse.up();
+    await expect(sidebar.locator(collapsed==='queue'?'.queue-panel-section':'.playback-lyrics-section')).toBeHidden();
+    const restore=sidebar.getByRole('button',{name:`Show ${collapsed} pane`,exact:true});
+    await expect(restore).toBeVisible();
+    await page.screenshot({path:test.info().outputPath(`edge-${collapsed}-collapsed.png`)});
+    await restore.click();
+    await expect(divider).toHaveAttribute('aria-valuenow',saved);
+    await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
+    await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
+    expect(requests.filter(request=>request==='getLyricsBySongId')).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('compact edge headers keep their positions and cancelling edge drag preserves the split', async ({ page }) => {
+  const { errors }=await fixture(page);
+  await page.getByRole('button',{name:'Open playback sidebar',exact:true}).click();
+  const sidebar=page.locator('#playback-sidebar'), divider=sidebar.getByRole('separator',{name:'Resize playback panes',exact:true});
+  await sidebar.getByRole('separator',{name:'Resize right sidebar',exact:true}).press('Home');
+  const header=sidebar.locator('.right-sidebar-heading');
+  let baseline;
+  for (const [width,height] of [[980,640],[1440,900]]) {
+    await page.setViewportSize({width,height});
+    const before=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.playback-pane-close').getBoundingClientRect().x,overflow:el.scrollWidth>el.clientWidth}));
+    expect(before.h).toBe(28); expect(before.overflow).toBe(false);
+    await sidebar.getByRole('button',{name:'Close queue pane',exact:true}).click();
+    const after=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.playback-pane-close').getBoundingClientRect().x}));
+    expect(after).toEqual({x:before.x,y:before.y,h:28,closeX:before.closeX});
+    await sidebar.getByRole('button',{name:'Show queue pane',exact:true}).click();
+    await expect(sidebar.locator('.playback-lyrics-heading')).toHaveCSS('height','28px');
+    await divider.focus(); await divider.press('Home');
+    expect((await sidebar.locator('.queue-panel-section').boundingBox()).height).toBeLessThan(110);
+    await divider.press('End');
+    expect((await sidebar.locator('.playback-lyrics-section').boundingBox()).height).toBeLessThan(125);
+    await page.screenshot({path:test.info().outputPath(`edge-compact-${width}.png`)});
+    baseline=await divider.getAttribute('aria-valuenow');
+  }
+  await divider.evaluate(node=>node.addEventListener('pointerdown',event=>{node.dataset.testPointer=String(event.pointerId)},{once:true}));
+  const grip=await divider.boundingBox(), stack=await sidebar.locator('.playback-sidebar-panes').boundingBox();
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2,stack.y+8,{steps:8});
+  await expect(sidebar.getByRole('status')).toBeVisible();
+  const pointerId=Number(await divider.getAttribute('data-test-pointer'));
+  await divider.dispatchEvent('pointercancel',{pointerId}); await page.mouse.up();
+  await expect(divider).toHaveAttribute('aria-valuenow',baseline);
+  await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
+  await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
+  expect(errors).toEqual([]);
+});

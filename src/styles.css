@@ -8216,3 +8216,79 @@ button.similar-chip:focus-visible {
 .playback-pane-divider:focus-visible::after {
   background: var(--prism-accent);
 }
+
+/* Pane headers retain the same baseline and control positions at every split. */
+.right-sidebar-heading,
+.playback-lyrics-heading {
+  height: 28px;
+  min-height: 28px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.right-sidebar-heading > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.right-sidebar-heading h3,
+.playback-lyrics-heading h3 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 20px;
+}
+
+.right-sidebar-heading-actions {
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.right-sidebar-heading-actions .icon-button,
+.playback-lyrics-heading .icon-button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex-shrink: 0;
+}
+
+.playback-pane-close {
+  background: transparent;
+}
+
+.playback-pane-restore {
+  min-height: 24px;
+  white-space: nowrap;
+}
+
+.playback-pane-restore-bottom {
+  justify-self: center;
+  align-self: center;
+}
+
+.playback-pane-collapse-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #293d3b;
+  color: #edf2f6;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* In a compact lyrics pane, the footer already supplies track metadata. */
+.playback-lyrics-section.compact .lyrics-track {
+  display: none;
+}
+
+.playback-lyrics-section.compact .lyrics-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
