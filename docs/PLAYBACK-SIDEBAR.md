@@ -31,3 +31,15 @@ The separate Now Playing page redesign tracked in #226 remains deferred; this ch
 ## Player bar surface
 
 The bottom player bar uses a 50%-opaque charcoal surface over the shared artwork wash, with background blur and fully opaque content/controls. The artwork wash extends behind the footer; switching off artwork wash or visual effects retains the theme background instead. This changes the surface, not playback, layout or volume behavior.
+
+
+## Library artwork
+
+Library tracks with an album use that album's cover throughout Home, the player,
+Now Playing, search, listening-history shelves and artwork washes. Track-embedded
+artwork does not replace missing album artwork: those albums show a placeholder.
+Tracks without an album retain their own artwork. Resolution uses album identity
+and the shared album cache, including restored tracks outside the current catalog;
+queue/history metadata is preserved. Radio and explicit playlist/artist artwork
+retain their separate sources. Playlist artwork fallback uses the first track's
+album cover.

@@ -11,9 +11,9 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false, selectionPlaylist = false, multiDisc = false } = {}) {
-  const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
-  const songs = (largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs).map((song,index) => ({...song,...(multiDisc ? {discNumber:index % 4 < 2 ? 1 : 2} : {})}));
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false, selectionPlaylist = false, multiDisc = false, distinctArtwork = false, playbackIndex = 0, standalone = false, missingAlbumArtwork = false } = {}) {
+  const albums = (largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums).map(album => ({...album, ...(!missingAlbumArtwork && artwork ? {coverArt:distinctArtwork ? `album-${album.id}` : "fixture-cover"} : {})}));
+  const songs = (largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs).map((song,index) => ({...song,...(standalone ? {albumId:undefined,album:undefined} : {}),...(distinctArtwork ? {coverArt:`track-${song.id}`} : {}),...(multiDisc ? {discNumber:index % 4 < 2 ? 1 : 2} : {})}));
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
   const playlists = largeLibrary ? Array.from({ length: 40 }, (_, i) => ({ id: `playlist-${i}`, name: `Playlist ${i}`, songCount: 4 })) : selectionPlaylist ? [{id:'selection-playlist',name:'Selection playlist',songCount:0}] : [];
   const requests = [];
@@ -21,11 +21,11 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
   const playlistCreates = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion }) => {
+  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion, playbackIndex }) => {
     if (!firstRun || !sessionStorage.getItem('prism-fixture-first-run-seeded')) {
       if (!firstRun) localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
       localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: firstRun || unread ? '' : appVersion, radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
-      if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
+      if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: playbackIndex, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
       if (firstRun) sessionStorage.setItem('prism-fixture-first-run-seeded', 'true');
     }
     const library = { albums: [albums[0]], recentAlbums: [], recentlyPlayedAlbums: [], frequentAlbums: [], artists, playlists, favorites: { artists: [], albums: [], songs: [] } };
@@ -53,7 +53,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork && !distinctArtwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion, playbackIndex });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -1969,5 +1969,55 @@ test('album selected tracks seed a new playlist instead of the current queue', a
   await form.getByRole('button',{name:'Create',exact:true}).click();
   await expect.poll(()=>playlistCreates).toEqual([{name:'Selected album tracks',songs:['a-0','a-2']}]);
   await expect(page.locator('.playlist-track-editor .track-row')).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+
+test('album artwork stays consistent across restored playback, Home and album navigation', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, distinctArtwork:true});
+  const coverId = locator => locator.getAttribute('src').then(src => src ? new URL(src).searchParams.get('id') : null);
+  const footer = page.locator('.player-cover');
+  await expect.poll(() => coverId(footer)).toBe('album-a');
+  await expect.poll(() => coverId(page.locator('.home-resume-cover'))).toBe('album-a');
+  await page.getByRole('button', {name:'Play',exact:true}).click();
+  await expect.poll(() => page.locator('.cover-wash-backdrop').getAttribute('style')).toContain('album-a');
+  await page.locator('.sidebar').getByRole('button',{name:'Albums',exact:true}).click();
+  await page.locator('.album-title-button').filter({hasText:/^Album a$/}).first().click();
+  await expect.poll(() => coverId(page.locator('.album-detail-page .detail-cover'))).toBe('album-a');
+  await page.getByRole('button',{name:'Next',exact:true}).click();
+  await expect.poll(() => coverId(footer)).toBe('album-a');
+  await page.locator('.sidebar').getByRole('button',{name:'Home',exact:true}).click();
+  await expect.poll(() => coverId(page.locator('.home-resume-cover'))).toBe('album-a');
+  // Persisted metadata retains the original song art; only presentation resolves the album.
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('prism-player.playbackState')).queue[0].coverArt)).toBe('track-a-0');
+  await page.reload();
+  await expect.poll(() => coverId(footer)).toBe('album-a');
+  expect(errors).toEqual([]);
+});
+
+
+test('album artwork resolves for a restored track outside the album catalog', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, distinctArtwork:true, playbackIndex:4, empty:true});
+  await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=album-b(?:&|$)/);
+  await expect(page.locator('.home-resume-cover')).toHaveAttribute('src', /id=album-b(?:&|$)/);
+  await page.getByRole('button',{name:'Next',exact:true}).click();
+  await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=album-b(?:&|$)/);
+  expect(errors).toEqual([]);
+});
+
+test('unavailable album artwork stays a placeholder rather than showing a track image', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, missingAlbumArtwork:true});
+  await expect(page.locator('.player-cover')).toHaveClass(/cover-fallback/);
+  await expect(page.locator('.home-resume-cover')).toHaveClass(/cover-fallback/);
+  await page.locator('.sidebar').getByRole('button',{name:'Albums',exact:true}).click();
+  await page.locator('.album-title-button').filter({hasText:/^Album a$/}).first().click();
+  await expect(page.locator('.album-detail-page .detail-cover')).toHaveClass(/cover-fallback/);
+  expect(errors).toEqual([]);
+});
+
+test('a standalone track without an album retains its own artwork', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, distinctArtwork:true, standalone:true});
+  await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=track-a-0(?:&|$)/);
+  await expect(page.locator('.home-resume-cover')).toHaveAttribute('src', /id=track-a-0(?:&|$)/);
   expect(errors).toEqual([]);
 });
