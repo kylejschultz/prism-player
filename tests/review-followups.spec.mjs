@@ -1597,7 +1597,7 @@ test('returning users can read grouped release notes in short windows and About 
 
 
 for (const lastPane of ['lyrics', 'queue']) {
-  test(`closing the last ${lastPane} pane closes the sidebar and reopening restores only it`, async ({ page }) => {
+  test(`single ${lastPane} pane has one sidebar close control and reopens only it`, async ({ page }) => {
     const { errors } = await fixture(page);
     const sidebar = page.locator('#playback-sidebar');
     const footerToggle = page.getByRole('group', { name: 'Player panels' }).getByRole('button');
@@ -1612,7 +1612,10 @@ for (const lastPane of ['lyrics', 'queue']) {
     const available = await sidebar.locator('.playback-sidebar-panes').boundingBox();
     const filled = await last.boundingBox();
     expect(Math.abs(available.height - filled.height)).toBeLessThan(2);
-    const close = sidebar.getByRole('button', { name: `Close ${lastPane} pane`, exact: true });
+    await expect(sidebar.locator('.playback-pane-close:visible')).toHaveCount(0);
+    const restore = sidebar.getByRole('button', { name: `Show ${firstPane} pane`, exact: true });
+    await expect(restore.locator('svg.lucide-plus')).toBeVisible();
+    const close = sidebar.getByRole('button', { name: 'Close playback sidebar', exact: true });
     await close.focus();
     await page.keyboard.press('Enter');
     await expect(sidebar).toHaveCount(0);
@@ -1768,7 +1771,8 @@ for (const [tone, colors] of [['bright', ['#f5df60', '#df6a74']], ['dark', ['#16
     await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
     const restore = sidebar.getByRole('button', { name: 'Show queue pane', exact: true });
     await expect(restore).toBeVisible();
-    await expect(sidebar.locator('.right-sidebar-heading').getByRole('button', { name: 'Close lyrics pane', exact: true })).toBeVisible();
+    await expect(sidebar.locator('.playback-pane-close:visible')).toHaveCount(0);
+    await expect(restore.locator('svg.lucide-plus')).toBeVisible();
     for (const [width, height] of [[980, 640], [1440, 900]]) {
       await page.setViewportSize({ width, height });
       const footer = await bar.boundingBox(), backdrop = await wash.boundingBox();
@@ -1831,11 +1835,12 @@ test('compact edge headers keep their positions and cancelling edge drag preserv
   let baseline;
   for (const [width,height] of [[980,640],[1440,900]]) {
     await page.setViewportSize({width,height});
-    const before=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.playback-pane-close').getBoundingClientRect().x,overflow:el.scrollWidth>el.clientWidth}));
+    const before=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.right-sidebar-close').getBoundingClientRect().x,overflow:el.scrollWidth>el.clientWidth}));
     expect(before.h).toBe(28); expect(before.overflow).toBe(false);
     await sidebar.getByRole('button',{name:'Close queue pane',exact:true}).click();
-    const after=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.playback-pane-close').getBoundingClientRect().x}));
+    const after=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.right-sidebar-close').getBoundingClientRect().x}));
     expect(after).toEqual({x:before.x,y:before.y,h:28,closeX:before.closeX});
+    await page.screenshot({path:test.info().outputPath(`single-pane-header-${width}.png`)});
     await sidebar.getByRole('button',{name:'Show queue pane',exact:true}).click();
     await expect(sidebar.locator('.playback-lyrics-heading')).toHaveCSS('height','28px');
     await divider.focus(); await divider.press('Home');

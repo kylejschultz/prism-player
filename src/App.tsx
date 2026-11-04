@@ -6056,18 +6056,20 @@ function RightSidebar({
               title={`Show ${isRadioSession ? "timeline" : "queue"} pane`}
               onClick={() => onTogglePane("queue")}
             >
-              <ChevronDown size={14} /> {isRadioSession ? "Timeline" : "Queue"}
+              <Plus size={14} /> {isRadioSession ? "Timeline" : "Queue"}
             </button>
           ) : null}
-          <button
-            className="icon-button playback-pane-close"
-            type="button"
-            aria-label={`Close ${queueVisible ? isRadioSession ? "timeline" : "queue" : "lyrics"} pane`}
-            title={`Close ${queueVisible ? isRadioSession ? "timeline" : "queue" : "lyrics"} pane`}
-            onClick={() => onTogglePane(queueVisible ? "queue" : "lyrics")}
-          >
-            {queueVisible ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+          {panes === "both" ? (
+            <button
+              className="icon-button playback-pane-close"
+              type="button"
+              aria-label={`Close ${isRadioSession ? "timeline" : "queue"} pane`}
+              title={`Close ${isRadioSession ? "timeline" : "queue"} pane`}
+              onClick={() => onTogglePane("queue")}
+            >
+              <ChevronUp size={14} />
+            </button>
+          ) : null}
           {isRadioSession && tab !== "queue" ? (
             <button className="icon-button" type="button" aria-label="Show timeline" onClick={onShowQueue}><ListMusic size={16} /></button>
           ) : null}
@@ -6270,7 +6272,7 @@ function RightSidebar({
       </div>
       {!lyricsVisible ? (
         <button className="playback-pane-restore playback-pane-restore-bottom" type="button" aria-label="Show lyrics pane" title="Show lyrics pane" onClick={() => onTogglePane("lyrics")}>
-          <ChevronUp size={14} /> Lyrics
+          <Plus size={14} /> Lyrics
         </button>
       ) : null}
       {queueDragGhost ? (
