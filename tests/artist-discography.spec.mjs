@@ -158,3 +158,23 @@ test('artist play and shuffle include more than fifty releases outside the viewp
   expect(new Set((await snapshot(page)).queue.map(s => s.albumId)).size).toBe(55);
   expect(state.errors).toEqual([]);
 });
+
+test('preparation feedback stays visible after starting from a scrolled list row', async ({page}) => {
+  const {state} = await fixture(page, {large:true});
+  await listMode(page);
+  const group = page.locator('.artist-album-group').first();
+  const play = group.getByRole('button', {name:'Play Release 54 Opening', exact:true});
+  await expect(play).toBeVisible();
+  await group.evaluate(el => el.scrollIntoView({block:'start'}));
+  let release; state.hold = new Promise(resolve => {release = resolve;});
+  await play.click();
+  const notice = page.getByRole('status').filter({hasText:'Preparing playback'});
+  await expect(notice).toBeVisible();
+  const bounds = await notice.boundingBox(), panel = await page.locator('.browser-panel').boundingBox();
+  expect(bounds.y).toBeGreaterThanOrEqual(panel.y - 1);
+  expect(bounds.y + bounds.height).toBeLessThan(panel.y + panel.height);
+  await page.screenshot({path:test.info().outputPath('scrolled-preparation.png')});
+  await notice.getByRole('button',{name:'Cancel',exact:true}).click();
+  release();
+  expect((await snapshot(page)).queue.map(s => s.id)).toEqual(['sentinel']);
+});

@@ -8306,3 +8306,14 @@ button.similar-chip:focus-visible {
   padding: 4px 24px 4px 8px;
   font-size: 13px;
 }
+
+.artist-playback-notice {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-shrink: 0;
+}
+.artist-playback-notice .state-notice {
+  margin: 0;
+  background: var(--prism-surface, #17201f);
+}

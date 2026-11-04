@@ -5200,7 +5200,7 @@ export function App() {
             <LibraryView
               artistAlbumOrder={artistAlbumOrder}
               onArtistAlbumOrderChange={changeArtistAlbumOrder}
-              artistPlaybackNotice={artistPlaybackNotice ? <div role="status"><StateNotice
+              artistPlaybackNotice={artistPlaybackNotice ? <div className="artist-playback-notice" role="status"><StateNotice
                 tone={artistPlaybackNotice.loading ? "neutral" : "bad"}
                 icon={artistPlaybackNotice.loading ? <Loader2 size={16} className="spin" /> : <AlertCircle size={16} />}
                 title={artistPlaybackNotice.loading ? "Preparing playback" : "Playback could not start"}
