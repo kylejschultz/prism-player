@@ -3,6 +3,8 @@ name: Discord issue alerts
 on:
   issues:
     types: [opened]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
 permissions: {}
@@ -24,17 +26,30 @@ jobs:
           import urllib.request
           from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
+              event = json.load(source)
+          repository = event["repository"]
+          event_name = os.environ["GITHUB_EVENT_NAME"]
+          if event_name == "issue_comment":
+              # GitHub also emits issue_comment for pull-request conversations.
+              if "pull_request" in event["issue"] or event["comment"]["user"]["id"] == 82205484:
+                  print("Skipping a pull-request comment or a comment from kylejschultz.")
+                  sys.exit(0)
+
           webhook = os.environ.get("DISCORD_ISSUES_WEBHOOK_URL", "")
           if not webhook:
               sys.exit("::error::Configure the DISCORD_ISSUES_WEBHOOK_URL repository secret.")
 
-          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
-              event = json.load(source)
-          repository = event["repository"]
-          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
+          if event_name == "workflow_dispatch":
               title = "Issue alerts test"
-              description = "New issues in this repository will be posted here."
+              description = "New issues and comments from other users will be posted here."
               url = repository["html_url"]
+          elif event_name == "issue_comment":
+              issue = event["issue"]
+              comment = event["comment"]
+              title = f"Comment on #{issue['number']}: {issue['title']}"
+              description = f"Comment by {comment['user']['login']}"
+              url = comment["html_url"]
           else:
               issue = event["issue"]
               title = f"#{issue['number']}: {issue['title']}"
