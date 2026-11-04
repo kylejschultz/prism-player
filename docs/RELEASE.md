@@ -28,7 +28,24 @@ Push the candidate branch and open its PR into `dev`, then run `Build` manually 
 
 Check CI/security on the PR head and confirm all three packaging jobs and checksums complete successfully. Build success does not establish Windows/Linux playback or installation acceptance; smoke-test the installers before promoting the release.
 
-For 1.1.0, the obsolete one-off `release-as: 1.0.0` override has been removed. Feature commits since 1.0.0 should select the next minor version, 1.1.0. Review the generated release PR to confirm that version before merging. Keep package/app versions and the release manifest under release-please control; test builds keep the existing version until that release PR updates it. Curated 1.1 highlights are staged in `src/whatsNew.ts`.
+Keep package/app versions and the release manifest under Release Please control. Development builds keep the existing version until its release PR updates them.
+
+## Curated release content
+
+`src/whatsNew.ts` is the single bundled, versioned source for each release’s `introduction`, `highlights`, and optional `additionalChanges`. Historical entries remain available offline in the app’s welcome dialog and About changelog. This source is also imported directly by the Node 22 release tools; no runtime fetch or duplicate announcement source is needed.
+
+Prepare and review an entry for the intended release version before approving its Release Please version bump. Existing historical entries are preserved; add future content without manually changing package/app versions. Do not use TODO, TBD, empty strings or placeholder notes. Ordinary feature PRs validate the currently declared version, so they do not need to pretend the app is already 1.2.
+
+```sh
+npm run release:check
+npm run release:drafts -- --version 1.1.0 --out /tmp/prism-release-drafts
+```
+
+The checker requires matching versions in package.json, the lockfile (including its root package), Tauri configuration and the Release Please manifest, plus exactly one real curated entry for that version. Release builds additionally check the published tag against that source version. The existing Frontend CI check runs this guard, so a Release Please version bump with missing, empty or placeholder notes fails before it can pass the existing check. The Build workflow repeats the guard on the exact packaging checkout and gates packaging, checksum upload and the release-log notification on success.
+
+Draft generation writes `github.md`, `discord.md` and `unraid.md` locally. GitHub includes the full introduction and both change lists; Discord focuses on the introduction and highlights with a full-release link; Unraid includes the smaller changes in a disclosure. A future version can be drafted before its automated version bump once its curated entry exists. Review wording for the destination before posting. These commands send nothing and never edit Release Please’s generated PR title/body/markers or a published release. The existing automated Discord release log remains separate from these curated announcement drafts.
+
+The previous `title` field is now named `introduction`; its existing text and historical selection/dismissal behavior are unchanged. A preview-only historical alias never satisfies the release guard for a real version.
 
 ## Commit Convention
 

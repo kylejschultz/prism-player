@@ -37,7 +37,32 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
+  release-content:
+    name: Validate release content
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Validate matching notes and source versions
+        env:
+          EXPECTED_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+        run: |
+          if [[ -n "$EXPECTED_VERSION" ]]; then
+            npm run release:check -- --version "$EXPECTED_VERSION"
+          else
+            npm run release:check
+          fi
+
   macos:
+    needs: release-content
     name: macOS DMG
     if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform == 'all' || inputs.platform == 'macos')
     runs-on: macos-latest
@@ -219,6 +244,7 @@ jobs:
           done
 
   windows:
+    needs: release-content
     name: Windows installer
     if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform == 'all' || inputs.platform == 'windows')
     runs-on: windows-latest
@@ -329,6 +355,7 @@ jobs:
           done
 
   linux:
+    needs: release-content
     name: Linux packages
     if: inputs.announce_only != true && (github.event_name == 'release' || inputs.platform == 'all' || inputs.platform == 'linux')
     runs-on: ubuntu-latest
@@ -404,8 +431,8 @@ jobs:
 
   checksums:
     name: Release checksums
-    needs: [macos, windows, linux]
-    if: always() && inputs.announce_only != true && (github.event_name == 'release' || inputs.ref != '' || inputs.source_ref != '')
+    needs: [release-content, macos, windows, linux]
+    if: always() && needs.release-content.result == 'success' && inputs.announce_only != true && (github.event_name == 'release' || inputs.ref != '' || inputs.source_ref != '')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -477,8 +504,8 @@ jobs:
 
   announce-discord:
     name: Discord release announcement
-    needs: [macos, windows, linux, checksums]
-    if: always() && (github.event_name == 'release' || inputs.ref != '') && vars.DISABLE_DISCORD_RELEASE_ANNOUNCEMENT != 'true'
+    needs: [release-content, macos, windows, linux, checksums]
+    if: always() && needs.release-content.result == 'success' && (github.event_name == 'release' || inputs.ref != '') && vars.DISABLE_DISCORD_RELEASE_ANNOUNCEMENT != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

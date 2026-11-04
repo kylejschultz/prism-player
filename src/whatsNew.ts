@@ -2,7 +2,7 @@ export type WhatsNewRelease = {
   version: string;
   displayVersion?: string;
   previewForVersion?: string;
-  title: string;
+  introduction: string;
   highlights: string[];
   additionalChanges?: string[];
 };
@@ -21,7 +21,7 @@ const prismOneHighlights = [
 export const WHATS_NEW_RELEASES: WhatsNewRelease[] = [
   {
     version: "1.1.0",
-    title: "A new look, lyrics that follow along, and more room for your music. Welcome to Prism 1.1!",
+    introduction: "A new look, lyrics that follow along, and more room for your music. Welcome to Prism 1.1!",
     highlights: [
       "Meet the new Prism. A full visual refresh, with our new Facet logo, fresh colors, updated typography, and cleaner glass surfaces throughout.",
       "Follow every line. Synced lyrics keep the current line centered and easy to read, with distant lines softly blurred. Available for your library and supported Subwave stations when they supply timed lyrics; plain lyrics still work too.",
@@ -40,8 +40,8 @@ export const WHATS_NEW_RELEASES: WhatsNewRelease[] = [
   },
   // The manual dev build still identifies as 0.5.0. Keeping this preview entry
   // lets the final cross-platform smoke test exercise the exact 1.0 copy.
-  { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
-  { version: "1.0.0", title: "What’s New in Prism 1.0", highlights: prismOneHighlights },
+  { version: "0.5.0", displayVersion: "1.0", previewForVersion: "1.0.0", introduction: "What’s New in Prism 1.0", highlights: prismOneHighlights },
+  { version: "1.0.0", introduction: "What’s New in Prism 1.0", highlights: prismOneHighlights },
 ];
 
 function versionParts(version: string) {
