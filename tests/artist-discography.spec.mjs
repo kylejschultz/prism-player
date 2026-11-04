@@ -6,18 +6,23 @@ const artist = { id: 'chronicle', name: 'The Daybreak Archive' };
 const releases = [
   { id: 'new', name: 'Afterlight', year: 2024 },
   { id: 'old', name: 'First Light', year: 2001 },
-  { id: 'guest', name: 'Shared Horizon', year: 2010, artistId: 'other', artist: 'Other Ensemble' },
+  { id: 'guest', name: 'Shared Horizon', year: 2010, artistId: 'joint', artist: 'The Daybreak Archive & Other Ensemble', albumArtists:[artist,{id:'other',name:'Other Ensemble'}] },
+  { id: 'appearance', name: 'Other Horizons', year: 2030, artistId:'other',artist:'Other Ensemble',albumArtists:[{id:'other',name:'Other Ensemble'}] },
+  { id: 'compilation', name: 'Collected Voices', year: 1990, artistId:'various',artist:'Various Artists',albumArtists:[{id:'various',name:'Various Artists'}] },
   { id: 'unknown', name: 'Undated Sessions' },
 ].map(a => ({artistId: artist.id, artist: artist.name, songCount: 3, ...a}));
-const tracks = album => [
+const tracks = album => ['appearance','compilation'].includes(album.id) ? [
+  {id:album.id+'-unrelated',title:album.name+' Solo',albumId:album.id,artistId:'other',artist:'Other Ensemble',artists:[{id:'other',name:'Other Ensemble'}],duration:120,track:1},
+  {id:album.id+'-feature',title:album.name+' Feature',albumId:album.id,artistId:'other',artist:'Other Ensemble',artists:[{id:'other',name:'Other Ensemble'},artist],duration:120,track:2},
+] : [
   {id: album.id + '-3', title: album.name + ' Finale', discNumber: 2, track: 1},
   {id: 'shared-recording', title: album.name + ' Return', discNumber: 1, track: 2},
   {id: album.id + '-1', title: album.name + ' Opening', discNumber: 1, track: 1},
 ].map(s => ({artist: artist.name, artistId: artist.id, albumId: album.id, album: album.name, duration: 120, ...s}));
 const sentinel = {id: 'sentinel', title: 'Existing listening', duration: 120};
 
-async function fixture(page, {large = false} = {}) {
-  const albums = large ? Array.from({length: 55}, (_, i) => ({id: 'release-' + i, name: 'Release ' + String(i).padStart(2, '0'), year: 1950 + i, songCount: 3, artist: artist.name, artistId: artist.id})) : releases;
+async function fixture(page, {large = false, appearancesOnly = false} = {}) {
+  const albums = large ? Array.from({length: 55}, (_, i) => ({id: 'release-' + i, name: 'Release ' + String(i).padStart(2, '0'), year: 1950 + i, songCount: 3, artist: artist.name, artistId: artist.id})) : appearancesOnly ? releases.filter(album => ['appearance','compilation'].includes(album.id)) : releases;
   const state = { fail: false, hold: null, requests: [], errors: [] };
   page.on('pageerror', e => state.errors.push(e.message));
   await page.addInitScript(({version, sentinel}) => {
@@ -64,16 +69,21 @@ async function fixture(page, {large = false} = {}) {
   await expect(page.getByRole('combobox', {name: 'Release order'})).toBeVisible();
   return {state, albums};
 }
-async function snapshot(page) {return page.evaluate(() => JSON.parse(localStorage.getItem('prism-player.playbackState')));}
+// Flush through the app's unload handler: normal position snapshots are throttled
+// when the same recording remains selected across different queue orders.
+async function snapshot(page) {return page.evaluate(() => {
+  window.dispatchEvent(new Event('beforeunload'));
+  return JSON.parse(localStorage.getItem('prism-player.playbackState'));
+});}
 async function listMode(page) {await page.locator('[aria-label="Artist album view"]').getByRole('button', {name: 'List', exact: true}).click();}
 async function playArtist(page) {await page.locator('.artist-hero .detail-actions').getByRole('button', {name: 'Play', exact: true}).click();}
 
 test('both release orders build the displayed full queue and select a clicked occurrence across albums', async ({page}) => {
   const {state} = await fixture(page);
   await listMode(page);
-  expect(await page.locator('.artist-album-group').evaluateAll(nodes => nodes.map(n => n.dataset.contextId))).toEqual(['new','guest','old','unknown']);
+  expect(await page.locator('.artist-discography-list').first().locator('.artist-album-group').evaluateAll(nodes => nodes.map(n => n.dataset.contextId))).toEqual(['new','guest','old','unknown']);
   await page.getByRole('combobox', {name: 'Release order'}).selectOption('oldest');
-  expect(await page.locator('.artist-album-group').evaluateAll(nodes => nodes.map(n => n.dataset.contextId))).toEqual(['old','guest','new','unknown']);
+  expect(await page.locator('.artist-discography-list').first().locator('.artist-album-group').evaluateAll(nodes => nodes.map(n => n.dataset.contextId))).toEqual(['old','guest','new','unknown']);
   await expect(page.locator('.artist-latest-release')).toContainText('Afterlight');
   const group = page.locator('[data-context-id="old"].artist-album-group');
   await group.getByRole('button', {name: 'Play First Light Finale', exact: true}).click();
@@ -125,7 +135,7 @@ for (const intent of ['cancel', 'artist', 'track', 'sort', 'disconnect']) test(`
   let release; state.hold = new Promise(resolve => {release = resolve;});
   await playArtist(page);
   await expect(page.getByText('Preparing playback',{exact:true})).toBeVisible();
-  await expect.poll(() => state.requests.length).toBe(4);
+  await expect.poll(() => state.requests.filter(id => !['appearance','compilation'].includes(id)).length).toBe(4);
   if (intent === 'cancel') await page.getByRole('button',{name:'Cancel',exact:true}).click();
   if (intent === 'artist') {
     await page.locator('.sidebar').getByRole('button',{name:'Artists',exact:true}).click();
@@ -177,4 +187,61 @@ test('preparation feedback stays visible after starting from a scrolled list row
   await notice.getByRole('button',{name:'Cancel',exact:true}).click();
   release();
   expect((await snapshot(page)).queue.map(s => s.id)).toEqual(['sentinel']);
+});
+
+
+test('guest-only releases stay separate and never enter main artist Play or Shuffle', async ({page}) => {
+  const {state} = await fixture(page);
+  await expect(page.locator('.artist-hero .detail-stats')).toContainText('4 albums');
+  await expect(page.locator('.artist-hero .detail-stats')).toContainText('2001-2024');
+  await expect(page.locator('.artist-latest-release')).toContainText('Afterlight');
+  const appearances = page.locator('.artist-appearances');
+  await expect(appearances.getByRole('heading',{name:'Appears on',exact:true})).toBeVisible();
+  // Only credited tracks appear even though complete guest albums are returned.
+  await appearances.locator('[data-context-id="appearance"]').scrollIntoViewIfNeeded();
+  await expect(appearances.getByRole('button',{name:'Play Other Horizons Feature',exact:true})).toBeVisible();
+  await expect(appearances.getByRole('button',{name:'Play Other Horizons Solo',exact:true})).toHaveCount(0);
+  for (const order of ['newest','oldest']) {
+    await page.getByRole('combobox',{name:'Release order'}).selectOption(order);
+    await playArtist(page);
+    await expect.poll(async () => (await snapshot(page)).queue.length).toBe(12);
+    expect((await snapshot(page)).queue.some(song => ['appearance','compilation'].includes(song.albumId))).toBe(false);
+    await page.locator('.artist-hero .detail-actions').getByRole('button',{name:'Shuffle',exact:true}).click();
+    await expect.poll(async () => (await snapshot(page)).queue.length).toBe(12);
+    expect((await snapshot(page)).queue.some(song => ['appearance','compilation'].includes(song.albumId))).toBe(false);
+  }
+  await listMode(page);
+  const main = page.locator('.artist-discography-list').first();
+  expect(await main.locator('.artist-album-group').evaluateAll(nodes=>nodes.map(n=>n.dataset.contextId))).toEqual(['old','guest','new','unknown']);
+  await page.getByRole('combobox',{name:'Release order'}).selectOption('newest');
+  await appearances.getByRole('button',{name:'Play appearances',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-feature','compilation-feature']);
+  await appearances.getByRole('button',{name:'Play Collected Voices Feature',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).currentIndex).toBe(1);
+  await appearances.getByRole('button',{name:'Shuffle appearances',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.length).toBe(2);
+  expect((await snapshot(page)).queue.map(s=>s.id).sort()).toEqual(['appearance-feature','compilation-feature']);
+  await page.getByRole('combobox',{name:'Release order'}).selectOption('oldest');
+  await appearances.getByRole('button',{name:'Play appearances',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['compilation-feature','appearance-feature']);
+  await appearances.getByRole('button',{name:'Play appearances from Other Horizons',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-feature']);
+  await appearances.screenshot({path:test.info().outputPath('appears-on.png')});
+  await appearances.getByRole('button',{name:/Other Horizons.*featured track/}).click();
+  await page.locator('.album-detail-page .detail-actions').getByRole('button',{name:'Play',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.length).toBe(2);
+  expect((await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-unrelated','appearance-feature']);
+  expect(state.errors).toEqual([]);
+});
+
+
+test('an artist with only appearances cannot start main playback but can play featured tracks', async ({page}) => {
+  await fixture(page,{appearancesOnly:true});
+  await expect(page.locator('.artist-hero .detail-stats')).toContainText('0 albums');
+  await expect(page.locator('.artist-hero .detail-actions').getByRole('button',{name:'Play',exact:true})).toBeDisabled();
+  await expect(page.locator('.artist-hero .detail-actions').getByRole('button',{name:'Shuffle',exact:true})).toBeDisabled();
+  await expect(page.locator('.artist-hero .cover-play-button')).toBeDisabled();
+  await expect(page.locator('.artist-latest-release')).toHaveCount(0);
+  await page.getByRole('button',{name:'Play appearances',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-feature','compilation-feature']);
 });

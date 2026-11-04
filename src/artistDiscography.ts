@@ -1,5 +1,6 @@
 import type { Album, AlbumDetail, Song } from "./App";
 
+export type ArtistPlaybackScope = "albums" | "appearances";
 export type ArtistAlbumOrder = "newest" | "oldest";
 export type DiscographyStart = { albumId: string; songId: string; trackIndex: number };
 
@@ -29,6 +30,7 @@ export async function loadArtistDiscography(
   loadAlbum: (id: string) => Promise<AlbumDetail>,
   isCurrent: () => boolean,
   start?: DiscographyStart,
+  includeSong: (song: Song) => boolean = () => true,
 ) {
   const songs: Song[] = [];
   let startIndex = start ? -1 : 0;
@@ -38,7 +40,7 @@ export async function loadArtistDiscography(
     const details = await Promise.all(batch.map(album => loadAlbum(album.id)));
     if (!isCurrent()) return null;
     details.forEach((detail, index) => {
-      const albumSongs = sortAlbumSongs(detail.song ?? []);
+      const albumSongs = sortAlbumSongs((detail.song ?? []).filter(includeSong));
       if (start?.albumId === batch[index].id) {
         if (albumSongs[start.trackIndex]?.id !== start.songId) throw new Error("The album changed. Choose the track again.");
         startIndex = songs.length + start.trackIndex;

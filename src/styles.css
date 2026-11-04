@@ -8317,3 +8317,11 @@ button.similar-chip:focus-visible {
   margin: 0;
   background: var(--prism-surface, #17201f);
 }
+
+.artist-appearances {
+  margin-top: 36px;
+}
+.artist-appearances > .section-label {
+  flex-wrap: wrap;
+  gap: 12px;
+}

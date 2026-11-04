@@ -45,3 +45,18 @@ test('missing or changed clicked occurrence and empty discography fail instead o
   await assert.rejects(loadArtistDiscography(albums, load, () => true, {albumId: 'a', songId: 'other', trackIndex: 0}), /album changed/);
   await assert.rejects(loadArtistDiscography([], load, () => true), /No tracks/);
 });
+
+
+test('appearance loading filters every album before ordering and selects the filtered occurrence', async () => {
+  const releases = [{id:'guest-a'}, {id:'guest-b'}];
+  const load = async id => ({song:[
+    {id:id+'-solo',title:'Unrelated',track:1},
+    {id:'same-recording',title:'Guest track',track:3,artistId:'guest'},
+    {id:id+'-guest',title:'First appearance',track:2,artistId:'guest'},
+  ]});
+  const result = await loadArtistDiscography(releases, load, () => true,
+    {albumId:'guest-b',songId:'same-recording',trackIndex:1}, song => song.artistId === 'guest');
+  assert.deepEqual(result.songs.map(song=>song.id), ['guest-a-guest','same-recording','guest-b-guest','same-recording']);
+  assert.equal(result.startIndex,3);
+  await assert.rejects(loadArtistDiscography(releases, load, () => true, undefined, () => false), /No tracks/);
+});

@@ -11,8 +11,8 @@ import { isFlac } from "./flacCompatibility";
 import { useFlacCompatibility } from "./useFlacCompatibility";
 import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
-import { sortArtistAlbums, sortAlbumSongs, loadArtistDiscography, type ArtistAlbumOrder, type DiscographyStart } from "./artistDiscography";
-import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
+import { sortArtistAlbums, sortAlbumSongs, loadArtistDiscography, type ArtistAlbumOrder, type ArtistPlaybackScope, type DiscographyStart } from "./artistDiscography";
+import { matchesArtist, matchesTrackArtist, getArtistAlbums, getArtistAppearances, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
 import type { ComponentProps, CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -3172,21 +3172,25 @@ export function App() {
     }
   }
 
-  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false, start?: DiscographyStart) {
+  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false, start?: DiscographyStart, scope: ArtistPlaybackScope = "albums") {
     if (!config) return;
     const requestId = ++artistPlaybackRequestRef.current;
     const isCurrent = () => requestId === artistPlaybackRequestRef.current;
-    artistPlaybackRetryRef.current = () => { void playArtist(artist, shuffleTracks, start); };
-    setArtistPlaybackNotice({ loading: true, message: `Preparing ${artist.name}’s discography…` });
+    artistPlaybackRetryRef.current = () => { void playArtist(artist, shuffleTracks, start, scope); };
+    setArtistPlaybackNotice({ loading: true, message: `Preparing ${artist.name}’s ${scope === "appearances" ? "appearances" : "discography"}…` });
     try {
       const artistDetail = "album" in artist ? artist : await loadArtistDetail(config, artist.id);
       if (!isCurrent()) return;
-      const albums = sortArtistAlbums(getArtistAlbums(artistDetail, libraryData.albums, songLibrary), artistAlbumOrder);
-      const result = await loadArtistDiscography(albums, id => loadAlbumDetail(config, id), isCurrent, start);
+      const releases = scope === "appearances"
+        ? getArtistAppearances(artistDetail, libraryData.albums, songLibrary)
+        : getArtistAlbums(artistDetail, libraryData.albums);
+      const albums = sortArtistAlbums(releases, artistAlbumOrder);
+      const result = await loadArtistDiscography(albums, id => loadAlbumDetail(config, id), isCurrent, start,
+        scope === "appearances" ? song => matchesTrackArtist(song, artistDetail) : undefined);
       if (!result || !isCurrent()) return;
       replaceQueue(shuffleTracks ? shuffled(result.songs) : result.songs, shuffleTracks ? 0 : result.startIndex);
     } catch (error) {
-      if (isCurrent()) setArtistPlaybackNotice({ loading: false, message: `Could not prepare discography. ${getErrorMessage(error)}` });
+      if (isCurrent()) setArtistPlaybackNotice({ loading: false, message: `Could not prepare ${scope === "appearances" ? "appearances" : "discography"}. ${getErrorMessage(error)}` });
     }
   }
 
@@ -5266,7 +5270,7 @@ export function App() {
               onOpenArtist={(artist) => void openArtist(artist)}
               onOpenPlaylist={openPlaylist}
               onPlayAlbum={(album) => void playAlbum(album)}
-              onPlayArtist={(artist, shuffleTracks, start) => void playArtist(artist, shuffleTracks, start)}
+              onPlayArtist={(artist, shuffleTracks, start, scope) => void playArtist(artist, shuffleTracks, start, scope)}
               onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
               onSavePlaylistDetails={savePlaylistDetails}
               onDeletePlaylist={deletePlaylistAndReturn}
@@ -7610,7 +7614,7 @@ function LibraryView({
   onOpenArtist: (artist: Artist) => void;
   onOpenPlaylist: (playlist: Playlist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart, scope?: ArtistPlaybackScope) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -10243,9 +10247,10 @@ function ArtistOptions({
 
 // Album tracks must not depend on completion of the optional full-library sync.
 function ArtistDiscographyAlbum({
-  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue, onPlayTrack,
+  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue, onPlayTrack, appearancesOnly = false,
   currentTrack, favoriteIds, favoriteBusyKey, onToggleFavorite, onOpenArtist, onSongContextMenu,
 }: Pick<ComponentProps<typeof TrackList>, "currentTrack" | "favoriteIds" | "favoriteBusyKey" | "onToggleFavorite" | "onOpenArtist" | "onSongContextMenu"> & {
+  appearancesOnly?: boolean;
   album: Album;
   artist: Artist;
   config: NavidromeConfig | null;
@@ -10274,11 +10279,13 @@ function ArtistDiscographyAlbum({
     queryFn: () => navidromeClient.album(config!, album.id),
     enabled: Boolean(config) && nearViewport,
   });
-  const albumSongs = sortAlbumSongs(tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
+  const releaseSongs = tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
     song.albumId === album.id ||
     (!song.albumId && song.album === album.name && (song.artistId === artist.id || song.artist === artist.name)),
-  ));
+  );
+  const albumSongs = sortAlbumSongs(appearancesOnly ? releaseSongs.filter(song => matchesTrackArtist(song, artist)) : releaseSongs);
   const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+  if (appearancesOnly && tracks.isSuccess && !albumSongs.length) return null;
   return (
     <section className="artist-album-group" ref={groupRef} data-context-kind="album" data-context-id={album.id}>
       <div className="artist-album-heading">
@@ -10286,14 +10293,17 @@ function ArtistDiscographyAlbum({
           <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
           <span>
             <strong>{album.name}</strong>
-            <small>{[album.year, albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
+            <small>{[album.year, appearancesOnly
+              ? tracks.isSuccess ? `${albumSongs.length} featured track${albumSongs.length === 1 ? "" : "s"}` : "Loading appearances…"
+              : albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
           </span>
         </button>
         <button
           className="track-play"
           type="button"
-          onClick={() => albumSongs.length ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
-          aria-label={"Play " + album.name}
+          disabled={appearancesOnly && (!tracks.isSuccess || !albumSongs.length)}
+          onClick={() => appearancesOnly ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
+          aria-label={appearancesOnly ? `Play appearances from ${album.name}` : `Play ${album.name}`}
         >
           <Play size={15} strokeWidth={1.6} />
         </button>
@@ -10372,7 +10382,7 @@ function DetailPanel({
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart) => void;
+  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart, scope?: ArtistPlaybackScope) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -10401,7 +10411,8 @@ function DetailPanel({
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
-    const artistAlbums = sortArtistAlbums(getArtistAlbums(artist, albums, librarySongs), artistAlbumOrder);
+    const artistAlbums = sortArtistAlbums(getArtistAlbums(artist, albums), artistAlbumOrder);
+    const appearances = sortArtistAlbums(getArtistAppearances(artist, albums, librarySongs), artistAlbumOrder);
     const artistInfo = artist.info;
     const artistImage = getArtistImageUrl(artistInfo);
     const serverArtistCover = config ? buildCoverArtUrl(config, artist.coverArt, "420") : null;
@@ -10421,7 +10432,7 @@ function DetailPanel({
       <section className={`detail-panel detail-page artist-detail-page ${albumViewMode === "list" ? "artist-list-mode" : ""}`}>
         <div className="album-hero detail-page-hero artist-hero">
           <div className="detail-artwork-stage">
-            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
+            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" disabled={!artistAlbums.length} rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
           </div>
           <div className="detail-hero-copy">
             <p className="detail-type-label">Artist</p>
@@ -10541,6 +10552,7 @@ function DetailPanel({
             onOpenAlbum={onOpenAlbum}
             onPlayAlbum={onPlayAlbum}
             withAlphabetRail={false}
+            emptyText="No albums credited to this artist."
           />
         ) : (
           <div className="artist-discography-list">
@@ -10565,6 +10577,46 @@ function DetailPanel({
             ))}
           </div>
         )}
+        {appearances.length ? (
+          <section className="artist-appearances" aria-labelledby="artist-appearances-heading">
+            <div className="section-label">
+              <div>
+                <h4 id="artist-appearances-heading">Appears on</h4>
+                <small>Featured tracks on other artists’ releases</small>
+              </div>
+              <div className="artist-discography-controls">
+                <button className="secondary-button compact-button" type="button" onClick={() => onPlayArtist(artist, false, undefined, "appearances")}>
+                  <Play size={14} fill="currentColor" /> Play appearances
+                </button>
+                <button className="secondary-button compact-button" type="button" onClick={() => onPlayArtist(artist, true, undefined, "appearances")}>
+                  <Shuffle size={14} /> Shuffle appearances
+                </button>
+              </div>
+            </div>
+            <div className="artist-discography-list">
+              {appearances.map(album => (
+                <ArtistDiscographyAlbum
+                  key={album.id}
+                  appearancesOnly
+                  album={album}
+                  artist={artist}
+                  config={config}
+                  librarySongs={librarySongs}
+                  currentTrack={currentTrack}
+                  favoriteIds={favoriteIds}
+                  favoriteBusyKey={favoriteBusyKey}
+                  onToggleFavorite={onToggleFavorite}
+                  onOpenArtist={onOpenArtist}
+                  onOpenAlbum={onOpenAlbum}
+                  onPlayAlbum={onPlayAlbum}
+                  onReplaceQueue={onReplaceQueue}
+                  onPlayTrack={start => onPlayArtist(artist, false, start, "appearances")}
+                  onSongContextMenu={onSongContextMenu}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
     );
   }
