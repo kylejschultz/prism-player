@@ -1403,8 +1403,10 @@ test('playback divider resizes by pointer and keyboard, persists, and protects b
     await page.setViewportSize({ width, height });
     for (const key of ['Home', 'End']) {
       await divider.focus(); await page.keyboard.press(key);
-      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(139);
-      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(219);
+      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(95);
+      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(111);
+      if (key === 'Home') await expect.poll(async () => (await upper.boundingBox()).height).toBeLessThan(110);
+      if (key === 'End') await expect.poll(async () => (await lower.boundingBox()).height).toBeLessThan(125);
       const top = await upper.boundingBox(), bottom = await lower.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
       expect(top.y + top.height).toBeLessThan(bottom.y);
       expect(bottom.y + bottom.height).toBeLessThanOrEqual(footer.y);
@@ -1469,7 +1471,7 @@ test('radio timeline switches newest-first history and upcoming while On air and
   await page.setViewportSize({ width: 980, height: 640 });
   await sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true }).focus();
   await page.keyboard.press('Home');
-  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(199);
+  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(159);
   await scroll.focus(); await page.keyboard.press('Home');
   await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
   await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
@@ -1572,5 +1574,268 @@ test('returning users can read grouped release notes in short windows and About 
   await expect(current.getByText('Also in this update', { exact: true })).toBeVisible();
   const previous = page.locator('.about-changelog article').filter({ has: page.getByRole('heading', { name: 'Prism 1.0.0', exact: true }) });
   await expect(previous.getByText('The highlights', { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+
+for (const lastPane of ['lyrics', 'queue']) {
+  test(`closing the last ${lastPane} pane closes the sidebar and reopening restores only it`, async ({ page }) => {
+    const { errors } = await fixture(page);
+    const sidebar = page.locator('#playback-sidebar');
+    const footerToggle = page.getByRole('group', { name: 'Player panels' }).getByRole('button');
+    await footerToggle.click();
+    const firstPane = lastPane === 'lyrics' ? 'queue' : 'lyrics';
+    await sidebar.getByRole('button', { name: `Close ${firstPane} pane`, exact: true }).click();
+    const last = sidebar.locator(lastPane === 'lyrics' ? '.playback-lyrics-section' : '.queue-panel-section');
+    const hidden = sidebar.locator(firstPane === 'lyrics' ? '.playback-lyrics-section' : '.queue-panel-section');
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeHidden();
+    await expect(sidebar.getByRole('separator', { name: 'Resize playback panes', includeHidden: true })).toBeHidden();
+    const available = await sidebar.locator('.playback-sidebar-panes').boundingBox();
+    const filled = await last.boundingBox();
+    expect(Math.abs(available.height - filled.height)).toBeLessThan(2);
+    const close = sidebar.getByRole('button', { name: `Close ${lastPane} pane`, exact: true });
+    await close.focus();
+    await page.keyboard.press('Enter');
+    await expect(sidebar).toHaveCount(0);
+    await expect(footerToggle).toBeFocused();
+    await page.reload();
+    await expect(sidebar).toHaveCount(0);
+    await footerToggle.click();
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeHidden();
+    await page.reload();
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeHidden();
+    await sidebar.getByRole('button', { name: `Show ${firstPane} pane`, exact: true }).focus();
+    await page.keyboard.press('Space');
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeVisible();
+    await footerToggle.click();
+    await expect(sidebar).toHaveCount(0);
+    await footerToggle.click();
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeVisible();
+    await sidebar.getByRole('button', { name: `Close ${lastPane} pane`, exact: true }).focus();
+    await page.keyboard.press('Escape');
+    await expect(sidebar).toHaveCount(0);
+    await expect(footerToggle).toBeFocused();
+    expect(errors).toEqual([]);
+  });
+}
+
+test('pane controls preserve the split, queue and centered lyrics without reloading them', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  const { requests, errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 24 }, (_, i) => ({ start: i * 4000, value: `Verse ${i}: keep the melody beside you` })) }] });
+  await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+  const sidebar = page.locator('#playback-sidebar');
+  const lyrics = sidebar.locator('.playback-lyrics-section');
+  const lines = lyrics.locator('.lyrics-lines');
+  const divider = sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true });
+  await expect(lines.locator('p')).toHaveCount(24);
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('36');
+  await expect(lines.locator('p.active')).toContainText('Verse 9:');
+  await divider.focus();
+  await divider.press('ArrowDown');
+  const savedSplit = await divider.getAttribute('aria-valuenow');
+  const trackTitle = await page.locator('.player-bar .track-title').textContent();
+  const queueBefore = await sidebar.locator('.queue-track strong').allTextContents();
+  for (const [width, height] of [[980, 640], [1440, 900], [1440, 1200]]) {
+    await page.setViewportSize({ width, height });
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    await expectCenteredLyric(lines);
+    await expect(lines.locator('p.active')).toContainText('Verse 9:');
+    await page.screenshot({ path: test.info().outputPath(`lyrics-only-${width}-${height}.png`) });
+    await sidebar.getByRole('button', { name: 'Show queue pane', exact: true }).click();
+    await expectCenteredLyric(lines);
+    await sidebar.getByRole('button', { name: 'Close lyrics pane', exact: true }).click();
+    await expect(lyrics).toBeHidden();
+    await expect(sidebar.locator('.queue-track strong')).toHaveText(queueBefore);
+    await page.screenshot({ path: test.info().outputPath(`queue-only-${width}-${height}.png`) });
+    await sidebar.getByRole('button', { name: 'Show lyrics pane', exact: true }).click();
+    await expectCenteredLyric(lines);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(divider).toHaveAttribute('aria-valuenow', savedSplit);
+  await sidebar.getByRole('separator', { name: 'Resize right sidebar', exact: true }).press('Home');
+  await page.setViewportSize({ width: 980, height: 640 });
+  const header = sidebar.locator('.right-sidebar-heading');
+  expect(await header.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('both-panes-minimum.png') });
+  await expect(page.locator('.player-bar .track-title')).toHaveText(trackTitle);
+  expect(requests.filter(request => request === 'getLyricsBySongId')).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test('radio tools reveal a hidden timeline pane without restarting lyrics', async ({ page }) => {
+  const { requests, errors } = await fixture(page, { lyricsEnabled: true, lyricsResponse: { songId: 'heard', synced: true, offsetMs: 0, lines: [{ text: 'On air verse', startMs: 0 }, { text: 'Next verse', startMs: 60000 }] } });
+  const sidebar = await radioLyrics(page);
+  const lines = sidebar.locator('.lyrics-lines');
+  await expect(lines.locator('p')).toHaveCount(2);
+  for (const [control, title] of [['Show radio schedule', 'Schedule'], ['Request a song', 'Request'], ['Show booth feed', 'Booth Feed']]) {
+    await sidebar.getByRole('button', { name: 'Close timeline pane', exact: true }).click();
+    await expect(sidebar.locator('.queue-panel-section, .radio-sidebar-content')).toBeHidden();
+    await expect(page.getByRole('button', { name: control, exact: true })).toHaveAttribute('aria-expanded', 'false');
+    await page.getByRole('button', { name: control, exact: true }).click();
+    await expect(sidebar.locator('.right-sidebar-heading h3')).toHaveText(title);
+    await expect(sidebar.locator('.radio-sidebar-content')).toBeVisible();
+    await expect(page.getByRole('button', { name: control, exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(lines.locator('p')).toHaveCount(2);
+    if (title === 'Request') await sidebar.getByRole('button', { name: 'Cancel', exact: true }).click();
+    else await sidebar.getByRole('button', { name: 'Show timeline', exact: true }).click();
+  }
+  await sidebar.getByRole('button', { name: 'Close lyrics pane', exact: true }).click();
+  await expect(lines).toBeHidden();
+  await expect(sidebar.getByRole('group', { name: 'On air', exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-only.png') });
+  await sidebar.getByRole('button', { name: 'Show lyrics pane', exact: true }).click();
+  expect(requests.filter(request => request === 'radio-lyrics:heard')).toHaveLength(1);
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  await expect(sidebar.getByRole('button', { name: 'Close queue pane', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+
+for (const mode of ['plain', 'loading', 'missing']) {
+  test(`lyrics-only pane preserves ${mode} lyrics within a short window`, async ({ page }) => {
+    let finish;
+    const holdLocalLyrics = mode === 'loading' ? new Promise(resolve => { finish = resolve; }) : undefined;
+    const { errors } = await fixture(page, {
+      holdLocalLyrics,
+      localLyrics: mode === 'plain' ? [{ synced: false, line: Array.from({ length: 40 }, (_, i) => ({ value: `Untimed line ${i}` })) }] : [],
+      legacyLyrics: '',
+    });
+    await page.setViewportSize({ width: 980, height: 640 });
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar = page.locator('#playback-sidebar');
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    const lyrics = sidebar.locator('.playback-lyrics-section');
+    if (mode === 'plain') {
+      const lines = lyrics.locator('.lyrics-lines');
+      await expect(lines.locator('p.plain')).toHaveCount(40);
+      await lines.evaluate(node => { node.scrollTop = 160; });
+      await sidebar.getByRole('button', { name: 'Show queue pane', exact: true }).click();
+      await sidebar.getByRole('button', { name: 'Close lyrics pane', exact: true }).click();
+      await sidebar.getByRole('button', { name: 'Show lyrics pane', exact: true }).click();
+      await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+      expect(await lines.evaluate(node => node.scrollTop)).toBe(160);
+    } else {
+      await expect(lyrics).toContainText(mode === 'loading' ? 'Loading lyrics' : 'No lyrics found');
+      const empty = await lyrics.locator('.empty-panel').boundingBox();
+      const pane = await lyrics.boundingBox();
+      expect(empty.y + empty.height).toBeLessThanOrEqual(pane.y + pane.height + 1);
+    }
+    const pane = await lyrics.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
+    expect(pane.y + pane.height).toBeLessThanOrEqual(footer.y);
+    await page.screenshot({ path: test.info().outputPath(`lyrics-only-${mode}.png`) });
+    if (finish) {
+      finish();
+      await expect(lyrics).toContainText('No lyrics found');
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+
+for (const [tone, colors] of [['bright', ['#f5df60', '#df6a74']], ['dark', ['#16272d', '#283e50']]]) {
+  test(`player bar shares the artwork wash with ${tone} covers while controls stay readable`, async ({ page }) => {
+    const { errors } = await fixture(page, { artwork: true });
+    await page.route('**/rest/getCoverArt*', route => route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="300" height="600" fill="${colors[0]}"/><rect x="300" width="300" height="600" fill="${colors[1]}"/></svg>` }));
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    const bar = page.locator('.player-bar'), wash = page.locator('.cover-wash-backdrop');
+    await expect(wash).toBeVisible();
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar = page.locator('#playback-sidebar');
+    await expect(sidebar.locator('.playback-pane-controls')).toHaveCount(0);
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    const restore = sidebar.getByRole('button', { name: 'Show queue pane', exact: true });
+    await expect(restore).toBeVisible();
+    await expect(sidebar.locator('.right-sidebar-heading').getByRole('button', { name: 'Close lyrics pane', exact: true })).toBeVisible();
+    for (const [width, height] of [[980, 640], [1440, 900]]) {
+      await page.setViewportSize({ width, height });
+      const footer = await bar.boundingBox(), backdrop = await wash.boundingBox();
+      expect(backdrop.y + backdrop.height).toBeGreaterThanOrEqual(footer.y + footer.height - 1);
+      const opacity = await bar.evaluate(node => getComputedStyle(node).opacity);
+      expect(opacity).toBe('1'); // Only the surface is translucent, not its contents.
+      for (const name of ['Pause', 'Close playback sidebar']) {
+        const control = bar.getByRole('button', { name, exact: true });
+        await expect(control).toBeVisible();
+        const bounds = await control.boundingBox();
+        expect(bounds.y).toBeGreaterThanOrEqual(footer.y);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(footer.y + footer.height);
+      }
+      await page.mouse.move(450, 40);
+      await page.screenshot({ path: test.info().outputPath(`player-glass-${tone}-${width}.png`) });
+    }
+    await restore.click();
+    await expect(sidebar.locator('.playback-lyrics-heading').getByRole('button', { name: 'Close lyrics pane', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    expect(errors).toEqual([]);
+  });
+}
+
+
+for (const collapsed of ['queue', 'lyrics']) {
+  test(`dragging the divider to the ${collapsed === 'queue' ? 'top' : 'bottom'} collapses ${collapsed} and preserves the usable split`, async ({ page }) => {
+    await installTimingFixture(page, 120);
+    const { requests, errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 24 }, (_, i) => ({ start: i * 4000, value: `Verse ${i}: beside you` })) }] });
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar=page.locator('#playback-sidebar'), divider=sidebar.getByRole('separator', { name:'Resize playback panes', exact:true });
+    await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(24);
+    await divider.focus(); await divider.press('ArrowDown');
+    const saved=await divider.getAttribute('aria-valuenow');
+    const stored=await page.evaluate(()=>localStorage.getItem('prism-player.playbackSplit'));
+    const grip=await divider.boundingBox(), stack=await sidebar.locator('.playback-sidebar-panes').boundingBox();
+    await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2); await page.mouse.down();
+    await page.mouse.move(grip.x+grip.width/2, collapsed==='queue' ? stack.y+8 : stack.y+stack.height-8,{steps:8});
+    await expect(sidebar.getByRole('status')).toHaveText(`Release to hide ${collapsed === 'queue' ? 'Queue' : 'Lyrics'}`);
+    expect(await page.evaluate(()=>localStorage.getItem('prism-player.playbackSplit'))).toBe(stored);
+    await page.mouse.up();
+    await expect(sidebar.locator(collapsed==='queue'?'.queue-panel-section':'.playback-lyrics-section')).toBeHidden();
+    const restore=sidebar.getByRole('button',{name:`Show ${collapsed} pane`,exact:true});
+    await expect(restore).toBeVisible();
+    await page.screenshot({path:test.info().outputPath(`edge-${collapsed}-collapsed.png`)});
+    await restore.click();
+    await expect(divider).toHaveAttribute('aria-valuenow',saved);
+    await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
+    await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
+    expect(requests.filter(request=>request==='getLyricsBySongId')).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('compact edge headers keep their positions and cancelling edge drag preserves the split', async ({ page }) => {
+  const { errors }=await fixture(page);
+  await page.getByRole('button',{name:'Open playback sidebar',exact:true}).click();
+  const sidebar=page.locator('#playback-sidebar'), divider=sidebar.getByRole('separator',{name:'Resize playback panes',exact:true});
+  await sidebar.getByRole('separator',{name:'Resize right sidebar',exact:true}).press('Home');
+  const header=sidebar.locator('.right-sidebar-heading');
+  let baseline;
+  for (const [width,height] of [[980,640],[1440,900]]) {
+    await page.setViewportSize({width,height});
+    const before=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.playback-pane-close').getBoundingClientRect().x,overflow:el.scrollWidth>el.clientWidth}));
+    expect(before.h).toBe(28); expect(before.overflow).toBe(false);
+    await sidebar.getByRole('button',{name:'Close queue pane',exact:true}).click();
+    const after=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.playback-pane-close').getBoundingClientRect().x}));
+    expect(after).toEqual({x:before.x,y:before.y,h:28,closeX:before.closeX});
+    await sidebar.getByRole('button',{name:'Show queue pane',exact:true}).click();
+    await expect(sidebar.locator('.playback-lyrics-heading')).toHaveCSS('height','28px');
+    await divider.focus(); await divider.press('Home');
+    expect((await sidebar.locator('.queue-panel-section').boundingBox()).height).toBeLessThan(110);
+    await divider.press('End');
+    expect((await sidebar.locator('.playback-lyrics-section').boundingBox()).height).toBeLessThan(125);
+    await page.screenshot({path:test.info().outputPath(`edge-compact-${width}.png`)});
+    baseline=await divider.getAttribute('aria-valuenow');
+  }
+  await divider.evaluate(node=>node.addEventListener('pointerdown',event=>{node.dataset.testPointer=String(event.pointerId)},{once:true}));
+  const grip=await divider.boundingBox(), stack=await sidebar.locator('.playback-sidebar-panes').boundingBox();
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2,stack.y+8,{steps:8});
+  await expect(sidebar.getByRole('status')).toBeVisible();
+  const pointerId=Number(await divider.getAttribute('data-test-pointer'));
+  await divider.dispatchEvent('pointercancel',{pointerId}); await page.mouse.up();
+  await expect(divider).toHaveAttribute('aria-valuenow',baseline);
+  await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
+  await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
   expect(errors).toEqual([]);
 });
