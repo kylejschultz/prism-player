@@ -8292,3 +8292,17 @@ button.similar-chip:focus-visible {
 .playback-lyrics-section.compact .lyrics-panel {
   grid-template-rows: minmax(0, 1fr);
 }
+
+.artist-discography-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.artist-discography-controls select {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 24px 4px 8px;
+  font-size: 13px;
+}
