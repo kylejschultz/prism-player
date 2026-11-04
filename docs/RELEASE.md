@@ -32,16 +32,16 @@ Keep package/app versions and the release manifest under Release Please control.
 
 ## Curated release content
 
-`src/whatsNew.ts` is the single bundled, versioned source for each release’s `introduction`, `highlights`, and optional `additionalChanges`. Historical entries remain available offline in the app’s welcome dialog and About changelog. This source is also imported directly by the Node 22 release tools; no runtime fetch or duplicate announcement source is needed.
+`src/whatsNew.ts` is the single bundled, versioned source for each release’s `introduction`, `highlights`, and optional `additionalChanges`. Historical entries remain available offline in the app’s welcome dialog and About changelog. Prepared future entries stay hidden in the app until its bundled version reaches them. This source is also imported directly by the Node 22 release tools; no runtime fetch or duplicate announcement source is needed.
 
 Prepare and review an entry for the intended release version before approving its Release Please version bump. Existing historical entries are preserved; add future content without manually changing package/app versions. Do not use TODO, TBD, empty strings or placeholder notes. Ordinary feature PRs validate the currently declared version, so they do not need to pretend the app is already 1.2.
 
 ```sh
 npm run release:check
-npm run release:drafts -- --version 1.1.0 --out /tmp/prism-release-drafts
+npm run release:drafts -- --version 1.2.0 --out /tmp/prism-release-drafts
 ```
 
-The checker requires matching versions in package.json, the lockfile (including its root package), Tauri configuration and the Release Please manifest, plus exactly one real curated entry for that version. Release builds additionally check the published tag against that source version. The existing Frontend CI check runs this guard, so a Release Please version bump with missing, empty or placeholder notes fails before it can pass the existing check. The Build workflow repeats the guard on the exact packaging checkout and gates packaging, checksum upload and the release-log notification on success.
+The checker requires matching versions in package.json, the lockfile (including its root package), Tauri configuration and the Release Please manifest, plus exactly one real curated entry for that version. Release builds additionally check the published tag against that source version, including manual published-tag runs. The guard and packaging jobs resolve the same checkout: release event tag, explicit source_ref, published ref, then the workflow ref. The existing Frontend CI check runs this guard, so a Release Please version bump with missing, empty or placeholder notes fails before it can pass the existing check. The Build workflow repeats the guard on the exact packaging checkout and gates packaging, checksum upload and the release-log notification on success.
 
 Draft generation writes `github.md`, `discord.md` and `unraid.md` locally. GitHub includes the full introduction and both change lists; Discord focuses on the introduction and highlights with a full-release link; Unraid includes the smaller changes in a disclosure. A future version can be drafted before its automated version bump once its curated entry exists. Review wording for the destination before posting. These commands send nothing and never edit Release Please’s generated PR title/body/markers or a published release. The existing automated Discord release log remains separate from these curated announcement drafts.
 

@@ -22,8 +22,8 @@ function fixture(t, version = "1.2.0") {
 
 test("a simulated next-version source fails without matching notes and passes with reviewed content", t => {
   const {root} = fixture(t);
-  assert.throws(() => checkReleaseSource(root,WHATS_NEW_RELEASES), /Missing curated release content for 1.2.0.*src\/whatsNew.ts/);
-  assert.equal(checkReleaseSource(root,[...WHATS_NEW_RELEASES,future]).version,"1.2.0");
+  assert.throws(() => checkReleaseSource(root,WHATS_NEW_RELEASES.filter(entry => entry.version !== "1.2.0")), /Missing curated release content for 1.2.0.*src\/whatsNew.ts/);
+  assert.equal(checkReleaseSource(root,[...WHATS_NEW_RELEASES.filter(entry => entry.version !== "1.2.0"),future]).version,"1.2.0");
   assert.equal(checkReleaseSource(root,[future],"v1.2.0").version,"1.2.0");
   assert.throws(() => checkReleaseSource(root,[future,{...future,version:"1.3.0"}],"v1.3.0"), /does not match source metadata/);
 });

@@ -20,6 +20,19 @@ const prismOneHighlights = [
 
 export const WHATS_NEW_RELEASES: WhatsNewRelease[] = [
   {
+    version: "1.2.0",
+    introduction: "More control over your queue and lyrics, clearer artist pages, and easier album track selection.",
+    highlights: [
+      "Make room for your music. Show the queue and lyrics together or individually, resize their split, or drag a pane to the edge to hide it. Prism remembers your layout when you reopen the sidebar.",
+      "Listen through an artist’s albums. Choose oldest-first or newest-first release order, then play from the start or a chosen album. Guest appearances have their own compact section and playback controls, separate from the artist’s main albums.",
+      "Select songs from an album. Click a row, use Command/Ctrl-click to select individual tracks or Shift-click for a range, then add the selected songs to an existing or new playlist.",
+    ],
+    additionalChanges: [
+      "Album covers stay consistent across Home, album pages, the player and playback backgrounds.",
+      "The translucent playback bar shares the app’s artwork tint, with clearer, more compact sidebar controls.",
+    ],
+  },
+  {
     version: "1.1.0",
     introduction: "A new look, lyrics that follow along, and more room for your music. Welcome to Prism 1.1!",
     highlights: [

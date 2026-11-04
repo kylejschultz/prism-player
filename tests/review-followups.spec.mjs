@@ -11,7 +11,7 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false, selectionPlaylist = false, multiDisc = false, distinctArtwork = false, playbackIndex = 0, standalone = false, missingAlbumArtwork = false } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false, selectionPlaylist = false, multiDisc = false, distinctArtwork = false, playbackIndex = 0, standalone = false, missingAlbumArtwork = false, installedVersion = appVersion } = {}) {
   const albums = (largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums).map(album => ({...album, ...(!missingAlbumArtwork && artwork ? {coverArt:distinctArtwork ? `album-${album.id}` : "fixture-cover"} : {})}));
   const songs = (largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs).map((song,index) => ({...song,...(standalone ? {albumId:undefined,album:undefined} : {}),...(distinctArtwork ? {coverArt:`track-${song.id}`} : {}),...(multiDisc ? {discNumber:index % 4 < 2 ? 1 : 2} : {})}));
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
@@ -53,7 +53,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork && !distinctArtwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion, playbackIndex });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork && !distinctArtwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion: installedVersion, playbackIndex });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -124,6 +124,11 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     }[endpoint] || {};
     return route.fulfill({ json: { 'subsonic-response': { status: 'ok', ...payload } } });
   });
+  if (installedVersion !== appVersion) {
+    // The app selects offline notes from bundled package metadata, not the native
+    // bridge version. Simulate a future build without changing repository versions.
+    await page.route('**/package.json?import', route => route.fulfill({contentType:'application/javascript',body:`export default ${JSON.stringify({version:installedVersion})};`}));
+  }
   await page.goto('/');
   return { requests, errors, playlistAdds, playlistCreates };
 }
@@ -1590,6 +1595,7 @@ test('returning users can read grouped release notes in short windows and About 
   await expect(current.getByText('The highlights', { exact: true })).toBeVisible();
   await current.getByText('Also in this update', { exact: true }).scrollIntoViewIfNeeded();
   await expect(current.getByText('Also in this update', { exact: true })).toBeVisible();
+  if (appVersion === '1.1.0') await expect(page.locator('.about-changelog').getByRole('heading',{name:'Prism 1.2.0',exact:true})).toHaveCount(0);
   const previous = page.locator('.about-changelog article').filter({ has: page.getByRole('heading', { name: 'Prism 1.0.0', exact: true }) });
   await expect(previous.getByText('The highlights', { exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -2019,5 +2025,20 @@ test('a standalone track without an album retains its own artwork', async ({page
   const {errors} = await fixture(page, {artwork:true, distinctArtwork:true, standalone:true});
   await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=track-a-0(?:&|$)/);
   await expect(page.locator('.home-resume-cover')).toHaveAttribute('src', /id=track-a-0(?:&|$)/);
+  expect(errors).toEqual([]);
+});
+
+
+test('installed 1.2 uses bundled curated notes and keeps older releases in About', async ({page}) => {
+  const {errors} = await fixture(page, {installedVersion:'1.2.0',unread:true});
+  const notes=page.locator('.whats-new-modal');
+  await expect(notes.getByText('More control over your queue and lyrics, clearer artist pages, and easier album track selection.',{exact:true})).toBeVisible();
+  await expect(notes.getByText('The highlights',{exact:true})).toBeVisible();
+  await expect(notes.getByText('Also in this update',{exact:true})).toBeVisible();
+  await notes.getByRole('button',{name:'Got it',exact:true}).click();
+  await page.locator('.sidebar').getByRole('button',{name:'Settings',exact:true}).click();
+  await page.getByText('Changelog',{exact:true}).click();
+  await expect(page.locator('.about-changelog').getByRole('heading',{name:'Prism 1.2.0',exact:true})).toBeVisible();
+  await expect(page.locator('.about-changelog').getByRole('heading',{name:'Prism 1.1.0',exact:true})).toBeVisible();
   expect(errors).toEqual([]);
 });

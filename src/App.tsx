@@ -6737,7 +6737,7 @@ function SettingsView({
             <summary><History size={15} /> Changelog</summary>
             <div className="about-changelog-list">
             {[...WHATS_NEW_RELEASES]
-              .filter((release) => !release.previewForVersion)
+              .filter((release) => !release.previewForVersion && compareVersions(release.version, APP_VERSION) <= 0)
               .sort((left, right) => compareVersions(right.version, left.version))
               .map((release) => (
                 <article key={release.version}>

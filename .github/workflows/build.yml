@@ -46,14 +46,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || inputs.ref || github.ref }}
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Validate matching notes and source versions
         env:
-          EXPECTED_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          EXPECTED_VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref || '' }}
         run: |
           if [[ -n "$EXPECTED_VERSION" ]]; then
             npm run release:check -- --version "$EXPECTED_VERSION"
@@ -71,7 +71,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || inputs.ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
@@ -259,7 +259,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || inputs.ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
@@ -364,7 +364,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || github.ref }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.source_ref || inputs.ref || github.ref }}
 
       - name: Resolve artifact name
         id: artifact
