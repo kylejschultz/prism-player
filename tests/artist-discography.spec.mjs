@@ -227,7 +227,7 @@ test('guest-only releases stay separate and never enter main artist Play or Shuf
   await appearances.getByRole('button',{name:'Play appearances from Other Horizons',exact:true}).click();
   await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-feature']);
   await appearances.screenshot({path:test.info().outputPath('appears-on.png')});
-  await appearances.getByRole('button',{name:/Other Horizons.*featured track/}).click();
+  await appearances.getByRole('button',{name:'Open Other Horizons',exact:true}).click();
   await page.locator('.album-detail-page .detail-actions').getByRole('button',{name:'Play',exact:true}).click();
   await expect.poll(async () => (await snapshot(page)).queue.length).toBe(2);
   expect((await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-unrelated','appearance-feature']);
@@ -244,4 +244,32 @@ test('an artist with only appearances cannot start main playback but can play fe
   await expect(page.locator('.artist-latest-release')).toHaveCount(0);
   await page.getByRole('button',{name:'Play appearances',exact:true}).click();
   await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['appearance-feature','compilation-feature']);
+});
+
+
+for (const width of [980,1440]) test(`appearance rows stay compact with inline covers at ${width}px`, async ({page}) => {
+  await page.setViewportSize({width,height:900});
+  await fixture(page);
+  await page.getByRole('button',{name:'Open playback sidebar',exact:true}).click();
+  const section = page.locator('.artist-appearances');
+  await section.scrollIntoViewIfNeeded();
+  const rows = section.locator('.appearance-track-row');
+  await expect(rows).toHaveCount(2);
+  await expect(section.locator('.artist-album-heading')).toHaveCount(0);
+  await expect(section.locator('.disc-heading')).toHaveCount(0);
+  for (const row of await rows.all()) {
+    const box=await row.boundingBox(), cover=await row.locator('.appearance-track-cover').boundingBox();
+    expect(box.height).toBeLessThanOrEqual(44);
+    expect(cover.width).toBe(32);
+    expect(cover.height).toBe(32);
+    const title=await row.locator('.track-name').boundingBox(), credit=await row.locator('.track-artist').boundingBox();
+    expect(Math.abs((title.y+title.height/2)-(credit.y+credit.height/2))).toBeLessThan(2);
+    expect(await row.evaluate(el=>el.scrollWidth <= el.clientWidth)).toBe(true);
+  }
+  const first=await rows.first().boundingBox(),last=await rows.last().boundingBox();
+  expect(last.y+last.height-first.y).toBeLessThanOrEqual(90);
+  await rows.first().getByRole('button',{name:'Play Other Horizons Feature',exact:true}).focus();
+  await page.keyboard.press('Space');
+  await expect.poll(async () => (await snapshot(page)).queue.map(song=>song.id)).toEqual(['appearance-feature','compilation-feature']);
+  await section.screenshot({path:test.info().outputPath(`compact-appearances-${width}.png`)});
 });

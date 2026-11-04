@@ -10287,23 +10287,20 @@ function ArtistDiscographyAlbum({
   const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
   if (appearancesOnly && tracks.isSuccess && !albumSongs.length) return null;
   return (
-    <section className="artist-album-group" ref={groupRef} data-context-kind="album" data-context-id={album.id}>
-      <div className="artist-album-heading">
+    <section className={`artist-album-group${appearancesOnly ? " artist-appearance-group" : ""}`} ref={groupRef} data-context-kind="album" data-context-id={album.id}>
+      {!appearancesOnly ? <div className="artist-album-heading">
         <button className="artist-album-main" type="button" onClick={() => onOpenAlbum(album)}>
           <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
           <span>
             <strong>{album.name}</strong>
-            <small>{[album.year, appearancesOnly
-              ? tracks.isSuccess ? `${albumSongs.length} featured track${albumSongs.length === 1 ? "" : "s"}` : "Loading appearances…"
-              : albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
+            <small>{[album.year, albumSongs.length ? albumSongs.length + " tracks" : album.songCount ? album.songCount + " tracks" : null].filter(Boolean).join(" - ")}</small>
           </span>
         </button>
         <button
           className="track-play"
           type="button"
-          disabled={appearancesOnly && (!tracks.isSuccess || !albumSongs.length)}
-          onClick={() => appearancesOnly ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
-          aria-label={appearancesOnly ? `Play appearances from ${album.name}` : `Play ${album.name}`}
+          onClick={() => onPlayAlbum(album)}
+          aria-label={`Play ${album.name}`}
         >
           <Play size={15} strokeWidth={1.6} />
         </button>
@@ -10313,12 +10310,13 @@ function ArtistDiscographyAlbum({
           label={album.name}
           onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
         />
-      </div>
+      </div> : null}
       {tracks.isError ? <p className="artist-album-empty" role="status">Could not load tracks. <button type="button" onClick={() => void tracks.refetch()}>Retry</button></p> : null}
       {albumSongs.length ? (
         <TrackList
           songs={albumSongs}
           albumName={album.name}
+          inlineAlbum={appearancesOnly ? { album, coverUrl: albumCover, onOpen: () => onOpenAlbum(album), onPlay: tracks.isSuccess ? () => onReplaceQueue(albumSongs) : undefined } : undefined}
           currentTrack={currentTrack}
           favoriteIds={favoriteIds}
           favoriteBusyKey={favoriteBusyKey}
@@ -10803,6 +10801,7 @@ function ArtistTopSongsList({
 function TrackList({
   songs,
   albumName,
+  inlineAlbum,
   currentTrack,
   favoriteIds,
   favoriteBusyKey,
@@ -10814,6 +10813,7 @@ function TrackList({
 }: {
   songs: Song[];
   albumName: string;
+  inlineAlbum?: { album: Album; coverUrl: string | null; onOpen: () => void; onPlay?: () => void };
   currentTrack: Song | null;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
@@ -10830,7 +10830,7 @@ function TrackList({
   }
 
   const discGroups = groupSongsByDisc(songs);
-  const showDiscHeaders = discGroups.length > 1;
+  const showDiscHeaders = !inlineAlbum && discGroups.length > 1;
 
   return (
     <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
@@ -10847,7 +10847,7 @@ function TrackList({
 
             return (
             <div
-              className={`track-row album-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
+              className={`track-row album-track-row ${inlineAlbum ? "appearance-track-row" : ""} ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
               aria-current={currentTrack?.id === song.id ? "true" : undefined}
               onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
@@ -10855,7 +10855,7 @@ function TrackList({
               onDoubleClick={() => onPlaySong(song)}
             >
               <span className="track-index">
-                <span className="track-number">{song.track ?? index + 1}</span>
+                {inlineAlbum ? <CoverArt src={inlineAlbum.coverUrl} label={inlineAlbum.album.name} className="appearance-track-cover" /> : <span className="track-number">{song.track ?? index + 1}</span>}
                 <button
                   className="track-play"
                   type="button"
@@ -10874,12 +10874,20 @@ function TrackList({
                   className="track-name"
                   type="button"
                   aria-label={`Select ${song.title}`}
+                  title={inlineAlbum ? song.title : undefined}
                 >
                   {song.title}
                 </button>
                 <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
               </div>
-              <span className="track-album album-track-album">{song.album || albumName}</span>
+              {inlineAlbum ? <span className="album-track-album appearance-album-context">
+                <button type="button" className="appearance-album-link" title={[inlineAlbum.album.name, inlineAlbum.album.year].filter(Boolean).join(" · ")} aria-label={`Open ${inlineAlbum.album.name}`} onClick={event => { event.stopPropagation(); inlineAlbum.onOpen(); }} onDoubleClick={event => event.stopPropagation()}>
+                  {inlineAlbum.album.name}{inlineAlbum.album.year ? ` · ${inlineAlbum.album.year}` : ""}
+                </button>
+                <button type="button" className="appearance-release-play" disabled={!inlineAlbum.onPlay} title={`Play appearances from ${inlineAlbum.album.name}`} aria-label={`Play appearances from ${inlineAlbum.album.name}`} onClick={event => { event.stopPropagation(); inlineAlbum.onPlay?.(); }} onDoubleClick={event => event.stopPropagation()}>
+                  <Play size={13} />
+                </button>
+              </span> : <span className="track-album album-track-album">{song.album || albumName}</span>}
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
