@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AlbumArtworkContext, useAlbumArtwork } from "./albumArtwork";
 import { getErrorMessage } from "./errorMessage";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
@@ -2024,6 +2025,7 @@ export function App() {
   const onArtistImageResolved = useCallback((artistId: string, entry: ArtistImageEntry) => {
     setArtistImageCache((current) => ({ ...current, [artistId]: entry }));
   }, []);
+  const [artworkCatalogKey, setArtworkCatalogKey] = useState("");
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>(() => (loadStoredConfig() ? "hydrating" : "idle"));
   const [catalogProgress, setCatalogProgress] = useState<{ completed: number; total: number } | null>(null);
   const [listenerName, setListenerName] = useState("");
@@ -2331,9 +2333,23 @@ export function App() {
   const hasConfig = Boolean(config);
   const canNavigateBack = backStack.length > 0;
   const onNavigateBack = navigateBack;
+  const albumLookup = useMemo(() => {
+    const albums = [
+      ...libraryData.albums,
+      ...libraryData.recentAlbums,
+      ...libraryData.recentlyPlayedAlbums,
+      ...libraryData.favorites.albums,
+      ...libraryData.frequentAlbums,
+      ...searchResults.albums,
+    ];
+    return new Map(albums.map((album) => [album.id, album]));
+  }, [libraryData.albums, libraryData.favorites.albums, libraryData.recentAlbums, libraryData.recentlyPlayedAlbums, libraryData.frequentAlbums, searchResults.albums]);
+  const artworkReady = Boolean(config && artworkCatalogKey === libraryCatalogKey(config));
   const currentTrack = queue[currentIndex] ?? null;
-  const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "160") : null;
-  const currentTrackArtworkUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "900") : null;
+  const currentAlbumArt = useAlbumArtwork(config, currentTrack?.albumId, albumLookup, artworkReady);
+  const currentCoverArt = currentTrack?.albumId ? currentAlbumArt : currentTrack?.coverArt;
+  const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentCoverArt, "160") : null;
+  const currentTrackArtworkUrl = config && currentTrack ? buildCoverArtUrl(config, currentCoverArt, "900") : null;
   const radioStationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const radioNowPlaying = firstRadioTrack(radioStationState);
   const radioNowPlayingSongId = radioNowPlaying?.subsonic_id ? String(radioNowPlaying.subsonic_id) : "";
@@ -2344,7 +2360,8 @@ export function App() {
   const radioElapsed = isRadioPlaying ? radioTrackElapsedSeconds(radioNowPlaying, radioStationState, radioClockNow) : 0;
   const radioCoverUrl = buildRadioCoverUrl(radioStationUrl, radioNowPlaying);
   const footerTrack = isRadioPresentation || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
-  const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
+  const footerAlbumArt = useAlbumArtwork(config, footerTrack?.albumId, albumLookup, artworkReady);
+  const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.albumId ? footerAlbumArt : footerTrack.coverArt, "160") : null;
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   async function notifyDesktop(key: string, title: string, body: string, cooldownMs = 15_000) {
     if (!isTauriDesktopApp() || isAppForegrounded()) return;
@@ -2370,18 +2387,21 @@ export function App() {
     ? isRadioPlaying
       ? radioCoverUrl
       : isPlaying && config && currentTrack
-          ? buildCoverArtUrl(config, currentTrack.coverArt, "900")
+          ? buildCoverArtUrl(config, currentCoverArt, "900")
           : null
     : null;
+  const playlistFallbackTrack = detailSelection?.type === "playlist" && !detailSelection.data.coverArt ? detailSelection.data.entry?.[0] : undefined;
+  const playlistAlbumArt = useAlbumArtwork(config, playlistFallbackTrack?.albumId, albumLookup, artworkReady);
+  const playlistFallbackArt = playlistFallbackTrack?.albumId ? playlistAlbumArt : playlistFallbackTrack?.coverArt;
   const detailArtworkWashUrl = config && detailSelection
     ? detailSelection.type === "album"
       ? buildCoverArtUrl(
           config,
-          detailSelection.data.coverArt ?? detailSelection.data.song?.find((song) => song.coverArt)?.coverArt,
+          detailSelection.data.coverArt,
           "900",
         )
       : detailSelection.type === "playlist"
-        ? buildCoverArtUrl(config, detailSelection.data.coverArt ?? detailSelection.data.entry?.find((song) => song.coverArt)?.coverArt, "900")
+        ? buildCoverArtUrl(config, detailSelection.data.coverArt ?? playlistFallbackArt, "900")
         : getArtistImageUrl(detailSelection.data.info) ??
           buildCoverArtUrl(config, detailSelection.data.album?.find((album) => album.coverArt)?.coverArt, "900")
     : null;
@@ -2511,16 +2531,6 @@ export function App() {
     }),
     [libraryData.favorites.albums, libraryData.favorites.artists, libraryData.favorites.songs],
   );
-  const albumLookup = useMemo(() => {
-    const albums = [
-      ...libraryData.albums,
-      ...libraryData.recentAlbums,
-      ...libraryData.recentlyPlayedAlbums,
-      ...libraryData.favorites.albums,
-      ...searchResults.albums,
-    ];
-    return new Map(albums.map((album) => [album.id, album]));
-  }, [libraryData.albums, libraryData.favorites.albums, libraryData.recentAlbums, libraryData.recentlyPlayedAlbums, searchResults.albums]);
   const artistLookup = useMemo(() => {
     const artists = [...libraryData.artists, ...libraryData.favorites.artists, ...searchResults.artists];
     return new Map(artists.map((artist) => [artist.id, artist]));
@@ -4106,6 +4116,7 @@ export function App() {
     const catalogKey = config ? libraryCatalogKey(config) : null;
     if (catalogKey) void deleteLibraryCatalog(catalogKey).catch(() => undefined);
     catalogHydratedKeyRef.current = "";
+    setArtworkCatalogKey("");
     catalogSongsCompleteRef.current = false;
     setArtistImageCache({});
     localStorage.removeItem(STORAGE_KEY);
@@ -4263,7 +4274,10 @@ export function App() {
         if (!cancelled) setCatalogStatus("error");
       })
       .finally(() => {
-        if (!cancelled) catalogHydratedKeyRef.current = catalogKey;
+        if (!cancelled) {
+          catalogHydratedKeyRef.current = catalogKey;
+          setArtworkCatalogKey(catalogKey);
+        }
       });
 
     return () => { cancelled = true; catalogSongSyncGenerationRef.current += 1; };
@@ -4996,6 +5010,7 @@ export function App() {
   }, [isRadioPlaying, rightPanelTab]);
 
   return (
+    <AlbumArtworkContext.Provider value={{ config, albums: albumLookup, ready: artworkReady }}>
     <ContextMenu.Root
       open={Boolean(songContextMenu || libraryContextMenu)}
       onOpenChange={(open) => {
@@ -5643,6 +5658,7 @@ export function App() {
               </button>
             </div>
             <PlaylistCreateForm
+              selectedTrackCount={playlistSeedSongs?.length}
               queueLength={queue.length}
               name={playlistName}
               setName={setPlaylistName}
@@ -5791,6 +5807,7 @@ export function App() {
     </main>
       </ContextMenu.Trigger>
     </ContextMenu.Root>
+    </AlbumArtworkContext.Provider>
   );
 }
 
@@ -6055,18 +6072,20 @@ function RightSidebar({
               title={`Show ${isRadioSession ? "timeline" : "queue"} pane`}
               onClick={() => onTogglePane("queue")}
             >
-              <ChevronDown size={14} /> {isRadioSession ? "Timeline" : "Queue"}
+              <Plus size={14} /> {isRadioSession ? "Timeline" : "Queue"}
             </button>
           ) : null}
-          <button
-            className="icon-button playback-pane-close"
-            type="button"
-            aria-label={`Close ${queueVisible ? isRadioSession ? "timeline" : "queue" : "lyrics"} pane`}
-            title={`Close ${queueVisible ? isRadioSession ? "timeline" : "queue" : "lyrics"} pane`}
-            onClick={() => onTogglePane(queueVisible ? "queue" : "lyrics")}
-          >
-            {queueVisible ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+          {panes === "both" ? (
+            <button
+              className="icon-button playback-pane-close"
+              type="button"
+              aria-label={`Close ${isRadioSession ? "timeline" : "queue"} pane`}
+              title={`Close ${isRadioSession ? "timeline" : "queue"} pane`}
+              onClick={() => onTogglePane("queue")}
+            >
+              <ChevronUp size={14} />
+            </button>
+          ) : null}
           {isRadioSession && tab !== "queue" ? (
             <button className="icon-button" type="button" aria-label="Show timeline" onClick={onShowQueue}><ListMusic size={16} /></button>
           ) : null}
@@ -6269,7 +6288,7 @@ function RightSidebar({
       </div>
       {!lyricsVisible ? (
         <button className="playback-pane-restore playback-pane-restore-bottom" type="button" aria-label="Show lyrics pane" title="Show lyrics pane" onClick={() => onTogglePane("lyrics")}>
-          <ChevronUp size={14} /> Lyrics
+          <Plus size={14} /> Lyrics
         </button>
       ) : null}
       {queueDragGhost ? (
@@ -8014,7 +8033,7 @@ function OverviewHome({
         name: albumName,
         artist: entry.song.artist ?? source?.artist ?? "",
         artistId: entry.song.artistId,
-        coverArt: entry.song.coverArt ?? source?.coverArt,
+        coverArt: source?.coverArt,
       },
       count: (current?.count ?? 0) + 1,
       firstIndex: current?.firstIndex ?? index,
@@ -8049,6 +8068,7 @@ function OverviewHome({
         {resumeTrack ? (
           <section className="home-resume-card" aria-labelledby="home-resume-title">
             <PlayableCover
+              albumId={resumeTrack.albumId}
               src={config ? buildCoverArtUrl(config, resumeTrack.coverArt, "320") : null}
               label={resumeTrack.title}
               className="home-resume-cover"
@@ -8130,10 +8150,10 @@ function HomeListeningShelf({ history, fallbackAlbums, viewMode, config, onPlayS
           const coverArt = playlist?.coverArt ?? album?.coverArt ?? song.coverArt;
           const open = playlist ? () => onOpenPlaylist({ id: playlist.id, name: playlist.name }) : album ? () => onOpenAlbum({ id: album.id, name: album.name, artist: album.artist ?? song.artist ?? "" }) : null;
           return <div className="home-album" key={`${label}-${song.id}`} role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ?? undefined} onKeyDown={(event) => { if (open && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open(); } }}>
-            <PlayableCover src={config && coverArt ? buildCoverArtUrl(config, coverArt, "320") : null} label={label} className="home-album-cover" onOpen={open ?? undefined} onPlay={() => onPlaySong(song)} />
+            <PlayableCover albumId={playlist?.coverArt ? undefined : song.albumId ?? album?.id} src={config && coverArt ? buildCoverArtUrl(config, coverArt, "320") : null} label={label} className="home-album-cover" onOpen={open ?? undefined} onPlay={() => onPlaySong(song)} />
             <div className="home-album-copy"><strong>{label}</strong><small>{byline}</small></div>
           </div>;
-        }) : fallbackAlbums.map((album) => <div className="home-album" key={album.id} role="button" tabIndex={0} onClick={() => onOpenAlbum(album)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenAlbum(album); } }}><PlayableCover src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null} label={album.name} className="home-album-cover" onOpen={() => onOpenAlbum(album)} onPlay={() => onPlayAlbum(album)} /><div className="home-album-copy"><strong>{album.name}</strong><small>{album.artist || `${album.songCount ?? 0} tracks`}</small></div></div>))}
+        }) : fallbackAlbums.map((album) => <div className="home-album" key={album.id} role="button" tabIndex={0} onClick={() => onOpenAlbum(album)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenAlbum(album); } }}><PlayableCover albumId={album.id} src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null} label={album.name} className="home-album-cover" onOpen={() => onOpenAlbum(album)} onPlay={() => onPlayAlbum(album)} /><div className="home-album-copy"><strong>{album.name}</strong><small>{album.artist || `${album.songCount ?? 0} tracks`}</small></div></div>))}
       </div></div>
     </section>
   );
@@ -8196,7 +8216,7 @@ function HomeAlbumShelf({
           {albums.map((album) => (
             <div className="home-album" key={album.id} role={onOpenAlbum ? "button" : undefined} tabIndex={onOpenAlbum ? 0 : undefined} onClick={onOpenAlbum ? () => onOpenAlbum(album) : undefined} onKeyDown={(event) => { if (onOpenAlbum && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenAlbum(album); } }}>
               <PlayableCover
-                src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+                albumId={album.id} src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
                 label={album.name}
                 className="home-album-cover"
                 onOpen={onOpenAlbum ? () => onOpenAlbum(album) : undefined}
@@ -8502,6 +8522,7 @@ function SearchResultsView({
             }}
           >
             <CoverArt
+              albumId={primaryMatch.type === "song" ? primaryMatch.item.albumId : undefined}
               src={config && primaryMatch.type !== "artist" ? buildCoverArtUrl(config, primaryMatch.item.coverArt, "160") : null}
               label={primaryMatch.label}
               className="search-primary-art"
@@ -9243,6 +9264,7 @@ function AlbumList({
 
 function PlayableCover({
   src,
+  albumId,
   fallbackSrc,
   label,
   className,
@@ -9255,6 +9277,7 @@ function PlayableCover({
   onPlay,
 }: {
   src: string | null;
+  albumId?: string;
   fallbackSrc?: string | null;
   label: string;
   className: string;
@@ -9266,7 +9289,7 @@ function PlayableCover({
   onOpen?: () => void;
   onPlay: () => void;
 }) {
-  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} rejectArtistPlaceholder={rejectArtistPlaceholder} />;
+  const cover = <CoverArt albumId={albumId} src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} rejectArtistPlaceholder={rejectArtistPlaceholder} />;
 
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
@@ -9286,6 +9309,7 @@ function PlayableCover({
 
 function CoverArt({
   src,
+  albumId,
   fallbackSrc,
   label,
   className,
@@ -9294,6 +9318,7 @@ function CoverArt({
   rejectArtistPlaceholder = false,
 }: {
   src: string | null;
+  albumId?: string;
   fallbackSrc?: string | null;
   label: string;
   className: string;
@@ -9301,6 +9326,9 @@ function CoverArt({
   onSourceError?: (url: string) => void;
   rejectArtistPlaceholder?: boolean;
 }) {
+  const artwork = useContext(AlbumArtworkContext);
+  const albumCover = useAlbumArtwork(artwork.config, albumId, artwork.albums, artwork.ready);
+  if (albumId) src = artwork.config ? buildCoverArtUrl(artwork.config, albumCover) : null;
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const imageSrc = [src, fallbackSrc].find((url) => url && !failedSources.includes(url)
     && (!rejectArtistPlaceholder || !isKnownArtistPlaceholderUrl(url)));
@@ -9688,6 +9716,7 @@ function ArtistList({
 
 function PlaylistCreateForm({
   queueLength,
+  selectedTrackCount,
   name,
   setName,
   description,
@@ -9702,6 +9731,7 @@ function PlaylistCreateForm({
   onCancel,
 }: {
   queueLength: number;
+  selectedTrackCount?: number;
   name: string;
   setName: (name: string) => void;
   description: string;
@@ -9749,7 +9779,7 @@ function PlaylistCreateForm({
           <span>Public playlist</span>
           <small>Visible to other Navidrome users</small>
         </label>
-        <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
+        {selectedTrackCount != null ? <p className="settings-note">{selectedTrackCount} selected track{selectedTrackCount === 1 ? "" : "s"} will be added.</p> : <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
           <input
             type="checkbox"
             checked={fromQueue && canUseQueue}
@@ -9758,7 +9788,7 @@ function PlaylistCreateForm({
           />
           <span>Start with current queue</span>
           <small>{canUseQueue ? `${queueLength} tracks` : "Queue empty"}</small>
-        </label>
+        </label>}
       </div>
       <div className="playlist-create-actions">
         {message ? <p className={status === "error" ? "bad" : ""}>{message}</p> : null}
@@ -9868,8 +9898,10 @@ function PlaylistDetailPanel({
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const songs = playlist.entry ?? [];
-  const playlistCover =
-    config ? buildCoverArtUrl(config, playlist.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+  const artwork = useContext(AlbumArtworkContext);
+  const fallbackSong = playlist.coverArt ? undefined : songs[0];
+  const fallbackAlbumArt = useAlbumArtwork(config, fallbackSong?.albumId, artwork.albums, artwork.ready);
+  const playlistCover = config ? buildCoverArtUrl(config, playlist.coverArt ?? (fallbackSong?.albumId ? fallbackAlbumArt : fallbackSong?.coverArt), "460") : null;
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [name, setName] = useState(playlist.name);
@@ -10645,7 +10677,7 @@ function DetailPanel({
 
   const album = detailSelection.data;
   const songs = sortAlbumSongs(album.song ?? []);
-  const albumCover = config ? buildCoverArtUrl(config, album.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+  const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "460") : null;
 
   return (
     <section className="detail-panel detail-page album-detail-page">
@@ -11252,22 +11284,24 @@ function AddToPlaylistSubmenu({
           {playlists.length ? (
             <div className="song-context-list">
               {playlists.map((playlist) => (
-                <button type="button" role="menuitem" key={playlist.id} onClick={() => onAdd(playlist)} disabled={status === "saving"}>
+                <ContextMenu.Item key={playlist.id} asChild disabled={status === "saving"} onSelect={event => { event.preventDefault(); onAdd(playlist); }}>
+                <button type="button" disabled={status === "saving"}>
                   <ListMusic size={15} />
                   <span>
                     <strong>{playlist.name}</strong>
                     <small>{getPlaylistMeta(playlist)}</small>
                   </span>
                 </button>
+                </ContextMenu.Item>
               ))}
             </div>
           ) : (
             <p className="song-context-empty">Create a playlist first.</p>
           )}
-          <button className="song-context-action new-playlist-action" type="button" onClick={onCreateNew}>
+          <ContextMenu.Item asChild onSelect={event => { event.preventDefault(); onCreateNew(); }}><button className="song-context-action new-playlist-action" type="button">
             <Plus size={15} />
             Add to new playlist
-          </button>
+          </button></ContextMenu.Item>
         </ContextMenu.SubContent>
       </ContextMenu.Portal>
     </ContextMenu.Sub>
@@ -11356,28 +11390,24 @@ function SongPlaylistMenu({
             {sortedPlaylists.length ? (
               <div className="song-context-list">
                 {sortedPlaylists.map((playlist) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    key={playlist.id}
-                    onClick={() => onAdd(playlist)}
-                    disabled={status === "saving"}
-                  >
+                  <ContextMenu.Item key={playlist.id} asChild disabled={status === "saving"} onSelect={event => { event.preventDefault(); onAdd(playlist); }}>
+                  <button type="button" disabled={status === "saving"}>
                     <ListMusic size={15} />
                     <span>
                       <strong>{playlist.name}</strong>
                       <small>{getPlaylistMeta(playlist)}</small>
                     </span>
                   </button>
+                  </ContextMenu.Item>
                 ))}
               </div>
             ) : (
               <p className="song-context-empty">Create a playlist first.</p>
             )}
-            <button className="song-context-action new-playlist-action" type="button" onClick={onCreatePlaylist}>
+            <ContextMenu.Item asChild onSelect={event => { event.preventDefault(); onCreatePlaylist(); }}><button className="song-context-action new-playlist-action" type="button">
               <Plus size={15} />
               Add to new playlist
-            </button>
+            </button></ContextMenu.Item>
           </ContextMenu.SubContent>
         </ContextMenu.Portal>
       </ContextMenu.Sub>
