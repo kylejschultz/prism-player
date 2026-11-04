@@ -11,12 +11,14 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false } = {}) {
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false, selectionPlaylist = false, multiDisc = false } = {}) {
   const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
-  const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
+  const songs = (largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs).map((song,index) => ({...song,...(multiDisc ? {discNumber:index % 4 < 2 ? 1 : 2} : {})}));
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
-  const playlists = largeLibrary ? Array.from({ length: 40 }, (_, i) => ({ id: `playlist-${i}`, name: `Playlist ${i}`, songCount: 4 })) : [];
+  const playlists = largeLibrary ? Array.from({ length: 40 }, (_, i) => ({ id: `playlist-${i}`, name: `Playlist ${i}`, songCount: 4 })) : selectionPlaylist ? [{id:'selection-playlist',name:'Selection playlist',songCount:0}] : [];
   const requests = [];
+  const playlistAdds = [];
+  const playlistCreates = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion }) => {
@@ -81,6 +83,22 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     if (url.hostname !== 'music.fixture.invalid') return route.fulfill({ json: {} });
     const endpoint = url.pathname.split('/').at(-1).replace('.view', ''), id = url.searchParams.get('id');
     requests.push(endpoint);
+    if (endpoint === 'updatePlaylist') {
+      playlistAdds.push({playlistId:url.searchParams.get('playlistId'),songs:url.searchParams.getAll('songIdToAdd')});
+      return route.fulfill({json:{'subsonic-response':{status:'ok'}}});
+    }
+    if (endpoint === 'createPlaylist') {
+      const selected=url.searchParams.getAll('songId');
+      const playlist={id:'created-selection',name:url.searchParams.get('name'),songCount:selected.length};
+      playlistCreates.push({name:playlist.name,songs:selected});
+      playlists.push(playlist);
+      return route.fulfill({json:{'subsonic-response':{status:'ok',playlist}}});
+    }
+    if (endpoint === 'getPlaylist') {
+      const playlist=playlists.find(entry=>entry.id===id);
+      const ids=playlistCreates.at(-1)?.songs ?? [];
+      return route.fulfill({json:{'subsonic-response':{status:'ok',playlist:{...playlist,entry:ids.map(id=>songs.find(song=>song.id===id))}}}});
+    }
     if (endpoint === 'getCoverArt' && artwork) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="300" height="600" fill="#59A99E"/><rect x="300" width="300" height="600" fill="#ADC8DE"/></svg>' });
     if (endpoint === 'getCoverArt' || endpoint === 'stream') return route.abort();
     if (url.pathname === '/auth/login') return route.fulfill({ json: { name: 'Fixture' } });
@@ -107,7 +125,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     return route.fulfill({ json: { 'subsonic-response': { status: 'ok', ...payload } } });
   });
   await page.goto('/');
-  return { requests, errors };
+  return { requests, errors, playlistAdds, playlistCreates };
 }
 
 async function savedSongs(page) {
@@ -1837,5 +1855,114 @@ test('compact edge headers keep their positions and cancelling edge drag preserv
   await expect(divider).toHaveAttribute('aria-valuenow',baseline);
   await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
   await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+
+async function openSelectionAlbum(page) {
+  await page.locator('.sidebar').getByRole('button',{name:'Albums',exact:true}).click();
+  await page.locator('.album-title-button').filter({hasText:/^Album a$/}).first().click();
+  await expect(page.locator('.album-detail-page .album-track-row')).toHaveCount(4);
+  return page.locator('.album-detail-page .album-track-row');
+}
+
+test('album row selection is visible without hover on odd, even and current tracks', async ({page}) => {
+  await fixture(page,{multiDisc:true});
+  const rows=await openSelectionAlbum(page);
+  const unselected = await rows.nth(2).evaluate(el=>getComputedStyle(el).backgroundColor);
+  await rows.nth(1).locator('.track-duration').click();
+  await page.mouse.move(20,20);
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await page.screenshot({path:test.info().outputPath('album-selection.png')});
+  expect(await rows.nth(1).evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe(unselected);
+  expect(await rows.nth(1).evaluate(el=>getComputedStyle(el).boxShadow)).not.toBe('none');
+  await rows.nth(2).locator('.track-name').click();
+  await page.mouse.move(20,20);
+  expect(await rows.nth(2).evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe(unselected);
+  await rows.nth(3).click({position:{x:3,y:27}});
+  await expect(rows.nth(3)).toHaveClass(/selected/);
+  await rows.nth(0).locator('.track-duration').click();
+  await page.mouse.move(20,20);
+  await expect(rows.nth(0)).toHaveClass(/active.*selected/);
+  expect(await rows.nth(0).evaluate(el=>getComputedStyle(el).boxShadow)).toContain('inset');
+  await expect(page.locator('.transport').getByRole('button',{name:'Play',exact:true})).toBeVisible();
+});
+
+test('album Command-click selects from title and row metadata and adds the exact batch to a playlist', async ({page}) => {
+  const {playlistAdds,errors}=await fixture(page,{selectionPlaylist:true,multiDisc:true});
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(0).locator('.track-name').click();
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(2);
+  await rows.nth(2).locator('.track-duration').click({button:'right'});
+  await expect(page.getByText('2 songs selected',{exact:true})).toBeVisible();
+  await page.getByRole('menuitem',{name:'Add to playlist',exact:true}).hover();
+  const destination=page.getByRole('menuitem',{name:/Selection playlist/});
+  await expect(destination).toBeVisible();
+  const box=await destination.boundingBox();
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2,{steps:12});
+  await page.screenshot({path:test.info().outputPath('playlist-menu.png')});
+  await destination.click();
+  await expect.poll(()=>playlistAdds).toEqual([{playlistId:'selection-playlist',songs:['a-0','a-2']}]);
+  await expect(page.locator('.transport').getByRole('button',{name:'Play',exact:true})).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('album Shift selection crosses discs and Select All preserves the batch through the row menu', async ({page}) => {
+  const {playlistAdds}=await fixture(page,{selectionPlaylist:true,multiDisc:true});
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(0).locator('.track-duration').click();
+  await rows.nth(3).locator('.album-track-album').click({modifiers:['Shift']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(4);
+  await rows.nth(1).locator('.track-name').click();
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(1);
+  await rows.nth(1).locator('.track-name').focus();
+  await page.keyboard.press('Meta+a');
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(4);
+  await rows.nth(3).getByRole('button',{name:'More options for Album a track 4',exact:true}).click();
+  await expect(page.getByText('4 songs selected',{exact:true})).toBeVisible();
+  await page.getByRole('menuitem',{name:'Add to playlist',exact:true}).focus();
+  await page.keyboard.press('ArrowRight');
+  const destination=page.getByRole('menuitem',{name:/Selection playlist/});
+  await expect(destination).toBeVisible();
+  await page.keyboard.press('Home');
+  await expect(destination).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(()=>playlistAdds).toEqual([{playlistId:'selection-playlist',songs:['a-0','a-1','a-2','a-3']}]);
+});
+
+test('album Command-click toggles selection and dedicated Play remains separate', async ({page}) => {
+  await fixture(page);
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(1).locator('.track-name').click();
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(2);
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(1);
+  await rows.nth(3).getByRole('button',{name:'Play Album a track 4',exact:true}).click();
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(1);
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await expect(page.locator('.now-playing-copy')).toContainText('Album a track 4');
+});
+
+
+test('album selected tracks seed a new playlist instead of the current queue', async ({page}) => {
+  const {playlistCreates,errors}=await fixture(page,{selectionPlaylist:true});
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(0).locator('.track-name').click();
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await rows.nth(2).getByRole('button',{name:'More options for Album a track 3',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Add to playlist',exact:true}).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('menuitem',{name:'Add to new playlist',exact:true})).toBeFocused();
+  await page.keyboard.press('Enter');
+  const form=page.locator('.playlist-modal');
+  await expect(form.getByText('2 selected tracks will be added.',{exact:true})).toBeVisible();
+  await expect(form.getByText('Start with current queue',{exact:true})).toHaveCount(0);
+  await form.getByRole('textbox',{name:'Name',exact:true}).fill('Selected album tracks');
+  await form.getByRole('button',{name:'Create',exact:true}).click();
+  await expect.poll(()=>playlistCreates).toEqual([{name:'Selected album tracks',songs:['a-0','a-2']}]);
+  await expect(page.locator('.playlist-track-editor .track-row')).toHaveCount(2);
   expect(errors).toEqual([]);
 });

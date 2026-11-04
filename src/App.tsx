@@ -5643,6 +5643,7 @@ export function App() {
               </button>
             </div>
             <PlaylistCreateForm
+              selectedTrackCount={playlistSeedSongs?.length}
               queueLength={queue.length}
               name={playlistName}
               setName={setPlaylistName}
@@ -9688,6 +9689,7 @@ function ArtistList({
 
 function PlaylistCreateForm({
   queueLength,
+  selectedTrackCount,
   name,
   setName,
   description,
@@ -9702,6 +9704,7 @@ function PlaylistCreateForm({
   onCancel,
 }: {
   queueLength: number;
+  selectedTrackCount?: number;
   name: string;
   setName: (name: string) => void;
   description: string;
@@ -9749,7 +9752,7 @@ function PlaylistCreateForm({
           <span>Public playlist</span>
           <small>Visible to other Navidrome users</small>
         </label>
-        <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
+        {selectedTrackCount != null ? <p className="settings-note">{selectedTrackCount} selected track{selectedTrackCount === 1 ? "" : "s"} will be added.</p> : <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
           <input
             type="checkbox"
             checked={fromQueue && canUseQueue}
@@ -9758,7 +9761,7 @@ function PlaylistCreateForm({
           />
           <span>Start with current queue</span>
           <small>{canUseQueue ? `${queueLength} tracks` : "Queue empty"}</small>
-        </label>
+        </label>}
       </div>
       <div className="playlist-create-actions">
         {message ? <p className={status === "error" ? "bad" : ""}>{message}</p> : null}
@@ -11252,22 +11255,24 @@ function AddToPlaylistSubmenu({
           {playlists.length ? (
             <div className="song-context-list">
               {playlists.map((playlist) => (
-                <button type="button" role="menuitem" key={playlist.id} onClick={() => onAdd(playlist)} disabled={status === "saving"}>
+                <ContextMenu.Item key={playlist.id} asChild disabled={status === "saving"} onSelect={event => { event.preventDefault(); onAdd(playlist); }}>
+                <button type="button" disabled={status === "saving"}>
                   <ListMusic size={15} />
                   <span>
                     <strong>{playlist.name}</strong>
                     <small>{getPlaylistMeta(playlist)}</small>
                   </span>
                 </button>
+                </ContextMenu.Item>
               ))}
             </div>
           ) : (
             <p className="song-context-empty">Create a playlist first.</p>
           )}
-          <button className="song-context-action new-playlist-action" type="button" onClick={onCreateNew}>
+          <ContextMenu.Item asChild onSelect={event => { event.preventDefault(); onCreateNew(); }}><button className="song-context-action new-playlist-action" type="button">
             <Plus size={15} />
             Add to new playlist
-          </button>
+          </button></ContextMenu.Item>
         </ContextMenu.SubContent>
       </ContextMenu.Portal>
     </ContextMenu.Sub>
@@ -11356,28 +11361,24 @@ function SongPlaylistMenu({
             {sortedPlaylists.length ? (
               <div className="song-context-list">
                 {sortedPlaylists.map((playlist) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    key={playlist.id}
-                    onClick={() => onAdd(playlist)}
-                    disabled={status === "saving"}
-                  >
+                  <ContextMenu.Item key={playlist.id} asChild disabled={status === "saving"} onSelect={event => { event.preventDefault(); onAdd(playlist); }}>
+                  <button type="button" disabled={status === "saving"}>
                     <ListMusic size={15} />
                     <span>
                       <strong>{playlist.name}</strong>
                       <small>{getPlaylistMeta(playlist)}</small>
                     </span>
                   </button>
+                  </ContextMenu.Item>
                 ))}
               </div>
             ) : (
               <p className="song-context-empty">Create a playlist first.</p>
             )}
-            <button className="song-context-action new-playlist-action" type="button" onClick={onCreatePlaylist}>
+            <ContextMenu.Item asChild onSelect={event => { event.preventDefault(); onCreatePlaylist(); }}><button className="song-context-action new-playlist-action" type="button">
               <Plus size={15} />
               Add to new playlist
-            </button>
+            </button></ContextMenu.Item>
           </ContextMenu.SubContent>
         </ContextMenu.Portal>
       </ContextMenu.Sub>
