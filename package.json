@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:unit": "node --experimental-strip-types --test src/errorMessage.test.mjs src/localPlayback.test.mjs src/flacCompatibility.test.mjs src/playbackQueue.test.mjs src/navigationGesture.test.mjs src/artistNameLink.test.mjs src/playerArtworkNavigation.test.mjs src/artistArtwork.test.mjs src/data/navidrome.test.mjs src/artistCredits.test.mjs src/data/radioLyrics.test.mjs",
+    "test:unit": "node --experimental-strip-types --test src/errorMessage.test.mjs src/localPlayback.test.mjs src/flacCompatibility.test.mjs src/playbackQueue.test.mjs src/navigationGesture.test.mjs src/artistNameLink.test.mjs src/playerArtworkNavigation.test.mjs src/artistArtwork.test.mjs src/data/navidrome.test.mjs src/artistDiscography.test.mjs src/artistCredits.test.mjs src/data/radioLyrics.test.mjs scripts/release-content.test.mjs",
     "test": "npm run typecheck && npm run lint && npm run test:unit",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
@@ -16,6 +16,8 @@
     "tauri:build": "tauri build",
     "tauri:build:app": "tauri build --bundles app",
     "tauri:build:installer": "tauri build --bundles dmg",
+    "release:check": "node --experimental-strip-types scripts/release-content.mjs check",
+    "release:drafts": "node --experimental-strip-types scripts/release-content.mjs drafts",
     "test:browser": "playwright test"
   },
   "dependencies": {

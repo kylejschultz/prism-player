@@ -11,19 +11,21 @@ const baseAlbums = ['a', 'b'].map((id, index) => ({ id, name: `Album ${id}`, art
 const baseSongs = baseAlbums.flatMap(album => Array.from({ length: 4 }, (_, index) => ({ id: `${album.id}-${index}`, title: `${album.name} track ${index + 1}`, albumId: album.id, album: album.name, artist: artist.name, artistId: artist.id, duration: 120, track: index + 1 })));
 const cachedSong = { ...baseSongs[0], id: 'removed', title: 'Previously indexed song', albumId: 'removed-album' };
 
-async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false } = {}) {
-  const albums = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums;
-  const songs = largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs;
+async function fixture(page, { holdAlbums, failAlbums = false, empty = false, lyricsEnabled, lyricsResponse, lyricsStatus = 200, holdLyrics, localLyrics, localLyricsStatus = 200, holdLocalLyrics, legacyLyrics = "First lyric\nSecond lyric", realMedia = false, mediaType, largeLibrary = false, artwork = false, radioState, firstRun = false, unplayed = false, unread = false, selectionPlaylist = false, multiDisc = false, distinctArtwork = false, playbackIndex = 0, standalone = false, missingAlbumArtwork = false, installedVersion = appVersion } = {}) {
+  const albums = (largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ id: `large-${i}`, name: `${i < 25 ? "A" : "Z"} Album ${String(i).padStart(2, '0')}`, artist: artist.name, artistId: artist.id, songCount: 4 })) : baseAlbums).map(album => ({...album, ...(!missingAlbumArtwork && artwork ? {coverArt:distinctArtwork ? `album-${album.id}` : "fixture-cover"} : {})}));
+  const songs = (largeLibrary ? albums.flatMap(album => Array.from({ length: 4 }, (_, i) => ({ id: `${album.id}-${i}`, title: `Track ${album.id}-${i}`, artist: artist.name, albumId: album.id, album: album.name, duration: 120 }))) : baseSongs).map((song,index) => ({...song,...(standalone ? {albumId:undefined,album:undefined} : {}),...(distinctArtwork ? {coverArt:`track-${song.id}`} : {}),...(multiDisc ? {discNumber:index % 4 < 2 ? 1 : 2} : {})}));
   const artists = largeLibrary ? Array.from({ length: 45 }, (_, i) => ({ ...artist, id: `artist-${i}`, name: `${i < 25 ? "A" : "Z"} Artist ${String(i).padStart(2, '0')}` })) : [artist];
-  const playlists = largeLibrary ? Array.from({ length: 40 }, (_, i) => ({ id: `playlist-${i}`, name: `Playlist ${i}`, songCount: 4 })) : [];
+  const playlists = largeLibrary ? Array.from({ length: 40 }, (_, i) => ({ id: `playlist-${i}`, name: `Playlist ${i}`, songCount: 4 })) : selectionPlaylist ? [{id:'selection-playlist',name:'Selection playlist',songCount:0}] : [];
   const requests = [];
+  const playlistAdds = [];
+  const playlistCreates = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion }) => {
+  await page.addInitScript(({ albums, songs, cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion, playbackIndex }) => {
     if (!firstRun || !sessionStorage.getItem('prism-fixture-first-run-seeded')) {
       if (!firstRun) localStorage.setItem('prism-player.navidrome', JSON.stringify({ serverUrl: 'https://music.fixture.invalid', username: 'fixture' }));
       localStorage.setItem('prism-player.settings', JSON.stringify({ analyticsPromptDismissed: true, lastSeenWhatsNewVersion: firstRun || unread ? '' : appVersion, radioStationUrl: 'https://radio.fixture.invalid', radioStationUrls: ['https://radio.fixture.invalid'] }));
-      if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: 0, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
+      if (!unplayed) localStorage.setItem('prism-player.playbackState', JSON.stringify({ queue: songs, sourceQueue: songs, currentIndex: playbackIndex, position: 30, shuffleEnabled: false, repeatMode: 'off' }));
       if (firstRun) sessionStorage.setItem('prism-fixture-first-run-seeded', 'true');
     }
     const library = { albums: [albums[0]], recentAlbums: [], recentlyPlayedAlbums: [], frequentAlbums: [], artists, playlists, favorites: { artists: [], albums: [], songs: [] } };
@@ -51,7 +53,7 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
       return null;
     } };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
-  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion });
+  }, { artist, albums, songs: songs.map(song => ({ ...song, ...(artwork && !distinctArtwork ? { coverArt: 'fixture-cover' } : {}), ...(mediaType ? { contentType: mediaType } : {}), ...(realMedia ? { duration: 6 } : {}) })), cachedSong, realMedia, artists, playlists, firstRun, unplayed, unread, appVersion: installedVersion, playbackIndex });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin === 'http://127.0.0.1:1421') return route.continue();
@@ -81,6 +83,22 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     if (url.hostname !== 'music.fixture.invalid') return route.fulfill({ json: {} });
     const endpoint = url.pathname.split('/').at(-1).replace('.view', ''), id = url.searchParams.get('id');
     requests.push(endpoint);
+    if (endpoint === 'updatePlaylist') {
+      playlistAdds.push({playlistId:url.searchParams.get('playlistId'),songs:url.searchParams.getAll('songIdToAdd')});
+      return route.fulfill({json:{'subsonic-response':{status:'ok'}}});
+    }
+    if (endpoint === 'createPlaylist') {
+      const selected=url.searchParams.getAll('songId');
+      const playlist={id:'created-selection',name:url.searchParams.get('name'),songCount:selected.length};
+      playlistCreates.push({name:playlist.name,songs:selected});
+      playlists.push(playlist);
+      return route.fulfill({json:{'subsonic-response':{status:'ok',playlist}}});
+    }
+    if (endpoint === 'getPlaylist') {
+      const playlist=playlists.find(entry=>entry.id===id);
+      const ids=playlistCreates.at(-1)?.songs ?? [];
+      return route.fulfill({json:{'subsonic-response':{status:'ok',playlist:{...playlist,entry:ids.map(id=>songs.find(song=>song.id===id))}}}});
+    }
     if (endpoint === 'getCoverArt' && artwork) return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="300" height="600" fill="#59A99E"/><rect x="300" width="300" height="600" fill="#ADC8DE"/></svg>' });
     if (endpoint === 'getCoverArt' || endpoint === 'stream') return route.abort();
     if (url.pathname === '/auth/login') return route.fulfill({ json: { name: 'Fixture' } });
@@ -106,8 +124,13 @@ async function fixture(page, { holdAlbums, failAlbums = false, empty = false, ly
     }[endpoint] || {};
     return route.fulfill({ json: { 'subsonic-response': { status: 'ok', ...payload } } });
   });
+  if (installedVersion !== appVersion) {
+    // The app selects offline notes from bundled package metadata, not the native
+    // bridge version. Simulate a future build without changing repository versions.
+    await page.route('**/package.json?import', route => route.fulfill({contentType:'application/javascript',body:`export default ${JSON.stringify({version:installedVersion})};`}));
+  }
   await page.goto('/');
-  return { requests, errors };
+  return { requests, errors, playlistAdds, playlistCreates };
 }
 
 async function savedSongs(page) {
@@ -1403,8 +1426,10 @@ test('playback divider resizes by pointer and keyboard, persists, and protects b
     await page.setViewportSize({ width, height });
     for (const key of ['Home', 'End']) {
       await divider.focus(); await page.keyboard.press(key);
-      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(139);
-      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(219);
+      await expect.poll(async () => (await upper.boundingBox()).height).toBeGreaterThanOrEqual(95);
+      await expect.poll(async () => (await lower.boundingBox()).height).toBeGreaterThanOrEqual(111);
+      if (key === 'Home') await expect.poll(async () => (await upper.boundingBox()).height).toBeLessThan(110);
+      if (key === 'End') await expect.poll(async () => (await lower.boundingBox()).height).toBeLessThan(125);
       const top = await upper.boundingBox(), bottom = await lower.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
       expect(top.y + top.height).toBeLessThan(bottom.y);
       expect(bottom.y + bottom.height).toBeLessThanOrEqual(footer.y);
@@ -1469,7 +1494,7 @@ test('radio timeline switches newest-first history and upcoming while On air and
   await page.setViewportSize({ width: 980, height: 640 });
   await sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true }).focus();
   await page.keyboard.press('Home');
-  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(199);
+  await expect.poll(async () => (await sidebar.locator('.radio-timeline-panel').boundingBox()).height).toBeGreaterThanOrEqual(159);
   await scroll.focus(); await page.keyboard.press('Home');
   await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBe(0);
   await expect(scroll.getByText('Previous 0', { exact: true })).toBeInViewport({ ratio: 1 });
@@ -1570,7 +1595,450 @@ test('returning users can read grouped release notes in short windows and About 
   await expect(current.getByText('The highlights', { exact: true })).toBeVisible();
   await current.getByText('Also in this update', { exact: true }).scrollIntoViewIfNeeded();
   await expect(current.getByText('Also in this update', { exact: true })).toBeVisible();
+  if (appVersion === '1.1.0') await expect(page.locator('.about-changelog').getByRole('heading',{name:'Prism 1.2.0',exact:true})).toHaveCount(0);
   const previous = page.locator('.about-changelog article').filter({ has: page.getByRole('heading', { name: 'Prism 1.0.0', exact: true }) });
   await expect(previous.getByText('The highlights', { exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+
+for (const lastPane of ['lyrics', 'queue']) {
+  test(`single ${lastPane} pane has one sidebar close control and reopens only it`, async ({ page }) => {
+    const { errors } = await fixture(page);
+    const sidebar = page.locator('#playback-sidebar');
+    const footerToggle = page.getByRole('group', { name: 'Player panels' }).getByRole('button');
+    await footerToggle.click();
+    const firstPane = lastPane === 'lyrics' ? 'queue' : 'lyrics';
+    await sidebar.getByRole('button', { name: `Close ${firstPane} pane`, exact: true }).click();
+    const last = sidebar.locator(lastPane === 'lyrics' ? '.playback-lyrics-section' : '.queue-panel-section');
+    const hidden = sidebar.locator(firstPane === 'lyrics' ? '.playback-lyrics-section' : '.queue-panel-section');
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeHidden();
+    await expect(sidebar.getByRole('separator', { name: 'Resize playback panes', includeHidden: true })).toBeHidden();
+    const available = await sidebar.locator('.playback-sidebar-panes').boundingBox();
+    const filled = await last.boundingBox();
+    expect(Math.abs(available.height - filled.height)).toBeLessThan(2);
+    await expect(sidebar.locator('.playback-pane-close:visible')).toHaveCount(0);
+    const restore = sidebar.getByRole('button', { name: `Show ${firstPane} pane`, exact: true });
+    await expect(restore.locator('svg.lucide-plus')).toBeVisible();
+    const close = sidebar.getByRole('button', { name: 'Close playback sidebar', exact: true });
+    await close.focus();
+    await page.keyboard.press('Enter');
+    await expect(sidebar).toHaveCount(0);
+    await expect(footerToggle).toBeFocused();
+    await page.reload();
+    await expect(sidebar).toHaveCount(0);
+    await footerToggle.click();
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeHidden();
+    await page.reload();
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeHidden();
+    await sidebar.getByRole('button', { name: `Show ${firstPane} pane`, exact: true }).focus();
+    await page.keyboard.press('Space');
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeVisible();
+    await footerToggle.click();
+    await expect(sidebar).toHaveCount(0);
+    await footerToggle.click();
+    await expect(last).toBeVisible();
+    await expect(hidden).toBeVisible();
+    await sidebar.getByRole('button', { name: `Close ${lastPane} pane`, exact: true }).focus();
+    await page.keyboard.press('Escape');
+    await expect(sidebar).toHaveCount(0);
+    await expect(footerToggle).toBeFocused();
+    expect(errors).toEqual([]);
+  });
+}
+
+test('pane controls preserve the split, queue and centered lyrics without reloading them', async ({ page }) => {
+  await installTimingFixture(page, 120);
+  const { requests, errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 24 }, (_, i) => ({ start: i * 4000, value: `Verse ${i}: keep the melody beside you` })) }] });
+  await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+  const sidebar = page.locator('#playback-sidebar');
+  const lyrics = sidebar.locator('.playback-lyrics-section');
+  const lines = lyrics.locator('.lyrics-lines');
+  const divider = sidebar.getByRole('separator', { name: 'Resize playback panes', exact: true });
+  await expect(lines.locator('p')).toHaveCount(24);
+  await page.getByRole('slider', { name: 'Seek', exact: true }).fill('36');
+  await expect(lines.locator('p.active')).toContainText('Verse 9:');
+  await divider.focus();
+  await divider.press('ArrowDown');
+  const savedSplit = await divider.getAttribute('aria-valuenow');
+  const trackTitle = await page.locator('.player-bar .track-title').textContent();
+  const queueBefore = await sidebar.locator('.queue-track strong').allTextContents();
+  for (const [width, height] of [[980, 640], [1440, 900], [1440, 1200]]) {
+    await page.setViewportSize({ width, height });
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    await expectCenteredLyric(lines);
+    await expect(lines.locator('p.active')).toContainText('Verse 9:');
+    await page.screenshot({ path: test.info().outputPath(`lyrics-only-${width}-${height}.png`) });
+    await sidebar.getByRole('button', { name: 'Show queue pane', exact: true }).click();
+    await expectCenteredLyric(lines);
+    await sidebar.getByRole('button', { name: 'Close lyrics pane', exact: true }).click();
+    await expect(lyrics).toBeHidden();
+    await expect(sidebar.locator('.queue-track strong')).toHaveText(queueBefore);
+    await page.screenshot({ path: test.info().outputPath(`queue-only-${width}-${height}.png`) });
+    await sidebar.getByRole('button', { name: 'Show lyrics pane', exact: true }).click();
+    await expectCenteredLyric(lines);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(divider).toHaveAttribute('aria-valuenow', savedSplit);
+  await sidebar.getByRole('separator', { name: 'Resize right sidebar', exact: true }).press('Home');
+  await page.setViewportSize({ width: 980, height: 640 });
+  const header = sidebar.locator('.right-sidebar-heading');
+  expect(await header.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('both-panes-minimum.png') });
+  await expect(page.locator('.player-bar .track-title')).toHaveText(trackTitle);
+  expect(requests.filter(request => request === 'getLyricsBySongId')).toHaveLength(1);
+  expect(errors).toEqual([]);
+});
+
+test('radio tools reveal a hidden timeline pane without restarting lyrics', async ({ page }) => {
+  const { requests, errors } = await fixture(page, { lyricsEnabled: true, lyricsResponse: { songId: 'heard', synced: true, offsetMs: 0, lines: [{ text: 'On air verse', startMs: 0 }, { text: 'Next verse', startMs: 60000 }] } });
+  const sidebar = await radioLyrics(page);
+  const lines = sidebar.locator('.lyrics-lines');
+  await expect(lines.locator('p')).toHaveCount(2);
+  for (const [control, title] of [['Show radio schedule', 'Schedule'], ['Request a song', 'Request'], ['Show booth feed', 'Booth Feed']]) {
+    await sidebar.getByRole('button', { name: 'Close timeline pane', exact: true }).click();
+    await expect(sidebar.locator('.queue-panel-section, .radio-sidebar-content')).toBeHidden();
+    await expect(page.getByRole('button', { name: control, exact: true })).toHaveAttribute('aria-expanded', 'false');
+    await page.getByRole('button', { name: control, exact: true }).click();
+    await expect(sidebar.locator('.right-sidebar-heading h3')).toHaveText(title);
+    await expect(sidebar.locator('.radio-sidebar-content')).toBeVisible();
+    await expect(page.getByRole('button', { name: control, exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(lines.locator('p')).toHaveCount(2);
+    if (title === 'Request') await sidebar.getByRole('button', { name: 'Cancel', exact: true }).click();
+    else await sidebar.getByRole('button', { name: 'Show timeline', exact: true }).click();
+  }
+  await sidebar.getByRole('button', { name: 'Close lyrics pane', exact: true }).click();
+  await expect(lines).toBeHidden();
+  await expect(sidebar.getByRole('group', { name: 'On air', exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('radio-timeline-only.png') });
+  await sidebar.getByRole('button', { name: 'Show lyrics pane', exact: true }).click();
+  expect(requests.filter(request => request === 'radio-lyrics:heard')).toHaveLength(1);
+  await page.getByRole('button', { name: 'Stop radio', exact: true }).click();
+  await expect(sidebar.getByRole('button', { name: 'Close queue pane', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+
+for (const mode of ['plain', 'loading', 'missing']) {
+  test(`lyrics-only pane preserves ${mode} lyrics within a short window`, async ({ page }) => {
+    let finish;
+    const holdLocalLyrics = mode === 'loading' ? new Promise(resolve => { finish = resolve; }) : undefined;
+    const { errors } = await fixture(page, {
+      holdLocalLyrics,
+      localLyrics: mode === 'plain' ? [{ synced: false, line: Array.from({ length: 40 }, (_, i) => ({ value: `Untimed line ${i}` })) }] : [],
+      legacyLyrics: '',
+    });
+    await page.setViewportSize({ width: 980, height: 640 });
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar = page.locator('#playback-sidebar');
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    const lyrics = sidebar.locator('.playback-lyrics-section');
+    if (mode === 'plain') {
+      const lines = lyrics.locator('.lyrics-lines');
+      await expect(lines.locator('p.plain')).toHaveCount(40);
+      await lines.evaluate(node => { node.scrollTop = 160; });
+      await sidebar.getByRole('button', { name: 'Show queue pane', exact: true }).click();
+      await sidebar.getByRole('button', { name: 'Close lyrics pane', exact: true }).click();
+      await sidebar.getByRole('button', { name: 'Show lyrics pane', exact: true }).click();
+      await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+      expect(await lines.evaluate(node => node.scrollTop)).toBe(160);
+    } else {
+      await expect(lyrics).toContainText(mode === 'loading' ? 'Loading lyrics' : 'No lyrics found');
+      const empty = await lyrics.locator('.empty-panel').boundingBox();
+      const pane = await lyrics.boundingBox();
+      expect(empty.y + empty.height).toBeLessThanOrEqual(pane.y + pane.height + 1);
+    }
+    const pane = await lyrics.boundingBox(), footer = await page.locator('.player-bar').boundingBox();
+    expect(pane.y + pane.height).toBeLessThanOrEqual(footer.y);
+    await page.screenshot({ path: test.info().outputPath(`lyrics-only-${mode}.png`) });
+    if (finish) {
+      finish();
+      await expect(lyrics).toContainText('No lyrics found');
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
+
+for (const [tone, colors] of [['bright', ['#f5df60', '#df6a74']], ['dark', ['#16272d', '#283e50']]]) {
+  test(`player bar shares the artwork wash with ${tone} covers while controls stay readable`, async ({ page }) => {
+    const { errors } = await fixture(page, { artwork: true });
+    await page.route('**/rest/getCoverArt*', route => route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="300" height="600" fill="${colors[0]}"/><rect x="300" width="300" height="600" fill="${colors[1]}"/></svg>` }));
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    const bar = page.locator('.player-bar'), wash = page.locator('.cover-wash-backdrop');
+    await expect(wash).toBeVisible();
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar = page.locator('#playback-sidebar');
+    await expect(sidebar.locator('.playback-pane-controls')).toHaveCount(0);
+    await sidebar.getByRole('button', { name: 'Close queue pane', exact: true }).click();
+    const restore = sidebar.getByRole('button', { name: 'Show queue pane', exact: true });
+    await expect(restore).toBeVisible();
+    await expect(sidebar.locator('.playback-pane-close:visible')).toHaveCount(0);
+    await expect(restore.locator('svg.lucide-plus')).toBeVisible();
+    for (const [width, height] of [[980, 640], [1440, 900]]) {
+      await page.setViewportSize({ width, height });
+      const footer = await bar.boundingBox(), backdrop = await wash.boundingBox();
+      expect(backdrop.y + backdrop.height).toBeGreaterThanOrEqual(footer.y + footer.height - 1);
+      const opacity = await bar.evaluate(node => getComputedStyle(node).opacity);
+      expect(opacity).toBe('1'); // Only the surface is translucent, not its contents.
+      for (const name of ['Pause', 'Close playback sidebar']) {
+        const control = bar.getByRole('button', { name, exact: true });
+        await expect(control).toBeVisible();
+        const bounds = await control.boundingBox();
+        expect(bounds.y).toBeGreaterThanOrEqual(footer.y);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(footer.y + footer.height);
+      }
+      await page.mouse.move(450, 40);
+      await page.screenshot({ path: test.info().outputPath(`player-glass-${tone}-${width}.png`) });
+    }
+    await restore.click();
+    await expect(sidebar.locator('.playback-lyrics-heading').getByRole('button', { name: 'Close lyrics pane', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    expect(errors).toEqual([]);
+  });
+}
+
+
+for (const collapsed of ['queue', 'lyrics']) {
+  test(`dragging the divider to the ${collapsed === 'queue' ? 'top' : 'bottom'} collapses ${collapsed} and preserves the usable split`, async ({ page }) => {
+    await installTimingFixture(page, 120);
+    const { requests, errors } = await fixture(page, { localLyrics: [{ synced: true, line: Array.from({ length: 24 }, (_, i) => ({ start: i * 4000, value: `Verse ${i}: beside you` })) }] });
+    await page.getByRole('button', { name: 'Open playback sidebar', exact: true }).click();
+    const sidebar=page.locator('#playback-sidebar'), divider=sidebar.getByRole('separator', { name:'Resize playback panes', exact:true });
+    await expect(sidebar.locator('.lyrics-lines p')).toHaveCount(24);
+    await divider.focus(); await divider.press('ArrowDown');
+    const saved=await divider.getAttribute('aria-valuenow');
+    const stored=await page.evaluate(()=>localStorage.getItem('prism-player.playbackSplit'));
+    const grip=await divider.boundingBox(), stack=await sidebar.locator('.playback-sidebar-panes').boundingBox();
+    await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2); await page.mouse.down();
+    await page.mouse.move(grip.x+grip.width/2, collapsed==='queue' ? stack.y+8 : stack.y+stack.height-8,{steps:8});
+    await expect(sidebar.getByRole('status')).toHaveText(`Release to hide ${collapsed === 'queue' ? 'Queue' : 'Lyrics'}`);
+    expect(await page.evaluate(()=>localStorage.getItem('prism-player.playbackSplit'))).toBe(stored);
+    await page.mouse.up();
+    await expect(sidebar.locator(collapsed==='queue'?'.queue-panel-section':'.playback-lyrics-section')).toBeHidden();
+    const restore=sidebar.getByRole('button',{name:`Show ${collapsed} pane`,exact:true});
+    await expect(restore).toBeVisible();
+    await page.screenshot({path:test.info().outputPath(`edge-${collapsed}-collapsed.png`)});
+    await restore.click();
+    await expect(divider).toHaveAttribute('aria-valuenow',saved);
+    await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
+    await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
+    expect(requests.filter(request=>request==='getLyricsBySongId')).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('compact edge headers keep their positions and cancelling edge drag preserves the split', async ({ page }) => {
+  const { errors }=await fixture(page);
+  await page.getByRole('button',{name:'Open playback sidebar',exact:true}).click();
+  const sidebar=page.locator('#playback-sidebar'), divider=sidebar.getByRole('separator',{name:'Resize playback panes',exact:true});
+  await sidebar.getByRole('separator',{name:'Resize right sidebar',exact:true}).press('Home');
+  const header=sidebar.locator('.right-sidebar-heading');
+  let baseline;
+  for (const [width,height] of [[980,640],[1440,900]]) {
+    await page.setViewportSize({width,height});
+    const before=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.right-sidebar-close').getBoundingClientRect().x,overflow:el.scrollWidth>el.clientWidth}));
+    expect(before.h).toBe(28); expect(before.overflow).toBe(false);
+    await sidebar.getByRole('button',{name:'Close queue pane',exact:true}).click();
+    const after=await header.evaluate(el=>({x:el.querySelector('h3').getBoundingClientRect().x,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height,closeX:el.querySelector('.right-sidebar-close').getBoundingClientRect().x}));
+    expect(after).toEqual({x:before.x,y:before.y,h:28,closeX:before.closeX});
+    await page.screenshot({path:test.info().outputPath(`single-pane-header-${width}.png`)});
+    await sidebar.getByRole('button',{name:'Show queue pane',exact:true}).click();
+    await expect(sidebar.locator('.playback-lyrics-heading')).toHaveCSS('height','28px');
+    await divider.focus(); await divider.press('Home');
+    expect((await sidebar.locator('.queue-panel-section').boundingBox()).height).toBeLessThan(110);
+    await divider.press('End');
+    expect((await sidebar.locator('.playback-lyrics-section').boundingBox()).height).toBeLessThan(125);
+    await page.screenshot({path:test.info().outputPath(`edge-compact-${width}.png`)});
+    baseline=await divider.getAttribute('aria-valuenow');
+  }
+  await divider.evaluate(node=>node.addEventListener('pointerdown',event=>{node.dataset.testPointer=String(event.pointerId)},{once:true}));
+  const grip=await divider.boundingBox(), stack=await sidebar.locator('.playback-sidebar-panes').boundingBox();
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2,stack.y+8,{steps:8});
+  await expect(sidebar.getByRole('status')).toBeVisible();
+  const pointerId=Number(await divider.getAttribute('data-test-pointer'));
+  await divider.dispatchEvent('pointercancel',{pointerId}); await page.mouse.up();
+  await expect(divider).toHaveAttribute('aria-valuenow',baseline);
+  await expect(sidebar.locator('.queue-panel-section')).toBeVisible();
+  await expect(sidebar.locator('.playback-lyrics-section')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+
+async function openSelectionAlbum(page) {
+  await page.locator('.sidebar').getByRole('button',{name:'Albums',exact:true}).click();
+  await page.locator('.album-title-button').filter({hasText:/^Album a$/}).first().click();
+  await expect(page.locator('.album-detail-page .album-track-row')).toHaveCount(4);
+  return page.locator('.album-detail-page .album-track-row');
+}
+
+test('album row selection is visible without hover on odd, even and current tracks', async ({page}) => {
+  await fixture(page,{multiDisc:true});
+  const rows=await openSelectionAlbum(page);
+  const unselected = await rows.nth(2).evaluate(el=>getComputedStyle(el).backgroundColor);
+  await rows.nth(1).locator('.track-duration').click();
+  await page.mouse.move(20,20);
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await page.screenshot({path:test.info().outputPath('album-selection.png')});
+  expect(await rows.nth(1).evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe(unselected);
+  expect(await rows.nth(1).evaluate(el=>getComputedStyle(el).boxShadow)).not.toBe('none');
+  await rows.nth(2).locator('.track-name').click();
+  await page.mouse.move(20,20);
+  expect(await rows.nth(2).evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe(unselected);
+  await rows.nth(3).click({position:{x:3,y:27}});
+  await expect(rows.nth(3)).toHaveClass(/selected/);
+  await rows.nth(0).locator('.track-duration').click();
+  await page.mouse.move(20,20);
+  await expect(rows.nth(0)).toHaveClass(/active.*selected/);
+  expect(await rows.nth(0).evaluate(el=>getComputedStyle(el).boxShadow)).toContain('inset');
+  await expect(page.locator('.transport').getByRole('button',{name:'Play',exact:true})).toBeVisible();
+});
+
+test('album Command-click selects from title and row metadata and adds the exact batch to a playlist', async ({page}) => {
+  const {playlistAdds,errors}=await fixture(page,{selectionPlaylist:true,multiDisc:true});
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(0).locator('.track-name').click();
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(2);
+  await rows.nth(2).locator('.track-duration').click({button:'right'});
+  await expect(page.getByText('2 songs selected',{exact:true})).toBeVisible();
+  await page.getByRole('menuitem',{name:'Add to playlist',exact:true}).hover();
+  const destination=page.getByRole('menuitem',{name:/Selection playlist/});
+  await expect(destination).toBeVisible();
+  const box=await destination.boundingBox();
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2,{steps:12});
+  await page.screenshot({path:test.info().outputPath('playlist-menu.png')});
+  await destination.click();
+  await expect.poll(()=>playlistAdds).toEqual([{playlistId:'selection-playlist',songs:['a-0','a-2']}]);
+  await expect(page.locator('.transport').getByRole('button',{name:'Play',exact:true})).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('album Shift selection crosses discs and Select All preserves the batch through the row menu', async ({page}) => {
+  const {playlistAdds}=await fixture(page,{selectionPlaylist:true,multiDisc:true});
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(0).locator('.track-duration').click();
+  await rows.nth(3).locator('.album-track-album').click({modifiers:['Shift']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(4);
+  await rows.nth(1).locator('.track-name').click();
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(1);
+  await rows.nth(1).locator('.track-name').focus();
+  await page.keyboard.press('Meta+a');
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(4);
+  await rows.nth(3).getByRole('button',{name:'More options for Album a track 4',exact:true}).click();
+  await expect(page.getByText('4 songs selected',{exact:true})).toBeVisible();
+  await page.getByRole('menuitem',{name:'Add to playlist',exact:true}).focus();
+  await page.keyboard.press('ArrowRight');
+  const destination=page.getByRole('menuitem',{name:/Selection playlist/});
+  await expect(destination).toBeVisible();
+  await page.keyboard.press('Home');
+  await expect(destination).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(()=>playlistAdds).toEqual([{playlistId:'selection-playlist',songs:['a-0','a-1','a-2','a-3']}]);
+});
+
+test('album Command-click toggles selection and dedicated Play remains separate', async ({page}) => {
+  await fixture(page);
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(1).locator('.track-name').click();
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(2);
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(1);
+  await rows.nth(3).getByRole('button',{name:'Play Album a track 4',exact:true}).click();
+  await expect(page.locator('.album-detail-page .album-track-row.selected')).toHaveCount(1);
+  await expect(rows.nth(1)).toHaveClass(/selected/);
+  await expect(page.locator('.now-playing-copy')).toContainText('Album a track 4');
+});
+
+
+test('album selected tracks seed a new playlist instead of the current queue', async ({page}) => {
+  const {playlistCreates,errors}=await fixture(page,{selectionPlaylist:true});
+  const rows=await openSelectionAlbum(page);
+  await rows.nth(0).locator('.track-name').click();
+  await rows.nth(2).locator('.track-duration').click({modifiers:['Meta']});
+  await rows.nth(2).getByRole('button',{name:'More options for Album a track 3',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Add to playlist',exact:true}).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('End');
+  await expect(page.getByRole('menuitem',{name:'Add to new playlist',exact:true})).toBeFocused();
+  await page.keyboard.press('Enter');
+  const form=page.locator('.playlist-modal');
+  await expect(form.getByText('2 selected tracks will be added.',{exact:true})).toBeVisible();
+  await expect(form.getByText('Start with current queue',{exact:true})).toHaveCount(0);
+  await form.getByRole('textbox',{name:'Name',exact:true}).fill('Selected album tracks');
+  await form.getByRole('button',{name:'Create',exact:true}).click();
+  await expect.poll(()=>playlistCreates).toEqual([{name:'Selected album tracks',songs:['a-0','a-2']}]);
+  await expect(page.locator('.playlist-track-editor .track-row')).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+
+test('album artwork stays consistent across restored playback, Home and album navigation', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, distinctArtwork:true});
+  const coverId = locator => locator.getAttribute('src').then(src => src ? new URL(src).searchParams.get('id') : null);
+  const footer = page.locator('.player-cover');
+  await expect.poll(() => coverId(footer)).toBe('album-a');
+  await expect.poll(() => coverId(page.locator('.home-resume-cover'))).toBe('album-a');
+  await page.getByRole('button', {name:'Play',exact:true}).click();
+  await expect.poll(() => page.locator('.cover-wash-backdrop').getAttribute('style')).toContain('album-a');
+  await page.locator('.sidebar').getByRole('button',{name:'Albums',exact:true}).click();
+  await page.locator('.album-title-button').filter({hasText:/^Album a$/}).first().click();
+  await expect.poll(() => coverId(page.locator('.album-detail-page .detail-cover'))).toBe('album-a');
+  await page.getByRole('button',{name:'Next',exact:true}).click();
+  await expect.poll(() => coverId(footer)).toBe('album-a');
+  await page.locator('.sidebar').getByRole('button',{name:'Home',exact:true}).click();
+  await expect.poll(() => coverId(page.locator('.home-resume-cover'))).toBe('album-a');
+  // Persisted metadata retains the original song art; only presentation resolves the album.
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('prism-player.playbackState')).queue[0].coverArt)).toBe('track-a-0');
+  await page.reload();
+  await expect.poll(() => coverId(footer)).toBe('album-a');
+  expect(errors).toEqual([]);
+});
+
+
+test('album artwork resolves for a restored track outside the album catalog', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, distinctArtwork:true, playbackIndex:4, empty:true});
+  await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=album-b(?:&|$)/);
+  await expect(page.locator('.home-resume-cover')).toHaveAttribute('src', /id=album-b(?:&|$)/);
+  await page.getByRole('button',{name:'Next',exact:true}).click();
+  await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=album-b(?:&|$)/);
+  expect(errors).toEqual([]);
+});
+
+test('unavailable album artwork stays a placeholder rather than showing a track image', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, missingAlbumArtwork:true});
+  await expect(page.locator('.player-cover')).toHaveClass(/cover-fallback/);
+  await expect(page.locator('.home-resume-cover')).toHaveClass(/cover-fallback/);
+  await page.locator('.sidebar').getByRole('button',{name:'Albums',exact:true}).click();
+  await page.locator('.album-title-button').filter({hasText:/^Album a$/}).first().click();
+  await expect(page.locator('.album-detail-page .detail-cover')).toHaveClass(/cover-fallback/);
+  expect(errors).toEqual([]);
+});
+
+test('a standalone track without an album retains its own artwork', async ({page}) => {
+  const {errors} = await fixture(page, {artwork:true, distinctArtwork:true, standalone:true});
+  await expect(page.locator('.player-cover')).toHaveAttribute('src', /id=track-a-0(?:&|$)/);
+  await expect(page.locator('.home-resume-cover')).toHaveAttribute('src', /id=track-a-0(?:&|$)/);
+  expect(errors).toEqual([]);
+});
+
+
+test('installed 1.2 uses bundled curated notes and keeps older releases in About', async ({page}) => {
+  const {errors} = await fixture(page, {installedVersion:'1.2.0',unread:true});
+  const notes=page.locator('.whats-new-modal');
+  await expect(notes.getByText('More control over your queue and lyrics, clearer artist pages, and easier album track selection.',{exact:true})).toBeVisible();
+  await expect(notes.getByText('The highlights',{exact:true})).toBeVisible();
+  await expect(notes.getByText('Also in this update',{exact:true})).toBeVisible();
+  await notes.getByRole('button',{name:'Got it',exact:true}).click();
+  await page.locator('.sidebar').getByRole('button',{name:'Settings',exact:true}).click();
+  await page.getByText('Changelog',{exact:true}).click();
+  await expect(page.locator('.about-changelog').getByRole('heading',{name:'Prism 1.2.0',exact:true})).toBeVisible();
+  await expect(page.locator('.about-changelog').getByRole('heading',{name:'Prism 1.1.0',exact:true})).toBeVisible();
   expect(errors).toEqual([]);
 });

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AlbumArtworkContext, useAlbumArtwork } from "./albumArtwork";
 import { getErrorMessage } from "./errorMessage";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
@@ -11,7 +12,8 @@ import { isFlac } from "./flacCompatibility";
 import { useFlacCompatibility } from "./useFlacCompatibility";
 import facetMark from "./assets/brand/facet.svg";
 import { fetchRadioLyrics } from "./data/radioLyrics";
-import { matchesArtist, getArtistAlbums, type ArtistCredit } from "./artistCredits";
+import { sortArtistAlbums, sortAlbumSongs, loadArtistDiscography, type ArtistAlbumOrder, type ArtistPlaybackScope, type DiscographyStart } from "./artistDiscography";
+import { matchesArtist, matchesTrackArtist, getArtistAlbums, getArtistAppearances, type ArtistCredit } from "./artistCredits";
 import { isKnownArtistPlaceholderUrl, isNavidromeArtistPlaceholder, artistPlaceholder, artistImageNeedsRefresh, canRecheckFailedArtistImage, normalizeArtistImageCache, ARTIST_IMAGE_REFRESH_MS, type ArtistImageCache, type ArtistImageEntry } from "./artistArtwork";
 import type { ComponentProps, CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -38,6 +40,7 @@ import {
   Code2,
   Copy,
   ChevronDown,
+  ChevronUp,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
@@ -95,6 +98,7 @@ type AlbumViewMode = "art" | "list";
 type ArtistViewMode = "art" | "list";
 type HomeShelfViewMode = "art" | "list";
 type RightPanelTab = "queue" | "schedule" | "request" | "booth";
+type PlaybackPanes = "both" | "queue" | "lyrics";
 type LyricsStatus = "idle" | "loading" | "ready" | "empty" | "error";
 type DiscordPresenceStatus = "idle" | "connecting" | "connected" | "unavailable";
 type SongSortKey = "title" | "artist" | "album" | "duration" | "track";
@@ -527,6 +531,7 @@ const PLAYBACK_STATE_KEY = "prism-player.playbackState";
 const LISTENING_HISTORY_KEY = "prism-player.listeningHistory";
 const RIGHT_PANEL_OPEN_KEY = "prism-player.rightPanelOpen";
 const PLAYBACK_SPLIT_KEY = "prism-player.playbackSplit";
+const PLAYBACK_PANES_KEY = "prism-player.playbackPanes";
 const LIBRARY_EXPANDED_KEY = "prism-player.libraryExpanded";
 const SIDEBAR_COLLAPSED_KEY = "prism-player.sidebarCollapsed";
 const SIDEBAR_WIDTH_KEY = "prism-player.sidebarWidth";
@@ -661,16 +666,6 @@ function getViewLabel(view: View) {
   };
 
   return labels[view];
-}
-
-function sortAlbumsNewestFirst(albums: Album[]) {
-  return [...albums].sort((a, b) => {
-    const yearDifference = (b.year ?? Number.MIN_SAFE_INTEGER) - (a.year ?? Number.MIN_SAFE_INTEGER);
-    if (yearDifference) return yearDifference;
-
-    const changedDifference = (b.changed ?? b.created ?? "").localeCompare(a.changed ?? a.created ?? "");
-    return changedDifference || a.name.localeCompare(b.name);
-  });
 }
 
 function getArtistImageUrl(info?: ArtistInfo | null) {
@@ -1979,21 +1974,6 @@ function getSongTrack(song: Song) {
   return song.track ?? Number.MAX_SAFE_INTEGER;
 }
 
-function sortAlbumSongs(songs: Song[]) {
-  return [...songs].sort((a, b) => {
-    const discA = getSongDisc(a);
-    const discB = getSongDisc(b);
-    const trackA = getSongTrack(a);
-    const trackB = getSongTrack(b);
-
-    return (
-      discA - discB ||
-      trackA - trackB ||
-      a.title.localeCompare(b.title)
-    );
-  });
-}
-
 type DiscGroup = {
   discNumber: number | null;
   songs: Song[];
@@ -2045,6 +2025,7 @@ export function App() {
   const onArtistImageResolved = useCallback((artistId: string, entry: ArtistImageEntry) => {
     setArtistImageCache((current) => ({ ...current, [artistId]: entry }));
   }, []);
+  const [artworkCatalogKey, setArtworkCatalogKey] = useState("");
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus>(() => (loadStoredConfig() ? "hydrating" : "idle"));
   const [catalogProgress, setCatalogProgress] = useState<{ completed: number; total: number } | null>(null);
   const [listenerName, setListenerName] = useState("");
@@ -2053,6 +2034,31 @@ export function App() {
   const [listeningHistory, setListeningHistory] = useState<ListeningHistoryEntry[]>(() => loadListeningHistory());
   const [setupOpen, setSetupOpen] = useState(() => !loadStoredConfig());
   const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
+  const [artistAlbumOrder, setArtistAlbumOrder] = useState<ArtistAlbumOrder>(() => {
+    try { return localStorage.getItem("prism-player.artistAlbumOrder") === "oldest" ? "oldest" : "newest"; } catch { return "newest"; }
+  });
+  const artistPlaybackRequestRef = useRef(0);
+  const artistPlaybackRetryRef = useRef<(() => void) | null>(null);
+  const [artistPlaybackNotice, setArtistPlaybackNotice] = useState<{ loading: boolean; message: string } | null>(null);
+
+  function cancelArtistPlayback() {
+    artistPlaybackRequestRef.current += 1;
+    artistPlaybackRetryRef.current = null;
+    setArtistPlaybackNotice(null);
+  }
+
+  function changeArtistAlbumOrder(order: ArtistAlbumOrder) {
+    cancelArtistPlayback();
+    setArtistAlbumOrder(order);
+    try { localStorage.setItem("prism-player.artistAlbumOrder", order); } catch { /* Retain the session preference. */ }
+  }
+
+  useEffect(() => {
+    artistPlaybackRequestRef.current += 1;
+    artistPlaybackRetryRef.current = null;
+    setArtistPlaybackNotice(null);
+  }, [config, activeView, detailSelection]);
+
   const [detailStatus, setDetailStatus] = useState<"idle" | "loading" | "error">("idle");
   const [detailMessage, setDetailMessage] = useState("");
   const [backStack, setBackStack] = useState<BrowserSnapshot[]>([]);
@@ -2098,6 +2104,13 @@ export function App() {
   const [volume, setVolume] = useState(() => loadStoredSettings().lastVolume);
   const [rightPanelOpen, setRightPanelOpen] = useState(() => loadStoredBoolean(RIGHT_PANEL_OPEN_KEY, false));
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("queue");
+  const [playbackPanes, setPlaybackPanes] = useState<PlaybackPanes>(() => {
+    try {
+      const stored = localStorage.getItem(PLAYBACK_PANES_KEY);
+      return stored === "queue" || stored === "lyrics" ? stored : "both";
+    } catch { return "both"; }
+  });
+  const rightPanelToggleRef = useRef<HTMLButtonElement | null>(null);
   const [lyricsStatus, setLyricsStatus] = useState<LyricsStatus>("idle");
   const [lyricsLines, setLyricsLines] = useState<LyricLine[]>([]);
   const [lyricsMessage, setLyricsMessage] = useState("");
@@ -2320,9 +2333,23 @@ export function App() {
   const hasConfig = Boolean(config);
   const canNavigateBack = backStack.length > 0;
   const onNavigateBack = navigateBack;
+  const albumLookup = useMemo(() => {
+    const albums = [
+      ...libraryData.albums,
+      ...libraryData.recentAlbums,
+      ...libraryData.recentlyPlayedAlbums,
+      ...libraryData.favorites.albums,
+      ...libraryData.frequentAlbums,
+      ...searchResults.albums,
+    ];
+    return new Map(albums.map((album) => [album.id, album]));
+  }, [libraryData.albums, libraryData.favorites.albums, libraryData.recentAlbums, libraryData.recentlyPlayedAlbums, libraryData.frequentAlbums, searchResults.albums]);
+  const artworkReady = Boolean(config && artworkCatalogKey === libraryCatalogKey(config));
   const currentTrack = queue[currentIndex] ?? null;
-  const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "160") : null;
-  const currentTrackArtworkUrl = config && currentTrack ? buildCoverArtUrl(config, currentTrack.coverArt, "900") : null;
+  const currentAlbumArt = useAlbumArtwork(config, currentTrack?.albumId, albumLookup, artworkReady);
+  const currentCoverArt = currentTrack?.albumId ? currentAlbumArt : currentTrack?.coverArt;
+  const currentTrackCoverUrl = config && currentTrack ? buildCoverArtUrl(config, currentCoverArt, "160") : null;
+  const currentTrackArtworkUrl = config && currentTrack ? buildCoverArtUrl(config, currentCoverArt, "900") : null;
   const radioStationUrl = normalizeStationUrl(appSettings.radioStationUrl);
   const radioNowPlaying = firstRadioTrack(radioStationState);
   const radioNowPlayingSongId = radioNowPlaying?.subsonic_id ? String(radioNowPlaying.subsonic_id) : "";
@@ -2333,7 +2360,8 @@ export function App() {
   const radioElapsed = isRadioPlaying ? radioTrackElapsedSeconds(radioNowPlaying, radioStationState, radioClockNow) : 0;
   const radioCoverUrl = buildRadioCoverUrl(radioStationUrl, radioNowPlaying);
   const footerTrack = isRadioPresentation || suppressLocalFooter ? null : currentTrack ?? lastPlayedTrack;
-  const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.coverArt, "160") : null;
+  const footerAlbumArt = useAlbumArtwork(config, footerTrack?.albumId, albumLookup, artworkReady);
+  const footerTrackCoverUrl = config && footerTrack ? buildCoverArtUrl(config, footerTrack.albumId ? footerAlbumArt : footerTrack.coverArt, "160") : null;
   const visualEffectsEnabled = !appSettings.lowPerformanceMode;
   async function notifyDesktop(key: string, title: string, body: string, cooldownMs = 15_000) {
     if (!isTauriDesktopApp() || isAppForegrounded()) return;
@@ -2359,18 +2387,21 @@ export function App() {
     ? isRadioPlaying
       ? radioCoverUrl
       : isPlaying && config && currentTrack
-          ? buildCoverArtUrl(config, currentTrack.coverArt, "900")
+          ? buildCoverArtUrl(config, currentCoverArt, "900")
           : null
     : null;
+  const playlistFallbackTrack = detailSelection?.type === "playlist" && !detailSelection.data.coverArt ? detailSelection.data.entry?.[0] : undefined;
+  const playlistAlbumArt = useAlbumArtwork(config, playlistFallbackTrack?.albumId, albumLookup, artworkReady);
+  const playlistFallbackArt = playlistFallbackTrack?.albumId ? playlistAlbumArt : playlistFallbackTrack?.coverArt;
   const detailArtworkWashUrl = config && detailSelection
     ? detailSelection.type === "album"
       ? buildCoverArtUrl(
           config,
-          detailSelection.data.coverArt ?? detailSelection.data.song?.find((song) => song.coverArt)?.coverArt,
+          detailSelection.data.coverArt,
           "900",
         )
       : detailSelection.type === "playlist"
-        ? buildCoverArtUrl(config, detailSelection.data.coverArt ?? detailSelection.data.entry?.find((song) => song.coverArt)?.coverArt, "900")
+        ? buildCoverArtUrl(config, detailSelection.data.coverArt ?? playlistFallbackArt, "900")
         : getArtistImageUrl(detailSelection.data.info) ??
           buildCoverArtUrl(config, detailSelection.data.album?.find((album) => album.coverArt)?.coverArt, "900")
     : null;
@@ -2500,16 +2531,6 @@ export function App() {
     }),
     [libraryData.favorites.albums, libraryData.favorites.artists, libraryData.favorites.songs],
   );
-  const albumLookup = useMemo(() => {
-    const albums = [
-      ...libraryData.albums,
-      ...libraryData.recentAlbums,
-      ...libraryData.recentlyPlayedAlbums,
-      ...libraryData.favorites.albums,
-      ...searchResults.albums,
-    ];
-    return new Map(albums.map((album) => [album.id, album]));
-  }, [libraryData.albums, libraryData.favorites.albums, libraryData.recentAlbums, libraryData.recentlyPlayedAlbums, searchResults.albums]);
   const artistLookup = useMemo(() => {
     const artists = [...libraryData.artists, ...libraryData.favorites.artists, ...searchResults.artists];
     return new Map(artists.map((artist) => [artist.id, artist]));
@@ -2695,6 +2716,7 @@ export function App() {
   }
 
   async function tuneInRadio(nextUrl?: string) {
+    cancelArtistPlayback();
     const origin = normalizeStationUrl(nextUrl || radioStationInput || appSettings.radioStationUrl);
     const radioAudio = radioAudioRef.current;
     if (!origin || !radioAudio) {
@@ -2754,11 +2776,28 @@ export function App() {
 
   function setRightPanelState(open: boolean) {
     setRightPanelOpen(open);
-    localStorage.setItem(RIGHT_PANEL_OPEN_KEY, String(open));
+    try { localStorage.setItem(RIGHT_PANEL_OPEN_KEY, String(open)); } catch { /* The sidebar still works without storage. */ }
+    if (!open) rightPanelToggleRef.current?.focus();
+  }
+
+  function setPlaybackPanesState(panes: PlaybackPanes) {
+    setPlaybackPanes(panes);
+    try { localStorage.setItem(PLAYBACK_PANES_KEY, panes); } catch { /* Keep the session preference when storage is unavailable. */ }
+  }
+
+  function togglePlaybackPane(pane: "queue" | "lyrics") {
+    if (playbackPanes === pane) {
+      // Retain this last pane so reopening restores only the pane just closed.
+      setRightPanelState(false);
+    } else {
+      const remainingPane = pane === "queue" ? "lyrics" : "queue";
+      setPlaybackPanesState(playbackPanes === "both" ? remainingPane : "both");
+    }
   }
 
   function selectRightPanelTab(tab: RightPanelTab) {
-    setRightPanelTab(rightPanelOpen && rightPanelTab === tab ? "queue" : tab);
+    if (playbackPanes === "lyrics") setPlaybackPanesState("both");
+    setRightPanelTab(rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === tab ? "queue" : tab);
     setRightPanelState(true);
   }
 
@@ -3018,6 +3057,7 @@ export function App() {
   }
 
   async function saveConnection(event?: FormEvent<HTMLFormElement>) {
+    cancelArtistPlayback();
     event?.preventDefault();
 
     const nextConfig = {
@@ -3045,6 +3085,7 @@ export function App() {
   }
 
   async function openAlbumById(albumId: string, label = "album") {
+    cancelArtistPlayback();
     if (!config) return;
     const origin = { activeView, detailSelection };
 
@@ -3070,6 +3111,7 @@ export function App() {
   }
 
   async function openArtistById(artistId: string, label = "artist") {
+    cancelArtistPlayback();
     if (!config) return;
     const origin = { activeView, detailSelection };
 
@@ -3095,6 +3137,7 @@ export function App() {
   }
 
   async function openPlaylistById(playlistId: string, label = "playlist", editAfterOpen = false) {
+    cancelArtistPlayback();
     if (!config) return;
     const origin = { activeView, detailSelection };
 
@@ -3127,6 +3170,7 @@ export function App() {
   }
 
   async function playAlbum(album: Album) {
+    cancelArtistPlayback();
     if (!config) return;
 
     try {
@@ -3138,24 +3182,30 @@ export function App() {
     }
   }
 
-  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false) {
+  async function playArtist(artist: Artist | ArtistDetail, shuffleTracks = false, start?: DiscographyStart, scope: ArtistPlaybackScope = "albums") {
     if (!config) return;
-
+    const requestId = ++artistPlaybackRequestRef.current;
+    const isCurrent = () => requestId === artistPlaybackRequestRef.current;
+    artistPlaybackRetryRef.current = () => { void playArtist(artist, shuffleTracks, start, scope); };
+    setArtistPlaybackNotice({ loading: true, message: `Preparing ${artist.name}’s ${scope === "appearances" ? "appearances" : "discography"}…` });
     try {
       const artistDetail = "album" in artist ? artist : await loadArtistDetail(config, artist.id);
-      const albums = getArtistAlbums(artistDetail, libraryData.albums, songLibrary);
-      const albumDetails = await Promise.all(albums.slice(0, 50).map((album) => loadAlbumDetail(config, album.id)));
-      const songs = albumDetails.flatMap((album) => (album.song ?? []).filter((song) =>
-        matchesArtist(song, artistDetail) || matchesArtist(album, artistDetail),
-      ));
-      replaceQueue(shuffleTracks ? shuffled(songs) : songs);
+      if (!isCurrent()) return;
+      const releases = scope === "appearances"
+        ? getArtistAppearances(artistDetail, libraryData.albums, songLibrary)
+        : getArtistAlbums(artistDetail, libraryData.albums);
+      const albums = sortArtistAlbums(releases, artistAlbumOrder);
+      const result = await loadArtistDiscography(albums, id => loadAlbumDetail(config, id), isCurrent, start,
+        scope === "appearances" ? song => matchesTrackArtist(song, artistDetail) : undefined);
+      if (!result || !isCurrent()) return;
+      replaceQueue(shuffleTracks ? shuffled(result.songs) : result.songs, shuffleTracks ? 0 : result.startIndex);
     } catch (error) {
-      setDetailStatus("error");
-      setDetailMessage(getErrorMessage(error));
+      if (isCurrent()) setArtistPlaybackNotice({ loading: false, message: `Could not prepare ${scope === "appearances" ? "appearances" : "discography"}. ${getErrorMessage(error)}` });
     }
   }
 
   async function playPlaylist(playlist: Playlist) {
+    cancelArtistPlayback();
     if (!config) return;
 
     try {
@@ -3459,6 +3509,7 @@ export function App() {
   }
 
   function selectView(view: View) {
+    cancelArtistPlayback();
     if (["artists", "albums", "songs", "playlists"].includes(view)) setLibraryExpandedState(true);
     const nextSnapshot: BrowserSnapshot = { activeView: view, detailSelection: null };
     if (snapshotEquals(currentSnapshot(), nextSnapshot)) return;
@@ -3505,6 +3556,7 @@ export function App() {
   }
 
   function replaceQueue(songs: Song[], startIndex = 0, playlistSource: Playlist | null = null) {
+    cancelArtistPlayback();
     if (!songs.length) return;
     const safeStartIndex = Math.min(Math.max(startIndex, 0), songs.length - 1);
     stopTrackTransition(songs[safeStartIndex]?.id !== currentTrack?.id);
@@ -3547,6 +3599,7 @@ export function App() {
   }
 
   function playSong(song: Song) {
+    cancelArtistPlayback();
     const existingIndex = queue.findIndex((queuedSong) => queuedSong.id === song.id);
     stopTrackTransition(existingIndex !== currentIndex);
     recordListeningHistory();
@@ -3576,6 +3629,7 @@ export function App() {
   }
 
   function playNext(fromTrackEnd = false) {
+    if (!fromTrackEnd) cancelArtistPlayback();
     if (!queue.length) return;
     if (!fromTrackEnd) stopTrackTransition();
     recordListeningHistory(fromTrackEnd, fromTrackEnd ? playerDuration || currentTrack?.duration || position : position);
@@ -3744,6 +3798,7 @@ export function App() {
   }
 
   function playPrevious() {
+    cancelArtistPlayback();
     if (!queue.length) return;
     stopTrackTransition();
     recordListeningHistory();
@@ -3847,6 +3902,7 @@ export function App() {
   }
 
   function selectQueueTrack(index: number) {
+    cancelArtistPlayback();
     tuneOutRadio();
     setSuppressLocalFooter(false);
     stopTrackTransition();
@@ -3942,6 +3998,7 @@ export function App() {
   }
 
   function clearQueue() {
+    cancelArtistPlayback();
     stopTrackTransition();
     getActiveAudio()?.pause();
     setQueue([]);
@@ -3973,6 +4030,7 @@ export function App() {
   }
 
   function togglePlayback() {
+    cancelArtistPlayback();
     if (activePlaybackSource === "radio" && radioStationUrl) {
       const radioAudio = radioAudioRef.current;
       if (isRadioPlaying) {
@@ -4041,6 +4099,7 @@ export function App() {
   }
 
   async function resetConnection() {
+    cancelArtistPlayback();
     try {
       await clearNativePassword();
     } catch (error) {
@@ -4057,6 +4116,7 @@ export function App() {
     const catalogKey = config ? libraryCatalogKey(config) : null;
     if (catalogKey) void deleteLibraryCatalog(catalogKey).catch(() => undefined);
     catalogHydratedKeyRef.current = "";
+    setArtworkCatalogKey("");
     catalogSongsCompleteRef.current = false;
     setArtistImageCache({});
     localStorage.removeItem(STORAGE_KEY);
@@ -4214,7 +4274,10 @@ export function App() {
         if (!cancelled) setCatalogStatus("error");
       })
       .finally(() => {
-        if (!cancelled) catalogHydratedKeyRef.current = catalogKey;
+        if (!cancelled) {
+          catalogHydratedKeyRef.current = catalogKey;
+          setArtworkCatalogKey(catalogKey);
+        }
       });
 
     return () => { cancelled = true; catalogSongSyncGenerationRef.current += 1; };
@@ -4832,6 +4895,7 @@ export function App() {
 
     navigator.mediaSession.playbackState = controlsRadio ? (isRadioPlaying ? "playing" : "paused") : isPlaying ? "playing" : "paused";
     navigator.mediaSession.setActionHandler("play", () => {
+      cancelArtistPlayback();
       if (controlsRadio) {
         const radioAudio = radioAudioRef.current;
         if (radioAudio?.src) {
@@ -4847,6 +4911,7 @@ export function App() {
       setIsPlaying(true);
     });
     navigator.mediaSession.setActionHandler("pause", () => {
+      cancelArtistPlayback();
       if (controlsRadio) {
         radioAudioRef.current?.pause();
         setRadioMessage("Radio paused.");
@@ -4945,6 +5010,7 @@ export function App() {
   }, [isRadioPlaying, rightPanelTab]);
 
   return (
+    <AlbumArtworkContext.Provider value={{ config, albums: albumLookup, ready: artworkReady }}>
     <ContextMenu.Root
       open={Boolean(songContextMenu || libraryContextMenu)}
       onOpenChange={(open) => {
@@ -5151,6 +5217,16 @@ export function App() {
             />
           ) : (
             <LibraryView
+              artistAlbumOrder={artistAlbumOrder}
+              onArtistAlbumOrderChange={changeArtistAlbumOrder}
+              artistPlaybackNotice={artistPlaybackNotice ? <div className="artist-playback-notice" role="status"><StateNotice
+                tone={artistPlaybackNotice.loading ? "neutral" : "bad"}
+                icon={artistPlaybackNotice.loading ? <Loader2 size={16} className="spin" /> : <AlertCircle size={16} />}
+                title={artistPlaybackNotice.loading ? "Preparing playback" : "Playback could not start"}
+                text={artistPlaybackNotice.message}
+                actionLabel={artistPlaybackNotice.loading ? "Cancel" : "Retry"}
+                onAction={() => artistPlaybackNotice.loading ? cancelArtistPlayback() : artistPlaybackRetryRef.current?.()}
+              /></div> : null}
               activeView={activeView}
               config={config}
               listenerName={listenerName}
@@ -5209,7 +5285,7 @@ export function App() {
               onOpenArtist={(artist) => void openArtist(artist)}
               onOpenPlaylist={openPlaylist}
               onPlayAlbum={(album) => void playAlbum(album)}
-              onPlayArtist={(artist, shuffleTracks) => void playArtist(artist, shuffleTracks)}
+              onPlayArtist={(artist, shuffleTracks, start, scope) => void playArtist(artist, shuffleTracks, start, scope)}
               onPlayPlaylist={(playlist) => void playPlaylist(playlist)}
               onSavePlaylistDetails={savePlaylistDetails}
               onDeletePlaylist={deletePlaylistAndReturn}
@@ -5335,10 +5411,10 @@ export function App() {
             {isRadioPlaying ? (
               <>
                 <button
-                  className={rightPanelOpen && rightPanelTab === "schedule" ? "active" : ""}
+                  className={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "schedule" ? "active" : ""}
                   type="button"
                   aria-label="Show radio schedule"
-                  aria-expanded={rightPanelOpen && rightPanelTab === "schedule"}
+                  aria-expanded={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "schedule"}
                   aria-controls="playback-sidebar"
                   onClick={() => selectRightPanelTab("schedule")}
                   title="Schedule"
@@ -5346,10 +5422,10 @@ export function App() {
                   <CalendarDays size={15} />
                 </button>
                 <button
-                  className={rightPanelOpen && rightPanelTab === "request" ? "active" : ""}
+                  className={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "request" ? "active" : ""}
                   type="button"
                   aria-label="Request a song"
-                  aria-expanded={rightPanelOpen && rightPanelTab === "request"}
+                  aria-expanded={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "request"}
                   aria-controls="playback-sidebar"
                   onClick={() => selectRightPanelTab("request")}
                   title="Request"
@@ -5371,10 +5447,10 @@ export function App() {
                   {radioLikeBusy ? <Loader2 size={15} className="spin" /> : <Heart size={15} fill={radioIsLiked ? "currentColor" : "none"} />}
                 </button>
                 <button
-                  className={rightPanelOpen && rightPanelTab === "booth" ? "active" : ""}
+                  className={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "booth" ? "active" : ""}
                   type="button"
                   aria-label="Show booth feed"
-                  aria-expanded={rightPanelOpen && rightPanelTab === "booth"}
+                  aria-expanded={rightPanelOpen && playbackPanes !== "lyrics" && rightPanelTab === "booth"}
                   aria-controls="playback-sidebar"
                   onClick={() => selectRightPanelTab("booth")}
                   title="Booth feed"
@@ -5462,6 +5538,7 @@ export function App() {
           <div className="player-panel-buttons" role="group" aria-label="Player panels">
             <button
               className={`player-panel-toggle ${rightPanelOpen ? "active" : ""}`}
+              ref={rightPanelToggleRef}
               type="button"
               aria-label={`${rightPanelOpen ? "Close" : "Open"} playback sidebar`}
               aria-expanded={rightPanelOpen}
@@ -5476,6 +5553,8 @@ export function App() {
 
       {rightPanelOpen ? (
         <RightSidebar
+          panes={playbackPanes}
+          onTogglePane={togglePlaybackPane}
           tab={rightPanelTab}
           radioContent={isRadioPlaying ? (
             <>
@@ -5579,6 +5658,7 @@ export function App() {
               </button>
             </div>
             <PlaylistCreateForm
+              selectedTrackCount={playlistSeedSongs?.length}
               queueLength={queue.length}
               name={playlistName}
               setName={setPlaylistName}
@@ -5727,10 +5807,13 @@ export function App() {
     </main>
       </ContextMenu.Trigger>
     </ContextMenu.Root>
+    </AlbumArtworkContext.Provider>
   );
 }
 
 function RightSidebar({
+  panes,
+  onTogglePane,
   tab,
   radioContent,
   queue,
@@ -5760,6 +5843,8 @@ function RightSidebar({
   onClose,
   onShowQueue,
 }: {
+  panes: PlaybackPanes;
+  onTogglePane: (pane: "queue" | "lyrics") => void;
   tab: RightPanelTab;
   radioContent: ReactNode;
   queue: Song[];
@@ -5790,9 +5875,12 @@ function RightSidebar({
   onShowQueue: () => void;
 }) {
   const isRadioSession = isRadioPlaying || radioStatus === "checking";
+  const queueVisible = panes !== "lyrics";
+  const lyricsVisible = panes !== "queue";
   const [radioTimelineView, setRadioTimelineView] = useState<"recent" | "upcoming">("recent");
   const panesRef = useRef<HTMLDivElement | null>(null);
-  const splitDragRef = useRef<{ pointerId: number; y: number; share: number; height: number } | null>(null);
+  const splitDragRef = useRef<{ pointerId: number; y: number; share: number; targetShare: number; height: number } | null>(null);
+  const [dragShare, setDragShare] = useState<number | null>(null);
   const [paneHeight, setPaneHeight] = useState(0);
   const [splitShare, setSplitShare] = useState(() => {
     try {
@@ -5803,13 +5891,23 @@ function RightSidebar({
   });
   // Keep usable queue and lyric space; the 12px row between them is the drag target.
   const availablePaneHeight = Math.max(0, paneHeight - 12);
-  const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 200 : 140;
-  const minimumShare = availablePaneHeight ? Math.min(minimumUpperHeight, availablePaneHeight / 2) / availablePaneHeight : 0;
-  const maximumShare = availablePaneHeight ? 1 - Math.min(220, availablePaneHeight / 2) / availablePaneHeight : 1;
+  const minimumUpperHeight = isRadioSession && tab === "queue" && radioNowPlaying ? 160 : 96;
+  const minimumScale = Math.min(1, availablePaneHeight / (minimumUpperHeight + 112));
+  const minimumShare = availablePaneHeight ? minimumUpperHeight * minimumScale / availablePaneHeight : 0;
+  const maximumShare = availablePaneHeight ? 1 - 112 * minimumScale / availablePaneHeight : 1;
   const effectiveShare = clampNumber(splitShare, minimumShare, maximumShare);
+  const renderedShare = dragShare ?? effectiveShare;
+  const compactLyrics = panes === "both" && availablePaneHeight * (1 - renderedShare) < 160;
+  const collapseTarget = dragShare == null ? null : dragShare * availablePaneHeight <= 48 ? "queue"
+    : (1 - dragShare) * availablePaneHeight <= 48 ? "lyrics" : null;
 
   function updateSplit(nextShare: number) {
-    const bounded = clampNumber(nextShare, minimumShare, maximumShare);
+    // Keyboard resizing can precede ResizeObserver delivery after a window resize.
+    const height = Math.max(0, (panesRef.current?.clientHeight ?? 0) - 12);
+    const scale = Math.min(1, height / (minimumUpperHeight + 112));
+    const minimum = height ? minimumUpperHeight * scale / height : 0;
+    const maximum = height ? 1 - 112 * scale / height : 1;
+    const bounded = clampNumber(nextShare, minimum, maximum);
     setSplitShare(bounded);
     try { localStorage.setItem(PLAYBACK_SPLIT_KEY, String(bounded)); } catch { /* Resizing still works without preference storage. */ }
   }
@@ -5955,6 +6053,7 @@ function RightSidebar({
     <aside
       id="playback-sidebar"
       className="right-sidebar"
+      style={{ gridTemplateRows: panes === "queue" ? "28px minmax(0, 1fr) 24px" : "28px minmax(0, 1fr)" }}
       aria-label="Playback sidebar"
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
@@ -5962,15 +6061,36 @@ function RightSidebar({
     >
       <div className="right-sidebar-heading">
         <div>
-          <p className="eyebrow">Player</p>
-          <h3>{headingLabel}</h3>
+          <h3 title={queueVisible ? headingLabel : "Lyrics"}>{queueVisible ? headingLabel : "Lyrics"}</h3>
         </div>
         <div className="right-sidebar-heading-actions">
+          {!queueVisible ? (
+            <button
+              className="playback-pane-restore"
+              type="button"
+              aria-label={`Show ${isRadioSession ? "timeline" : "queue"} pane`}
+              title={`Show ${isRadioSession ? "timeline" : "queue"} pane`}
+              onClick={() => onTogglePane("queue")}
+            >
+              <Plus size={14} /> {isRadioSession ? "Timeline" : "Queue"}
+            </button>
+          ) : null}
+          {panes === "both" ? (
+            <button
+              className="icon-button playback-pane-close"
+              type="button"
+              aria-label={`Close ${isRadioSession ? "timeline" : "queue"} pane`}
+              title={`Close ${isRadioSession ? "timeline" : "queue"} pane`}
+              onClick={() => onTogglePane("queue")}
+            >
+              <ChevronUp size={14} />
+            </button>
+          ) : null}
           {isRadioSession && tab !== "queue" ? (
             <button className="icon-button" type="button" aria-label="Show timeline" onClick={onShowQueue}><ListMusic size={16} /></button>
           ) : null}
-          <button className="icon-button right-sidebar-close" type="button" aria-label="Close playback sidebar" onClick={onClose}>
-            <X size={16} />
+          <button className="icon-button right-sidebar-close" type="button" aria-label="Close playback sidebar" title="Close playback sidebar" onClick={onClose}>
+            <PanelRightClose size={16} />
           </button>
         </div>
       </div>
@@ -5978,10 +6098,10 @@ function RightSidebar({
       <div
         className="playback-sidebar-panes"
         ref={panesRef}
-        style={{ gridTemplateRows: `minmax(0, ${effectiveShare}fr) 12px minmax(0, ${1 - effectiveShare}fr)` }}
+        style={{ gridTemplateRows: panes === "both" ? `minmax(0, ${renderedShare}fr) 12px minmax(0, ${1 - renderedShare}fr)` : "minmax(0, 1fr)" }}
       >
         {tab === "queue" ? (
-          <div className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}${isRadioSession && radioNowPlaying ? " has-current-track" : ""}`}>
+          <div hidden={!queueVisible} className={`right-panel-section queue-panel-section ${isRadioSession ? "radio-timeline-panel" : ""}${isRadioSession && radioNowPlaying ? " has-current-track" : ""}`}>
             {!isRadioSession ? (
               <div className="queue-heading">
                 <p className="eyebrow">Now + Next</p>
@@ -6079,43 +6199,60 @@ function RightSidebar({
             ) : null}
           </div>
         ) : (
-          <div className="right-panel-section radio-sidebar-content">{radioContent}</div>
+          <div hidden={!queueVisible} className="right-panel-section radio-sidebar-content">{radioContent}</div>
         )}
         <div
           className="playback-pane-divider"
+          hidden={panes !== "both"}
           role="separator"
           aria-label="Resize playback panes"
           aria-orientation="horizontal"
-          aria-valuemin={Math.round(minimumShare * 100)}
-          aria-valuemax={Math.round(maximumShare * 100)}
-          aria-valuenow={Math.round(effectiveShare * 100)}
-          aria-valuetext={`${Math.round(effectiveShare * 100)}% ${headingLabel.toLowerCase()}, ${Math.round((1 - effectiveShare) * 100)}% lyrics`}
+          aria-valuemin={dragShare == null ? Math.round(minimumShare * 100) : 0}
+          aria-valuemax={dragShare == null ? Math.round(maximumShare * 100) : 100}
+          aria-valuenow={Math.round(renderedShare * 100)}
+          aria-valuetext={`${Math.round(renderedShare * 100)}% ${headingLabel.toLowerCase()}, ${Math.round((1 - renderedShare) * 100)}% lyrics`}
           tabIndex={0}
           onPointerDown={(event) => {
             if (event.button !== 0 || !availablePaneHeight) return;
             event.preventDefault();
             event.currentTarget.focus();
             event.currentTarget.setPointerCapture(event.pointerId);
-            splitDragRef.current = { pointerId: event.pointerId, y: event.clientY, share: effectiveShare, height: availablePaneHeight };
+            splitDragRef.current = { pointerId: event.pointerId, y: event.clientY, share: effectiveShare, targetShare: effectiveShare, height: availablePaneHeight };
+            setDragShare(effectiveShare);
           }}
           onPointerMove={(event) => {
             const drag = splitDragRef.current;
-            if (drag?.pointerId === event.pointerId) updateSplit(drag.share + (event.clientY - drag.y) / drag.height);
+            if (drag?.pointerId !== event.pointerId) return;
+            drag.targetShare = clampNumber(drag.share + (event.clientY - drag.y) / drag.height, 0, 1);
+            setDragShare(drag.targetShare);
           }}
           onPointerUp={(event) => {
+            const drag = splitDragRef.current;
+            if (drag?.pointerId !== event.pointerId) return;
+            if (drag.targetShare * drag.height <= 48) onTogglePane("queue");
+            else if ((1 - drag.targetShare) * drag.height <= 48) onTogglePane("lyrics");
+            else updateSplit(drag.targetShare);
+            setDragShare(null);
             splitDragRef.current = null;
             if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
           }}
-          onPointerCancel={() => { splitDragRef.current = null; }}
-          onLostPointerCapture={() => { splitDragRef.current = null; }}
+          onPointerCancel={() => { splitDragRef.current = null; setDragShare(null); }}
+          onLostPointerCapture={() => { splitDragRef.current = null; setDragShare(null); }}
           onKeyDown={(event) => {
             if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
             event.preventDefault();
-            updateSplit(event.key === "Home" ? minimumShare : event.key === "End" ? maximumShare : effectiveShare + (event.key === "ArrowDown" ? 0.05 : -0.05));
+            updateSplit(event.key === "Home" ? 0 : event.key === "End" ? 1 : effectiveShare + (event.key === "ArrowDown" ? 0.05 : -0.05));
           }}
-        />
-        <section className="playback-lyrics-section" aria-labelledby="playback-lyrics-heading">
-          <h3 id="playback-lyrics-heading">Lyrics</h3>
+        >
+          {collapseTarget ? <span className="playback-pane-collapse-hint" role="status">Release to hide {collapseTarget === "queue" ? isRadioSession ? "Timeline" : "Queue" : "Lyrics"}</span> : null}
+        </div>
+        <section hidden={!lyricsVisible} className={`playback-lyrics-section${queueVisible ? "" : " single-pane"}${compactLyrics ? " compact" : ""}`} aria-labelledby="playback-lyrics-heading">
+          <div className="playback-lyrics-heading">
+            <h3 id="playback-lyrics-heading">Lyrics</h3>
+            <button className="icon-button playback-pane-close" type="button" aria-label="Close lyrics pane" title="Close lyrics pane" onClick={() => onTogglePane("lyrics")}>
+              <ChevronDown size={14} />
+            </button>
+          </div>
           <div className="right-panel-section lyrics-panel">
             {isRadioSession || currentTrack ? (
               <>
@@ -6149,6 +6286,11 @@ function RightSidebar({
           </div>
         </section>
       </div>
+      {!lyricsVisible ? (
+        <button className="playback-pane-restore playback-pane-restore-bottom" type="button" aria-label="Show lyrics pane" title="Show lyrics pane" onClick={() => onTogglePane("lyrics")}>
+          <Plus size={14} /> Lyrics
+        </button>
+      ) : null}
       {queueDragGhost ? (
         <div
           className="queue-drag-ghost"
@@ -6440,7 +6582,7 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
         <p className="eyebrow">What’s new</p>
         <Dialog.Title asChild><h2 id="whats-new-title">Prism {latestRelease.displayVersion ?? latestRelease.version}</h2></Dialog.Title>
         <Dialog.Description asChild><p className="whats-new-copy">
-          {releases.length === 1 ? latestRelease.title : `Here’s what changed since Prism ${releases[releases.length - 1]?.version}.`}
+          {releases.length === 1 ? latestRelease.introduction : `Here’s what changed since Prism ${releases[releases.length - 1]?.version}.`}
         </p></Dialog.Description>
         <div className="whats-new-release-list">
           {releases.map((release) => (
@@ -6595,7 +6737,7 @@ function SettingsView({
             <summary><History size={15} /> Changelog</summary>
             <div className="about-changelog-list">
             {[...WHATS_NEW_RELEASES]
-              .filter((release) => !release.previewForVersion)
+              .filter((release) => !release.previewForVersion && compareVersions(release.version, APP_VERSION) <= 0)
               .sort((left, right) => compareVersions(right.version, left.version))
               .map((release) => (
                 <article key={release.version}>
@@ -7365,6 +7507,9 @@ function RadioView({
 }
 
 function LibraryView({
+  artistAlbumOrder,
+  onArtistAlbumOrderChange,
+  artistPlaybackNotice,
   activeView,
   config,
   listenerName,
@@ -7431,6 +7576,9 @@ function LibraryView({
   onQueueSong,
   onRetryLibrary,
 }: {
+  artistAlbumOrder: ArtistAlbumOrder;
+  onArtistAlbumOrderChange: (order: ArtistAlbumOrder) => void;
+  artistPlaybackNotice: ReactNode;
   activeView: View;
   config: NavidromeConfig | null;
   listenerName: string;
@@ -7485,7 +7633,7 @@ function LibraryView({
   onOpenArtist: (artist: Artist) => void;
   onOpenPlaylist: (playlist: Playlist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean) => void;
+  onPlayArtist: (artist: Artist | ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart, scope?: ArtistPlaybackScope) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -7563,8 +7711,11 @@ function LibraryView({
       className={`browser-panel ${isCollectionView && !detailSelection ? "library-collection-panel" : ""} view-${activeView} ${activeView === "overview" || activeView === "nowPlaying" ? `home-panel ${isHomeScrollbarVisible ? "is-scrolling" : ""}` : ""}`}
       onScroll={activeView === "overview" || activeView === "nowPlaying" ? revealHomeScrollbar : undefined}
     >
+      {artistPlaybackNotice}
       {detailStatus !== "idle" || detailSelection ? (
         <DetailPanel
+          artistAlbumOrder={artistAlbumOrder}
+          onArtistAlbumOrderChange={onArtistAlbumOrderChange}
           config={config}
           albums={albums}
           songs={songs}
@@ -7882,7 +8033,7 @@ function OverviewHome({
         name: albumName,
         artist: entry.song.artist ?? source?.artist ?? "",
         artistId: entry.song.artistId,
-        coverArt: entry.song.coverArt ?? source?.coverArt,
+        coverArt: source?.coverArt,
       },
       count: (current?.count ?? 0) + 1,
       firstIndex: current?.firstIndex ?? index,
@@ -7917,6 +8068,7 @@ function OverviewHome({
         {resumeTrack ? (
           <section className="home-resume-card" aria-labelledby="home-resume-title">
             <PlayableCover
+              albumId={resumeTrack.albumId}
               src={config ? buildCoverArtUrl(config, resumeTrack.coverArt, "320") : null}
               label={resumeTrack.title}
               className="home-resume-cover"
@@ -7998,10 +8150,10 @@ function HomeListeningShelf({ history, fallbackAlbums, viewMode, config, onPlayS
           const coverArt = playlist?.coverArt ?? album?.coverArt ?? song.coverArt;
           const open = playlist ? () => onOpenPlaylist({ id: playlist.id, name: playlist.name }) : album ? () => onOpenAlbum({ id: album.id, name: album.name, artist: album.artist ?? song.artist ?? "" }) : null;
           return <div className="home-album" key={`${label}-${song.id}`} role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open ?? undefined} onKeyDown={(event) => { if (open && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open(); } }}>
-            <PlayableCover src={config && coverArt ? buildCoverArtUrl(config, coverArt, "320") : null} label={label} className="home-album-cover" onOpen={open ?? undefined} onPlay={() => onPlaySong(song)} />
+            <PlayableCover albumId={playlist?.coverArt ? undefined : song.albumId ?? album?.id} src={config && coverArt ? buildCoverArtUrl(config, coverArt, "320") : null} label={label} className="home-album-cover" onOpen={open ?? undefined} onPlay={() => onPlaySong(song)} />
             <div className="home-album-copy"><strong>{label}</strong><small>{byline}</small></div>
           </div>;
-        }) : fallbackAlbums.map((album) => <div className="home-album" key={album.id} role="button" tabIndex={0} onClick={() => onOpenAlbum(album)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenAlbum(album); } }}><PlayableCover src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null} label={album.name} className="home-album-cover" onOpen={() => onOpenAlbum(album)} onPlay={() => onPlayAlbum(album)} /><div className="home-album-copy"><strong>{album.name}</strong><small>{album.artist || `${album.songCount ?? 0} tracks`}</small></div></div>))}
+        }) : fallbackAlbums.map((album) => <div className="home-album" key={album.id} role="button" tabIndex={0} onClick={() => onOpenAlbum(album)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenAlbum(album); } }}><PlayableCover albumId={album.id} src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null} label={album.name} className="home-album-cover" onOpen={() => onOpenAlbum(album)} onPlay={() => onPlayAlbum(album)} /><div className="home-album-copy"><strong>{album.name}</strong><small>{album.artist || `${album.songCount ?? 0} tracks`}</small></div></div>))}
       </div></div>
     </section>
   );
@@ -8064,7 +8216,7 @@ function HomeAlbumShelf({
           {albums.map((album) => (
             <div className="home-album" key={album.id} role={onOpenAlbum ? "button" : undefined} tabIndex={onOpenAlbum ? 0 : undefined} onClick={onOpenAlbum ? () => onOpenAlbum(album) : undefined} onKeyDown={(event) => { if (onOpenAlbum && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenAlbum(album); } }}>
               <PlayableCover
-                src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
+                albumId={album.id} src={config ? buildCoverArtUrl(config, album.coverArt, "320") : null}
                 label={album.name}
                 className="home-album-cover"
                 onOpen={onOpenAlbum ? () => onOpenAlbum(album) : undefined}
@@ -8370,6 +8522,7 @@ function SearchResultsView({
             }}
           >
             <CoverArt
+              albumId={primaryMatch.type === "song" ? primaryMatch.item.albumId : undefined}
               src={config && primaryMatch.type !== "artist" ? buildCoverArtUrl(config, primaryMatch.item.coverArt, "160") : null}
               label={primaryMatch.label}
               className="search-primary-art"
@@ -9111,6 +9264,7 @@ function AlbumList({
 
 function PlayableCover({
   src,
+  albumId,
   fallbackSrc,
   label,
   className,
@@ -9123,6 +9277,7 @@ function PlayableCover({
   onPlay,
 }: {
   src: string | null;
+  albumId?: string;
   fallbackSrc?: string | null;
   label: string;
   className: string;
@@ -9134,7 +9289,7 @@ function PlayableCover({
   onOpen?: () => void;
   onPlay: () => void;
 }) {
-  const cover = <CoverArt src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} rejectArtistPlaceholder={rejectArtistPlaceholder} />;
+  const cover = <CoverArt albumId={albumId} src={src} fallbackSrc={fallbackSrc} label={label} className={className} fallbackIcon={fallbackIcon} onSourceError={onSourceError} rejectArtistPlaceholder={rejectArtistPlaceholder} />;
 
   return (
     <div className={`playable-cover ${rounded ? "round" : ""}`}>
@@ -9154,6 +9309,7 @@ function PlayableCover({
 
 function CoverArt({
   src,
+  albumId,
   fallbackSrc,
   label,
   className,
@@ -9162,6 +9318,7 @@ function CoverArt({
   rejectArtistPlaceholder = false,
 }: {
   src: string | null;
+  albumId?: string;
   fallbackSrc?: string | null;
   label: string;
   className: string;
@@ -9169,6 +9326,9 @@ function CoverArt({
   onSourceError?: (url: string) => void;
   rejectArtistPlaceholder?: boolean;
 }) {
+  const artwork = useContext(AlbumArtworkContext);
+  const albumCover = useAlbumArtwork(artwork.config, albumId, artwork.albums, artwork.ready);
+  if (albumId) src = artwork.config ? buildCoverArtUrl(artwork.config, albumCover) : null;
   const [failedSources, setFailedSources] = useState<string[]>([]);
   const imageSrc = [src, fallbackSrc].find((url) => url && !failedSources.includes(url)
     && (!rejectArtistPlaceholder || !isKnownArtistPlaceholderUrl(url)));
@@ -9556,6 +9716,7 @@ function ArtistList({
 
 function PlaylistCreateForm({
   queueLength,
+  selectedTrackCount,
   name,
   setName,
   description,
@@ -9570,6 +9731,7 @@ function PlaylistCreateForm({
   onCancel,
 }: {
   queueLength: number;
+  selectedTrackCount?: number;
   name: string;
   setName: (name: string) => void;
   description: string;
@@ -9617,7 +9779,7 @@ function PlaylistCreateForm({
           <span>Public playlist</span>
           <small>Visible to other Navidrome users</small>
         </label>
-        <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
+        {selectedTrackCount != null ? <p className="settings-note">{selectedTrackCount} selected track{selectedTrackCount === 1 ? "" : "s"} will be added.</p> : <label className={`checkbox-row ${canUseQueue ? "" : "disabled"}`}>
           <input
             type="checkbox"
             checked={fromQueue && canUseQueue}
@@ -9626,7 +9788,7 @@ function PlaylistCreateForm({
           />
           <span>Start with current queue</span>
           <small>{canUseQueue ? `${queueLength} tracks` : "Queue empty"}</small>
-        </label>
+        </label>}
       </div>
       <div className="playlist-create-actions">
         {message ? <p className={status === "error" ? "bad" : ""}>{message}</p> : null}
@@ -9736,8 +9898,10 @@ function PlaylistDetailPanel({
   onSongContextMenu: (event: MouseEvent<HTMLElement>, song: Song, selectedSongs?: Song[]) => void;
 }) {
   const songs = playlist.entry ?? [];
-  const playlistCover =
-    config ? buildCoverArtUrl(config, playlist.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+  const artwork = useContext(AlbumArtworkContext);
+  const fallbackSong = playlist.coverArt ? undefined : songs[0];
+  const fallbackAlbumArt = useAlbumArtwork(config, fallbackSong?.albumId, artwork.albums, artwork.ready);
+  const playlistCover = config ? buildCoverArtUrl(config, playlist.coverArt ?? (fallbackSong?.albumId ? fallbackAlbumArt : fallbackSong?.coverArt), "460") : null;
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [name, setName] = useState(playlist.name);
@@ -10115,15 +10279,17 @@ function ArtistOptions({
 
 // Album tracks must not depend on completion of the optional full-library sync.
 function ArtistDiscographyAlbum({
-  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue,
+  album, artist, config, librarySongs, onOpenAlbum, onPlayAlbum, onReplaceQueue, onPlayTrack, appearancesOnly = false,
   currentTrack, favoriteIds, favoriteBusyKey, onToggleFavorite, onOpenArtist, onSongContextMenu,
 }: Pick<ComponentProps<typeof TrackList>, "currentTrack" | "favoriteIds" | "favoriteBusyKey" | "onToggleFavorite" | "onOpenArtist" | "onSongContextMenu"> & {
+  appearancesOnly?: boolean;
   album: Album;
   artist: Artist;
   config: NavidromeConfig | null;
   librarySongs: Song[];
   onOpenAlbum: (album: Album) => void;
   onPlayAlbum: (album: Album) => void;
+  onPlayTrack: (start: DiscographyStart) => void;
   onReplaceQueue: (songs: Song[], startIndex?: number) => void;
 }) {
   const groupRef = useRef<HTMLElement>(null);
@@ -10145,14 +10311,16 @@ function ArtistDiscographyAlbum({
     queryFn: () => navidromeClient.album(config!, album.id),
     enabled: Boolean(config) && nearViewport,
   });
-  const albumSongs = sortAlbumSongs(tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
+  const releaseSongs = tracks.data ? tracks.data.song ?? [] : librarySongs.filter((song) =>
     song.albumId === album.id ||
     (!song.albumId && song.album === album.name && (song.artistId === artist.id || song.artist === artist.name)),
-  ));
+  );
+  const albumSongs = sortAlbumSongs(appearancesOnly ? releaseSongs.filter(song => matchesTrackArtist(song, artist)) : releaseSongs);
   const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "160") : null;
+  if (appearancesOnly && tracks.isSuccess && !albumSongs.length) return null;
   return (
-    <section className="artist-album-group" ref={groupRef} data-context-kind="album" data-context-id={album.id}>
-      <div className="artist-album-heading">
+    <section className={`artist-album-group${appearancesOnly ? " artist-appearance-group" : ""}`} ref={groupRef} data-context-kind="album" data-context-id={album.id}>
+      {!appearancesOnly ? <div className="artist-album-heading">
         <button className="artist-album-main" type="button" onClick={() => onOpenAlbum(album)}>
           <CoverArt src={albumCover} label={album.name} className="artist-album-cover" />
           <span>
@@ -10163,8 +10331,8 @@ function ArtistDiscographyAlbum({
         <button
           className="track-play"
           type="button"
-          onClick={() => albumSongs.length ? onReplaceQueue(albumSongs) : onPlayAlbum(album)}
-          aria-label={"Play " + album.name}
+          onClick={() => onPlayAlbum(album)}
+          aria-label={`Play ${album.name}`}
         >
           <Play size={15} strokeWidth={1.6} />
         </button>
@@ -10174,18 +10342,19 @@ function ArtistDiscographyAlbum({
           label={album.name}
           onToggle={(favorite) => onToggleFavorite("album", album.id, favorite)}
         />
-      </div>
+      </div> : null}
       {tracks.isError ? <p className="artist-album-empty" role="status">Could not load tracks. <button type="button" onClick={() => void tracks.refetch()}>Retry</button></p> : null}
       {albumSongs.length ? (
         <TrackList
           songs={albumSongs}
           albumName={album.name}
+          inlineAlbum={appearancesOnly ? { album, coverUrl: albumCover, onOpen: () => onOpenAlbum(album), onPlay: tracks.isSuccess ? () => onReplaceQueue(albumSongs) : undefined } : undefined}
           currentTrack={currentTrack}
           favoriteIds={favoriteIds}
           favoriteBusyKey={favoriteBusyKey}
           onToggleFavorite={onToggleFavorite}
           onOpenArtist={onOpenArtist}
-          onPlaySong={(song) => onReplaceQueue(albumSongs, Math.max(0, albumSongs.findIndex((albumSong) => albumSong.id === song.id)))}
+          onPlaySong={(song) => onPlayTrack({ albumId: album.id, songId: song.id, trackIndex: albumSongs.indexOf(song) })}
           onSongContextMenu={onSongContextMenu}
         />
       ) : !tracks.isError ? (
@@ -10196,6 +10365,8 @@ function ArtistDiscographyAlbum({
 }
 
 function DetailPanel({
+  artistAlbumOrder,
+  onArtistAlbumOrderChange,
   config,
   albums,
   songs: librarySongs,
@@ -10223,6 +10394,8 @@ function DetailPanel({
   onQueueSong,
   onSongContextMenu,
 }: {
+  artistAlbumOrder: ArtistAlbumOrder;
+  onArtistAlbumOrderChange: (order: ArtistAlbumOrder) => void;
   config: NavidromeConfig | null;
   albums: Album[];
   songs: Song[];
@@ -10239,7 +10412,7 @@ function DetailPanel({
   onOpenAlbum: (album: Album) => void;
   onOpenArtist: (artist: Artist) => void;
   onPlayAlbum: (album: Album) => void;
-  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean) => void;
+  onPlayArtist: (artist: ArtistDetail, shuffleTracks?: boolean, start?: DiscographyStart, scope?: ArtistPlaybackScope) => void;
   onPlayPlaylist: (playlist: Playlist) => void;
   onSavePlaylistDetails: (playlist: Playlist, details: PlaylistDetailsUpdate) => Promise<void>;
   onDeletePlaylist: (playlist: Playlist) => Promise<void>;
@@ -10268,14 +10441,15 @@ function DetailPanel({
 
   if (detailSelection.type === "artist") {
     const artist = detailSelection.data;
-    const artistAlbums = sortAlbumsNewestFirst(getArtistAlbums(artist, albums, librarySongs));
+    const artistAlbums = sortArtistAlbums(getArtistAlbums(artist, albums), artistAlbumOrder);
+    const appearances = sortArtistAlbums(getArtistAppearances(artist, albums, librarySongs), artistAlbumOrder);
     const artistInfo = artist.info;
     const artistImage = getArtistImageUrl(artistInfo);
     const serverArtistCover = config ? buildCoverArtUrl(config, artist.coverArt, "420") : null;
     const biography = cleanBiography(artistInfo?.biography);
     const similarArtists = artistInfo?.similarArtist?.slice(0, 8) ?? [];
     const topSongs = getArtistTopSongs(artist, librarySongs, listeningHistory);
-    const latestRelease = artistAlbums[0];
+    const latestRelease = sortArtistAlbums(artistAlbums)[0];
     const latestReleaseCover = config && latestRelease ? buildCoverArtUrl(config, latestRelease.coverArt, "320") : null;
     const lastFmUrl = getSafeExternalUrl(artistInfo?.lastFmUrl);
     const musicBrainzUrl = getMusicBrainzArtistUrl(artistInfo?.musicBrainzId ?? artist.musicBrainzId);
@@ -10288,7 +10462,7 @@ function DetailPanel({
       <section className={`detail-panel detail-page artist-detail-page ${albumViewMode === "list" ? "artist-list-mode" : ""}`}>
         <div className="album-hero detail-page-hero artist-hero">
           <div className="detail-artwork-stage">
-            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
+            <PlayableCover src={artistImage} fallbackSrc={serverArtistCover} label={artist.name} className="detail-cover artist-cover" disabled={!artistAlbums.length} rejectArtistPlaceholder fallbackIcon={<ArtistInitials name={artist.name} />} onPlay={() => onPlayArtist(artist)} />
           </div>
           <div className="detail-hero-copy">
             <p className="detail-type-label">Artist</p>
@@ -10382,13 +10556,19 @@ function DetailPanel({
         ) : null}
         <div className="section-label">
           <h4>Albums</h4>
-          <div className="view-toggle" aria-label="Artist album view">
-            <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
-              Art
-            </button>
-            <button className={albumViewMode === "list" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("list")}>
-              List
-            </button>
+          <div className="artist-discography-controls">
+            <select aria-label="Release order" value={artistAlbumOrder} onChange={event => onArtistAlbumOrderChange(event.target.value as ArtistAlbumOrder)}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <div className="view-toggle" aria-label="Artist album view">
+              <button className={albumViewMode === "art" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("art")}>
+                Art
+              </button>
+              <button className={albumViewMode === "list" ? "active" : ""} type="button" onClick={() => setAlbumViewMode("list")}>
+                List
+              </button>
+            </div>
           </div>
         </div>
         {albumViewMode === "art" ? (
@@ -10402,12 +10582,14 @@ function DetailPanel({
             onOpenAlbum={onOpenAlbum}
             onPlayAlbum={onPlayAlbum}
             withAlphabetRail={false}
+            emptyText="No albums credited to this artist."
           />
         ) : (
           <div className="artist-discography-list">
             {artistAlbums.map((album) => (
               <ArtistDiscographyAlbum
                 key={album.id}
+                onPlayTrack={start => onPlayArtist(artist, false, start)}
                 album={album}
                 artist={artist}
                 config={config}
@@ -10425,6 +10607,46 @@ function DetailPanel({
             ))}
           </div>
         )}
+        {appearances.length ? (
+          <section className="artist-appearances" aria-labelledby="artist-appearances-heading">
+            <div className="section-label">
+              <div>
+                <h4 id="artist-appearances-heading">Appears on</h4>
+                <small>Featured tracks on other artists’ releases</small>
+              </div>
+              <div className="artist-discography-controls">
+                <button className="secondary-button compact-button" type="button" onClick={() => onPlayArtist(artist, false, undefined, "appearances")}>
+                  <Play size={14} fill="currentColor" /> Play appearances
+                </button>
+                <button className="secondary-button compact-button" type="button" onClick={() => onPlayArtist(artist, true, undefined, "appearances")}>
+                  <Shuffle size={14} /> Shuffle appearances
+                </button>
+              </div>
+            </div>
+            <div className="artist-discography-list">
+              {appearances.map(album => (
+                <ArtistDiscographyAlbum
+                  key={album.id}
+                  appearancesOnly
+                  album={album}
+                  artist={artist}
+                  config={config}
+                  librarySongs={librarySongs}
+                  currentTrack={currentTrack}
+                  favoriteIds={favoriteIds}
+                  favoriteBusyKey={favoriteBusyKey}
+                  onToggleFavorite={onToggleFavorite}
+                  onOpenArtist={onOpenArtist}
+                  onOpenAlbum={onOpenAlbum}
+                  onPlayAlbum={onPlayAlbum}
+                  onReplaceQueue={onReplaceQueue}
+                  onPlayTrack={start => onPlayArtist(artist, false, start, "appearances")}
+                  onSongContextMenu={onSongContextMenu}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
       </section>
     );
   }
@@ -10455,7 +10677,7 @@ function DetailPanel({
 
   const album = detailSelection.data;
   const songs = sortAlbumSongs(album.song ?? []);
-  const albumCover = config ? buildCoverArtUrl(config, album.coverArt ?? songs.find((song) => song.coverArt)?.coverArt, "460") : null;
+  const albumCover = config ? buildCoverArtUrl(config, album.coverArt, "460") : null;
 
   return (
     <section className="detail-panel detail-page album-detail-page">
@@ -10611,6 +10833,7 @@ function ArtistTopSongsList({
 function TrackList({
   songs,
   albumName,
+  inlineAlbum,
   currentTrack,
   favoriteIds,
   favoriteBusyKey,
@@ -10622,6 +10845,7 @@ function TrackList({
 }: {
   songs: Song[];
   albumName: string;
+  inlineAlbum?: { album: Album; coverUrl: string | null; onOpen: () => void; onPlay?: () => void };
   currentTrack: Song | null;
   favoriteIds: FavoriteIds;
   favoriteBusyKey: string;
@@ -10638,7 +10862,7 @@ function TrackList({
   }
 
   const discGroups = groupSongsByDisc(songs);
-  const showDiscHeaders = discGroups.length > 1;
+  const showDiscHeaders = !inlineAlbum && discGroups.length > 1;
 
   return (
     <div className="track-list album-track-list" ref={listRef} tabIndex={0} onKeyDown={handleKeyDown} aria-label="Album tracks">
@@ -10655,7 +10879,7 @@ function TrackList({
 
             return (
             <div
-              className={`track-row album-track-row ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
+              className={`track-row album-track-row ${inlineAlbum ? "appearance-track-row" : ""} ${currentTrack?.id === song.id ? "active" : ""} ${isSelected(songIndex) ? "selected" : ""}`}
               key={song.id}
               aria-current={currentTrack?.id === song.id ? "true" : undefined}
               onContextMenu={(event) => onSongContextMenu(event, song, selectedSongs)}
@@ -10663,7 +10887,7 @@ function TrackList({
               onDoubleClick={() => onPlaySong(song)}
             >
               <span className="track-index">
-                <span className="track-number">{song.track ?? index + 1}</span>
+                {inlineAlbum ? <CoverArt src={inlineAlbum.coverUrl} label={inlineAlbum.album.name} className="appearance-track-cover" /> : <span className="track-number">{song.track ?? index + 1}</span>}
                 <button
                   className="track-play"
                   type="button"
@@ -10682,12 +10906,20 @@ function TrackList({
                   className="track-name"
                   type="button"
                   aria-label={`Select ${song.title}`}
+                  title={inlineAlbum ? song.title : undefined}
                 >
                   {song.title}
                 </button>
                 <ArtistNameLink song={song} onOpenArtist={onOpenArtist} />
               </div>
-              <span className="track-album album-track-album">{song.album || albumName}</span>
+              {inlineAlbum ? <span className="album-track-album appearance-album-context">
+                <button type="button" className="appearance-album-link" title={[inlineAlbum.album.name, inlineAlbum.album.year].filter(Boolean).join(" · ")} aria-label={`Open ${inlineAlbum.album.name}`} onClick={event => { event.stopPropagation(); inlineAlbum.onOpen(); }} onDoubleClick={event => event.stopPropagation()}>
+                  {inlineAlbum.album.name}{inlineAlbum.album.year ? ` · ${inlineAlbum.album.year}` : ""}
+                </button>
+                <button type="button" className="appearance-release-play" disabled={!inlineAlbum.onPlay} title={`Play appearances from ${inlineAlbum.album.name}`} aria-label={`Play appearances from ${inlineAlbum.album.name}`} onClick={event => { event.stopPropagation(); inlineAlbum.onPlay?.(); }} onDoubleClick={event => event.stopPropagation()}>
+                  <Play size={13} />
+                </button>
+              </span> : <span className="track-album album-track-album">{song.album || albumName}</span>}
               <span className="track-duration">{formatDuration(song.duration)}</span>
               <FavoriteButton
                 active={favoriteIds.songs.has(song.id)}
@@ -11052,22 +11284,24 @@ function AddToPlaylistSubmenu({
           {playlists.length ? (
             <div className="song-context-list">
               {playlists.map((playlist) => (
-                <button type="button" role="menuitem" key={playlist.id} onClick={() => onAdd(playlist)} disabled={status === "saving"}>
+                <ContextMenu.Item key={playlist.id} asChild disabled={status === "saving"} onSelect={event => { event.preventDefault(); onAdd(playlist); }}>
+                <button type="button" disabled={status === "saving"}>
                   <ListMusic size={15} />
                   <span>
                     <strong>{playlist.name}</strong>
                     <small>{getPlaylistMeta(playlist)}</small>
                   </span>
                 </button>
+                </ContextMenu.Item>
               ))}
             </div>
           ) : (
             <p className="song-context-empty">Create a playlist first.</p>
           )}
-          <button className="song-context-action new-playlist-action" type="button" onClick={onCreateNew}>
+          <ContextMenu.Item asChild onSelect={event => { event.preventDefault(); onCreateNew(); }}><button className="song-context-action new-playlist-action" type="button">
             <Plus size={15} />
             Add to new playlist
-          </button>
+          </button></ContextMenu.Item>
         </ContextMenu.SubContent>
       </ContextMenu.Portal>
     </ContextMenu.Sub>
@@ -11156,28 +11390,24 @@ function SongPlaylistMenu({
             {sortedPlaylists.length ? (
               <div className="song-context-list">
                 {sortedPlaylists.map((playlist) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    key={playlist.id}
-                    onClick={() => onAdd(playlist)}
-                    disabled={status === "saving"}
-                  >
+                  <ContextMenu.Item key={playlist.id} asChild disabled={status === "saving"} onSelect={event => { event.preventDefault(); onAdd(playlist); }}>
+                  <button type="button" disabled={status === "saving"}>
                     <ListMusic size={15} />
                     <span>
                       <strong>{playlist.name}</strong>
                       <small>{getPlaylistMeta(playlist)}</small>
                     </span>
                   </button>
+                  </ContextMenu.Item>
                 ))}
               </div>
             ) : (
               <p className="song-context-empty">Create a playlist first.</p>
             )}
-            <button className="song-context-action new-playlist-action" type="button" onClick={onCreatePlaylist}>
+            <ContextMenu.Item asChild onSelect={event => { event.preventDefault(); onCreatePlaylist(); }}><button className="song-context-action new-playlist-action" type="button">
               <Plus size={15} />
               Add to new playlist
-            </button>
+            </button></ContextMenu.Item>
           </ContextMenu.SubContent>
         </ContextMenu.Portal>
       </ContextMenu.Sub>
