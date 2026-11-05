@@ -13,7 +13,7 @@
 
 Prism connects to Navidrome and other Subsonic-compatible servers, so you can play your library, manage the queue, and keep your playlists in one proper desktop app. If you use Subwave too, radio lives right there with the rest of your music.
 
-Prism Player 1.1 is available for macOS, Windows and Linux (AppImage/DEB).
+Prism Player is available for macOS, Windows and Linux (AppImage/DEB).
 
 ![Prism 1.1 Home with album artwork, queue and synced lyrics](docs/images/home.png)
 
