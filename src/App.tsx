@@ -6582,7 +6582,7 @@ function WhatsNewDialog({ releases, onClose }: { releases: WhatsNewRelease[]; on
         <p className="eyebrow">What’s new</p>
         <Dialog.Title asChild><h2 id="whats-new-title">Prism {latestRelease.displayVersion ?? latestRelease.version}</h2></Dialog.Title>
         <Dialog.Description asChild><p className="whats-new-copy">
-          {releases.length === 1 ? latestRelease.title : `Here’s what changed since Prism ${releases[releases.length - 1]?.version}.`}
+          {releases.length === 1 ? latestRelease.introduction : `Here’s what changed since Prism ${releases[releases.length - 1]?.version}.`}
         </p></Dialog.Description>
         <div className="whats-new-release-list">
           {releases.map((release) => (
@@ -6737,7 +6737,7 @@ function SettingsView({
             <summary><History size={15} /> Changelog</summary>
             <div className="about-changelog-list">
             {[...WHATS_NEW_RELEASES]
-              .filter((release) => !release.previewForVersion)
+              .filter((release) => !release.previewForVersion && compareVersions(release.version, APP_VERSION) <= 0)
               .sort((left, right) => compareVersions(right.version, left.version))
               .map((release) => (
                 <article key={release.version}>
