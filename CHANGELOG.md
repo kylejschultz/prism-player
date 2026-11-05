@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0](https://github.com/kylejschultz/prism-player/compare/v1.1.0...v1.2.0) (2026-11-05)
+
+
+### Features
+
+* collapse compact playback panes at their edges ([7d0844e](https://github.com/kylejschultz/prism-player/commit/7d0844eedada75269c9232c3a3739d936f523b9f))
+* independently collapse playback sidebar panes ([c7bef78](https://github.com/kylejschultz/prism-player/commit/c7bef78293d1764e8f6d6c3a16f6c6aaee56633a))
+* independently collapse playback sidebar panes ([b72d73b](https://github.com/kylejschultz/prism-player/commit/b72d73b1cf5b89496eb17ce2ac751d50d51d0061))
+* play ordered artist discographies and separate guest appearances ([#245](https://github.com/kylejschultz/prism-player/issues/245)) ([0e2e975](https://github.com/kylejschultz/prism-player/commit/0e2e97511446eba9207b02a0c1ebc211313ca3f7))
+* prepare Prism 1.2 release candidate ([70f75cf](https://github.com/kylejschultz/prism-player/commit/70f75cf1aa3345c65527095c8020bc20eaa3f68c))
+* validate and draft versioned release content ([#247](https://github.com/kylejschultz/prism-player/issues/247)) ([99544e9](https://github.com/kylejschultz/prism-player/commit/99544e901539a9996bb3c1766b7b7cddfd756c78))
+
+
+### Bug Fixes
+
+* improve album selection, sidebar controls, and artwork ([#246](https://github.com/kylejschultz/prism-player/issues/246)) ([68c1ad1](https://github.com/kylejschultz/prism-player/commit/68c1ad1846d3a9308615132f25e882c26fb0c949))
+* repair release checksums and refresh 1.1 documentation ([#240](https://github.com/kylejschultz/prism-player/issues/240)) ([98f585f](https://github.com/kylejschultz/prism-player/commit/98f585f377f0b5dfec39f3ae0e3732d68fad5438))
+
 ## [1.1.0](https://github.com/kylejschultz/prism-player/compare/v1.0.0...v1.1.0) (2026-10-29)
 
 
