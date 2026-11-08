@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
 import { navidromeClient, normalizeStructuredLyrics } from "./navidrome.ts";
 
 const config = { serverUrl: "https://fixture.invalid", username: "fixture", password: "fixture-only" };
@@ -145,4 +147,22 @@ test("lyric timeout bounds a stalled body, then safely tries the legacy endpoint
   const pending = navidromeClient.lyrics(config, song);
   await Promise.resolve(); timer.expire();
   assert.deepEqual(await pending, [{ text: "Fallback", startMs: null }]);
+});
+
+test("album, artist and search responses preserve album-level artists without inventing song credits", async t => {
+  clock(t);
+  const album = JSON.parse(readFileSync(new URL("../../tests/fixtures/collaborative-album.json", import.meta.url)));
+  t.mock.method(globalThis, "fetch", async url => {
+    const endpoint = url.pathname.split('/').at(-1);
+    const payload = {
+      'getAlbum.view': {album},
+      'getArtist.view': {artist:{...album.artists[1],album:[album]}},
+      'search3.view': {searchResult3:{album:[album]}},
+    }[endpoint] ?? {};
+    return {ok:true,json:async () => ({'subsonic-response':{status:'ok',...payload}})};
+  });
+  for (const actual of [await navidromeClient.album(config, album.id), (await navidromeClient.artist(config, 'kanye-id')).album[0], (await navidromeClient.search(config, album.name)).albums[0]]) {
+    assert.deepEqual(actual, album);
+    assert.equal(Object.hasOwn(actual, 'albumArtists'), false);
+  }
 });
