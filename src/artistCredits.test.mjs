@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
 import { matchesArtist, matchesAlbumArtist, matchesTrackArtist, getArtistAlbums, getArtistAppearances } from "./artistCredits.ts";
 const oliver = { id: "oliver", name: "Oliver Richman" };
 
@@ -41,7 +43,7 @@ test("a structured combined artist credit still includes its primary artist", ()
 });
 
 
-test("explicit album artists override contributors, primary fields and server membership", () => {
+test("explicit album artists override other album credits, primary fields and server membership", () => {
   const lead = { id: "lead", name: "Lead Singer" };
   const guestAlbum = { id: "guest-album", name: "Another Artist's Album", artistId: lead.id, artist: lead.name, artists: [lead, oliver], albumArtists: [lead] };
   const guest = { id: "featured", title: "Featured Song", albumId: guestAlbum.id, artistId: lead.id, artists: [lead, oliver] };
@@ -65,4 +67,36 @@ test("legacy and sparse metadata do not promote track guests; richer server cred
   assert.deepEqual(getArtistAlbums({...oliver, album:[server]}, [{...server,albumArtists:[{id:'other',name:'Other'}]}]), [server]);
   assert.equal(getArtistAlbums({...oliver, album:[{id:server.id,name:server.name,artist:'Unknown'}]}, [server])[0].albumArtists[0].id, oliver.id);
   assert.deepEqual(getArtistAppearances({...oliver,album:[server]}, [server], [{id:'s',title:'Track',albumId:server.id,artists:[oliver]}]), []);
+});
+
+const collaborativeAlbum = JSON.parse(readFileSync(new URL("../tests/fixtures/collaborative-album.json", import.meta.url)));
+
+test("album artists-only responses include every co-primary once, never as appearances", () => {
+  for (const artist of collaborativeAlbum.artists) {
+    assert.equal(matchesAlbumArtist(collaborativeAlbum, artist), true);
+    for (const [server, catalog] of [[[collaborativeAlbum], []], [[], [collaborativeAlbum]], [[collaborativeAlbum], [collaborativeAlbum]]]) {
+      const detail = {...artist, album: server};
+      assert.deepEqual(getArtistAlbums(detail, catalog).map(a => a.id), [collaborativeAlbum.id]);
+      assert.deepEqual(getArtistAppearances(detail, catalog, []), []);
+    }
+  }
+  assert.equal(matchesAlbumArtist(collaborativeAlbum, {id:'unrelated',name:'Unrelated'}), false);
+  assert.equal(matchesAlbumArtist({...collaborativeAlbum, artists:[{id:'different',name:'Kanye West'}]}, collaborativeAlbum.artists[1]), false);
+  assert.equal(matchesAlbumArtist({...collaborativeAlbum, artists:[{id:'different',name:'Other Artist'}]}, collaborativeAlbum.artists[0]), false);
+});
+
+test("sparse artist responses retain cached structured album credits; nonempty server credits replace them", () => {
+  const artist = collaborativeAlbum.artists[1];
+  for (const sparse of [{}, {artists:undefined}, {artists:[]}]) {
+    const server = {...collaborativeAlbum, ...sparse};
+    if (!Object.hasOwn(sparse, 'artists')) delete server.artists;
+    const result = getArtistAlbums({...artist,album:[server]}, [collaborativeAlbum]);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result[0].artists, collaborativeAlbum.artists);
+  }
+  const replacement = {...collaborativeAlbum, artists:[collaborativeAlbum.artists[0]]};
+  assert.deepEqual(getArtistAlbums({...artist,album:[replacement]}, [collaborativeAlbum]), []);
+  assert.equal(matchesAlbumArtist({...collaborativeAlbum,albumArtists:[collaborativeAlbum.artists[0]]}, artist), false);
+  assert.equal(matchesAlbumArtist({...collaborativeAlbum,albumArtist:collaborativeAlbum.artists[0].name}, artist), false);
+  assert.equal(matchesAlbumArtist({...collaborativeAlbum,artists:[]}, collaborativeAlbum.artists[0]), true);
 });

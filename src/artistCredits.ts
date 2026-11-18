@@ -38,13 +38,13 @@ export function matchesAlbumArtist(album: Album, artist: Pick<Artist, "id" | "na
   if (album.albumArtists?.length) return matchesCreditList(album.albumArtists, artist);
   if (album.albumArtist?.trim()) return normalize(album.albumArtist) === normalize(artist.name)
     || isPrimaryCombinedCredit(album.albumArtist, normalize(artist.name));
+  if (album.artists?.length) return matchesCreditList(album.artists, artist);
   if (album.artistId === artist.id) return true;
-  // Preserve legacy lead/combined tags without promoting a contributor list over
-  // an explicit primary album credit. Structured albumArtists supports all peers.
+  // Structured album credits identify all peers; scalar tags remain a legacy fallback.
   if (album.artist?.trim()) return (!album.artistId && normalize(album.artist) === normalize(artist.name))
     || isPrimaryCombinedCredit(album.artist, normalize(artist.name));
   if (album.artistId) return false;
-  return matchesCreditList(album.artists ?? [], artist);
+  return false;
 }
 
 export function matchesTrackArtist(song: Song, artist: Pick<Artist, "id" | "name">): boolean {
@@ -57,6 +57,7 @@ function artistAlbumCandidates(artist: Artist & { album?: Album[] }, albums: Alb
   for (const album of artist.album ?? []) {
     const cached = candidates.get(album.id);
     candidates.set(album.id, { ...cached, ...album,
+      ...(!album.artists?.length && cached?.artists?.length ? { artists: cached.artists } : {}),
       albumArtists: album.albumArtists?.length ? album.albumArtists : cached?.albumArtists,
       albumArtist: album.albumArtist?.trim() || cached?.albumArtist,
     });

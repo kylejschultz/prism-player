@@ -269,6 +269,7 @@ export type Album = {
   name: string;
   artist: string;
   artistId?: string;
+  /** Album-level credits, including every co-primary artist. */
   artists?: ArtistCredit[];
   albumArtists?: ArtistCredit[];
   albumArtist?: string;
@@ -325,6 +326,7 @@ export type Song = {
   title: string;
   albumId?: string;
   artistId?: string;
+  /** Track performance credits; these do not establish album ownership. */
   artists?: ArtistCredit[];
   albumArtists?: ArtistCredit[];
   albumArtist?: string;

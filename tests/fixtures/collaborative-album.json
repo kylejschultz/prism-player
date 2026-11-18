@@ -1,0 +1,10 @@
+{
+  "id": "joint-album",
+  "name": "Watch the Throne",
+  "artist": "JAY‐Z & Kanye West",
+  "artistId": "jay-id",
+  "artists": [
+    {"id": "jay-id", "name": "JAY‐Z"},
+    {"id": "kanye-id", "name": "Kanye West"}
+  ]
+}

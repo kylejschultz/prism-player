@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
 const artist = { id: 'chronicle', name: 'The Daybreak Archive' };
+const jointAlbum = JSON.parse(readFileSync(new URL('./fixtures/collaborative-album.json', import.meta.url)));
 const releases = [
   { id: 'new', name: 'Afterlight', year: 2024 },
   { id: 'old', name: 'First Light', year: 2001 },
@@ -21,8 +22,10 @@ const tracks = album => ['appearance','compilation'].includes(album.id) ? [
 ].map(s => ({artist: artist.name, artistId: artist.id, albumId: album.id, album: album.name, duration: 120, ...s}));
 const sentinel = {id: 'sentinel', title: 'Existing listening', duration: 120};
 
-async function fixture(page, {large = false, appearancesOnly = false} = {}) {
-  const albums = large ? Array.from({length: 55}, (_, i) => ({id: 'release-' + i, name: 'Release ' + String(i).padStart(2, '0'), year: 1950 + i, songCount: 3, artist: artist.name, artistId: artist.id})) : appearancesOnly ? releases.filter(album => ['appearance','compilation'].includes(album.id)) : releases;
+async function fixture(page, {large = false, appearancesOnly = false, coPrimary, catalog = false} = {}) {
+  const collaboration = coPrimary !== undefined;
+  const selectedArtist = collaboration ? jointAlbum.artists[coPrimary] : artist;
+  const albums = collaboration ? [{...jointAlbum, year:2011, songCount:12}, releases.find(a => a.id === 'appearance')] : large ? Array.from({length: 55}, (_, i) => ({id: 'release-' + i, name: 'Release ' + String(i).padStart(2, '0'), year: 1950 + i, songCount: 3, artist: artist.name, artistId: artist.id})) : appearancesOnly ? releases.filter(album => ['appearance','compilation'].includes(album.id)) : releases;
   const state = { fail: false, hold: null, requests: [], errors: [] };
   page.on('pageerror', e => state.errors.push(e.message));
   await page.addInitScript(({version, sentinel}) => {
@@ -51,12 +54,16 @@ async function fixture(page, {large = false, appearancesOnly = false} = {}) {
       await state.hold;
       if (failed) return route.fulfill({status: 503, body: 'fixture unavailable'});
       const album = albums.find(a => a.id === id);
-      return route.fulfill({json: {'subsonic-response': {status: 'ok', album: {...album, song: tracks(album)}}}});
+      const songs = !collaboration ? tracks(album) : album.id === jointAlbum.id
+        ? Array.from({length:12}, (_, i) => ({id:`joint-${i+1}`,title:`Joint track ${i+1}`,albumId:album.id,artistId:'jay-id',artists:[jointAlbum.artists[0]],albumArtists:jointAlbum.artists,duration:120,track:i+1}))
+        : [{id:'guest-solo',title:'Unrelated track',albumId:album.id,artistId:'other',artists:[{id:'other',name:'Other Ensemble'}],duration:120},
+           {id:'guest-feature',title:'Guest feature',albumId:album.id,artistId:'other',artists:[selectedArtist],duration:120}];
+      return route.fulfill({json: {'subsonic-response': {status: 'ok', album: {...album, song: songs}}}});
     }
     const payload = {
-      getAlbumList2: {albumList2: {album: []}}, // no optional full-library songs
-      getArtists: {artists: {index: [{name: 'T', artist: [artist, {id: 'other', name: 'Other Ensemble'}]}]}},
-      getArtist: {artist: {...artist, id: url.searchParams.get('id'), album: albums}},
+      getAlbumList2: {albumList2: {album: catalog ? [albums[0]] : []}}, // no optional full-library songs
+      getArtists: {artists: {index: [{name: 'T', artist: [...(collaboration ? jointAlbum.artists : [artist]), {id: 'other', name: 'Other Ensemble'}]}]}},
+      getArtist: {artist: {...selectedArtist, id: url.searchParams.get('id'), album: albums}},
       getArtistInfo2: {artistInfo2: {}}, getTopSongs: {topSongs: {song: []}},
       getPlaylists: {playlists: {}}, getStarred2: {starred2: {}},
       getScanStatus: {scanStatus: {scanning: false, lastScan: 1}},
@@ -65,7 +72,7 @@ async function fixture(page, {large = false, appearancesOnly = false} = {}) {
   });
   await page.goto('/');
   await page.locator('.sidebar').getByRole('button', {name: 'Artists', exact: true}).click();
-  await page.locator('.artist-card-main, .artist-main').filter({hasText: artist.name}).first().click();
+  await page.locator('.artist-card-main, .artist-main').filter({hasText: selectedArtist.name}).first().click();
   await expect(page.getByRole('combobox', {name: 'Release order'})).toBeVisible();
   return {state, albums};
 }
@@ -272,4 +279,30 @@ for (const width of [980,1440]) test(`appearance rows stay compact with inline c
   await page.keyboard.press('Space');
   await expect.poll(async () => (await snapshot(page)).queue.map(song=>song.id)).toEqual(['appearance-feature','compilation-feature']);
   await section.screenshot({path:test.info().outputPath(`compact-appearances-${width}.png`)});
+});
+
+for (const coPrimary of [0,1]) for (const catalog of [false,true]) test(`artists-only joint album belongs to primary ${coPrimary+1} with catalog=${catalog}`, async ({page}) => {
+  const {state} = await fixture(page, {coPrimary,catalog});
+  await expect(page.locator('.artist-hero .detail-stats')).toContainText('1 albums');
+  await expect(page.locator('.artist-latest-release')).toContainText(jointAlbum.name);
+  // Art view exposes the joint release once, regardless of catalog/server duplication.
+  await expect(page.locator('.artist-detail-page .album-grid [data-context-kind="album"][data-context-id="joint-album"]')).toHaveCount(1);
+  await playArtist(page);
+  await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(Array.from({length:12},(_,i)=>`joint-${i+1}`));
+  await page.locator('.artist-hero .detail-actions').getByRole('button',{name:'Shuffle',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.length).toBe(12);
+  expect(new Set((await snapshot(page)).queue.map(s=>s.id)).size).toBe(12);
+  await listMode(page);
+  const main = page.locator('.artist-discography-list').first();
+  await expect(main.locator('.artist-album-group')).toHaveCount(1);
+  await main.getByRole('button',{name:'Play Joint track 12',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).currentIndex).toBe(11);
+  const appearances = page.locator('.artist-appearances');
+  await expect(appearances.locator('[data-context-id="joint-album"]')).toHaveCount(0);
+  await expect(appearances.getByRole('button',{name:'Play Guest feature',exact:true})).toBeVisible();
+  await expect(appearances.getByRole('button',{name:'Play Unrelated track',exact:true})).toHaveCount(0);
+  await appearances.getByRole('button',{name:'Play appearances',exact:true}).click();
+  await expect.poll(async () => (await snapshot(page)).queue.map(s=>s.id)).toEqual(['guest-feature']);
+  await page.screenshot({path:test.info().outputPath('collaborative-album.png')});
+  expect(state.errors).toEqual([]);
 });
